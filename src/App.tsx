@@ -7,10 +7,12 @@ import { Routes, Route } from "react-router";
 
 import Home from "@/views/Home";
 import Settings from "@/views/Settings";
+import Software from "@/views/Software";
+import Framework from "@/views/Framework";
 
 import { useNavigate } from "react-router";
 import { useTheme, I18nContext, useI18nLogic, nextTick } from "@/composables";
-import { createContext, useEffect } from "react";
+import { createContext } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAsyncEffect, useLocalStorageState } from "ahooks";
 import { AppTray } from "@/lib/tray";
@@ -83,6 +85,8 @@ function App() {
                     <Routes>
                       <Route path="/" index element={<Home />} />
                       <Route path="/settings" element={<Settings />} />
+                      <Route path="/software" element={<Software />} />
+                      <Route path="/framework" element={<Framework />} />
                     </Routes>
                   </ScrollArea>
                 </div>

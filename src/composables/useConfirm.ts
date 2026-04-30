@@ -1,1 +1,1 @@
-export const useConfirm = (option: any) => {};
+export const useConfirm = () => {};
