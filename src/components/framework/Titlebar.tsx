@@ -70,10 +70,20 @@ export default function Titlebar() {
             {t("Titlebar.menu.about")}
           </MenubarTrigger>
           <MenubarContent className="menu-bar-content">
-            <MenubarItem className="menu-bar-item">
+            <MenubarItem
+              className="menu-bar-item"
+              onSelect={() => {
+                navigator("/software");
+              }}
+            >
               {t("Titlebar.menu.about.software")}
             </MenubarItem>
-            <MenubarItem className="menu-bar-item">
+            <MenubarItem
+              className="menu-bar-item"
+              onSelect={() => {
+                navigator("/framework");
+              }}
+            >
               {t("Titlebar.menu.about.framework")}
             </MenubarItem>
           </MenubarContent>

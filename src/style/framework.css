@@ -56,3 +56,45 @@
     transition-colors ease-in-out duration-100;
   }
 }
+
+/* ===== Framework Page ===== */
+.view-framework {
+  @apply w-full max-w-4xl mx-auto px-6 pt-6 pb-8;
+
+  .title {
+    @apply text-2xl font-bold text-foreground mb-2;
+  }
+
+  .framework-intro {
+    @apply text-sm text-muted-foreground mb-6;
+  }
+
+  .tech-cards {
+    @apply grid grid-cols-1 sm:grid-cols-2 gap-4;
+  }
+
+  .tech-card {
+    @apply flex flex-row items-center gap-3 p-4
+      rounded-lg border border-border bg-card text-card-foreground
+      hover:border-primary/50 hover:shadow-md
+      transition-all ease-in-out duration-150
+      no-underline;
+
+    .tech-card-content {
+      @apply flex flex-col gap-0.5 min-w-0;
+
+      .tech-card-name {
+        @apply text-sm font-semibold text-card-foreground
+          flex items-center gap-1;
+
+        .tech-card-link-icon {
+          @apply w-3 h-3 text-muted-foreground;
+        }
+      }
+
+      .tech-card-desc {
+        @apply text-xs text-muted-foreground leading-snug;
+      }
+    }
+  }
+}
