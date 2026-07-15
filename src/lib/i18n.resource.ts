@@ -92,6 +92,11 @@ export const I18nTexts = {
     "Settings.items.auto-complete.label": "Open auto-complete",
     "Settings.items.auto-complete.success":
       "Auto-complete changed successfully",
+    "Tray.menu.showWindow": "Show Window",
+    "Tray.menu.hideWindow": "Hide Window",
+    "Tray.menu.settings": "Settings",
+    "Tray.menu.quit": "Quit",
+
     "SuperCommand.navigate.home": "Navigate to home page",
     "SuperCommand.navigate.settings": "Navigate to settings page",
     "SuperCommand.navigate.software": "Navigate to software page",
@@ -192,6 +197,11 @@ export const I18nTexts = {
     "Settings.items.lang.label": "语言",
     "Settings.items.auto-complete.label": "开启自动补全",
     "Settings.items.auto-complete.success": "自动补全更改已应用",
+    "Tray.menu.showWindow": "显示主窗口",
+    "Tray.menu.hideWindow": "隐藏主窗口",
+    "Tray.menu.settings": "设置",
+    "Tray.menu.quit": "退出",
+
     "SuperCommand.navigate.home": "跳转到首页",
     "SuperCommand.navigate.settings": "跳转到设置页面",
     "SuperCommand.navigate.software": "跳转到软件页面",

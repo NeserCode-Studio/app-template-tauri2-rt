@@ -7,10 +7,13 @@ import { Routes, Route } from "react-router";
 
 import { useNavigate } from "react-router";
 import { useTheme, I18nContext, useI18nLogic } from "@/composables";
-import { createContext, lazy, Suspense } from "react";
+import { createContext, lazy, Suspense, useEffect } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useAsyncEffect, useLocalStorageState } from "ahooks";
-import { AppTray } from "@/lib/tray";
+import { useLocalStorageState } from "ahooks";
+import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
+import { WindowUtils } from "@/lib/window.utils";
+import TrayMenu from "@/views/TrayMenu";
 
 const Home = lazy(() => import("@/views/Home"));
 const Settings = lazy(() => import("@/views/Settings"));
@@ -54,20 +57,38 @@ function App() {
     defaultValue: t("Titlebar.default.title"),
   });
 
-  useAsyncEffect(async () => {
-    /* App Tray */
-    const $tray = new AppTray({
-      tooltip: t("Tray.tooltip.default"),
-    });
-    await $tray.init();
-    console.log($tray);
-    const handleBeforeUnload = async () => {
-      window.removeEventListener("unload", handleBeforeUnload);
-      await $tray.quit();
-    };
+  /* Detect current window */
+  const currentLabel = getCurrentWindow().label;
 
-    window.addEventListener("unload", handleBeforeUnload);
+  useEffect(() => {
+    if (currentLabel === "tray") return;
+
+    listen<{ x: number; y: number }>("tray-popup", async (event) => {
+      const trayWindow = await WindowUtils.getWindowByLabel("tray");
+      if (!trayWindow) return;
+      const size = await trayWindow.outerSize();
+      const x = Math.round(event.payload.x - size.width / 2);
+      const y = Math.max(0, Math.round(event.payload.y - size.height));
+      await trayWindow.setPosition(new PhysicalPosition(x, y));
+      await trayWindow.show();
+      await trayWindow.setFocus();
+    });
+
+    listen<string>("navigate", (event) => {
+      navigate(event.payload);
+    });
   }, []);
+
+  if (currentLabel === "tray") {
+    return (
+      <I18nContext.Provider value={{ lang, t, setLang: setLanguage }}>
+        <ThemeContext.Provider value={{ theme, setThemeMode }}>
+          <TrayMenu />
+        </ThemeContext.Provider>
+      </I18nContext.Provider>
+    );
+  }
+
   return (
     <>
       <I18nContext.Provider value={{ lang, t, setLang: setLanguage }}>

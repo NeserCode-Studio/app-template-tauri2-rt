@@ -31,6 +31,14 @@ export class WindowUtils {
     else focusShow(this.$current);
   }
 
+  static async getWindowByLabel(label: string): Promise<Window | undefined> {
+    const windows = await getAllWindows().catch((reason) => {
+      console.log(`[Window:Error] Get Windows but ${reason}`);
+      return [] as Window[];
+    });
+    return windows.find((w) => w.label === label);
+  }
+
   static async windowsQuit() {
     const windows = await getAllWindows().catch((reason) => {
       console.log(`[Window:Error] Get Windows but ${reason}`);

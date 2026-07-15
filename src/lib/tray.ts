@@ -1,5 +1,7 @@
 import { TrayIcon, TrayIconOptions as tio } from "@tauri-apps/api/tray";
 import { defaultWindowIcon } from "@tauri-apps/api/app";
+import { WindowUtils } from "@/lib/window.utils";
+import { PhysicalPosition } from "@tauri-apps/api/window";
 
 export interface TrayIconOptions {
   icon?: tio["icon"];
@@ -70,33 +72,34 @@ export class AppTray {
     this.tray = await TrayIcon.new({
       icon: this.options?.icon ?? (await defaultWindowIcon()) ?? undefined,
       tooltip: this.options?.tooltip,
-      // action: (event) => {
-      //   switch (event.type) {
-      //     case "Click":
-      //       console.log(
-      //         `mouse ${event.button} button pressed, state: ${event.buttonState}`
-      //       );
-      //       break;
-      //     case "DoubleClick":
-      //       console.log(`mouse ${event.button} button pressed`);
-      //       break;
-      //     case "Enter":
-      //       console.log(
-      //         `mouse hovered tray at ${event.rect.position.x}, ${event.rect.position.y}`
-      //       );
-      //       break;
-      //     case "Move":
-      //       console.log(
-      //         `mouse moved on tray at ${event.rect.position.x}, ${event.rect.position.y}`
-      //       );
-      //       break;
-      //     case "Leave":
-      //       console.log(
-      //         `mouse left tray at ${event.rect.position.x}, ${event.rect.position.y}`
-      //       );
-      //       break;
-      //   }
-      // },
+      showMenuOnLeftClick: false,
+      action: async (event) => {
+        console.log("[Tray::Action]", event.type, event);
+        try {
+          if (event.type !== "Click") return;
+          const trayWindow = await WindowUtils.getWindowByLabel("tray");
+          if (!trayWindow) {
+            console.warn("[Tray::Action] tray window not found");
+            return;
+          }
+
+          const isVisible = await trayWindow.isVisible();
+          if (isVisible) {
+            await trayWindow.hide();
+          } else {
+            const { position } = event.rect;
+            const trayWinSize = await trayWindow.outerSize();
+            const x = Math.round(position.x + event.rect.size.width / 2 - trayWinSize.width / 2);
+            const y = Math.round(position.y - trayWinSize.height);
+
+            await trayWindow.setPosition(new PhysicalPosition(x, y));
+            await trayWindow.show();
+            await trayWindow.setFocus();
+          }
+        } catch (e) {
+          console.error("[Tray::Action] Error:", e);
+        }
+      },
     });
     if (this.tray) this.trayIds.add(this.tray.id);
     else return;
