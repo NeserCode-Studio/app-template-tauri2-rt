@@ -3,7 +3,7 @@
 // ============================================================
 
 import { invoke } from "@tauri-apps/api/core";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
 
 /** 命令执行结果 */
 export interface SuperCommandResult {
@@ -181,8 +181,5 @@ export function useSuperCommand(
     [registry]
   );
 
-  return useMemo(
-    () => ({ commands: registry, register, search, execute }),
-    [registry, register, search, execute]
-  );
+  return { commands: registry, register, search, execute };
 }

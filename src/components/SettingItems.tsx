@@ -10,7 +10,6 @@ import {
 } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
-import { useLocalStorageState } from "ahooks";
 import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import type {
@@ -44,12 +43,9 @@ export function SettingInputItem({
   value,
   title,
   description,
-}: SettingInputItemProps) {
+  autoComplete = true,
+}: SettingInputItemProps & { autoComplete?: boolean }) {
   const { t } = useI18n();
-  const [autoComplete] = useLocalStorageState("use-auto-complete", {
-    defaultValue: true,
-    listenStorageChange: true,
-  });
 
   return (
     <form action={onItemSubmit} className="setting-input-item setting-item">

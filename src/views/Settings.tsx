@@ -70,6 +70,7 @@ export default function Settings() {
           onItemSubmit={titleAction}
           title={t("Settings.items.title.title")}
           description={t("Settings.items.title.description")}
+          autoComplete={autoComplete}
         />
         <SettingSelectItem
           items={langItems}

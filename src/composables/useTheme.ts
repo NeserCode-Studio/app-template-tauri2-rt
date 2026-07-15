@@ -1,5 +1,4 @@
-import { useEffect, useState } from "react";
-import { nextTick } from ".";
+import { useEffect, useState, useCallback } from "react";
 
 import type { ThemeType, UseThemeFn } from "@/shared";
 
@@ -9,44 +8,33 @@ export const useTheme: UseThemeFn = ({ localStorageKey = "theme" }) => {
     localTheme ?? "light"
   );
 
-  /* Initial Theme */
+  /* Initial Theme & Media Query Listener */
   useEffect(() => {
     const localTheme = localStorage.getItem(localStorageKey);
     const prefersDark = window.matchMedia(
       "(prefers-color-scheme: dark)"
     ).matches;
-    const theme = localTheme || (prefersDark ? "dark" : "light");
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, []);
+    const initialTheme = localTheme || (prefersDark ? "dark" : "light");
+    document.documentElement.classList.toggle("dark", initialTheme === "dark");
 
-  /* Queue Update */
-  nextTick(() => {
-    const html = document.querySelector("html");
     const matchMedia = window.matchMedia("(prefers-color-scheme: dark)");
-
-    /* Listener */
     const onThemeChange = (event: MediaQueryListEvent) => {
       const isDarkMode = event.matches;
-      if (!localTheme) {
-        html?.classList.toggle("dark", isDarkMode);
+      if (!localStorage.getItem(localStorageKey)) {
+        document.documentElement.classList.toggle("dark", isDarkMode);
         setThemeState(isDarkMode ? "dark" : "light");
       }
     };
 
     matchMedia.addEventListener("change", onThemeChange);
-    return () => {
-      matchMedia.removeEventListener("change", onThemeChange);
-    };
-  });
+    return () => matchMedia.removeEventListener("change", onThemeChange);
+  }, [localStorageKey]);
 
-  /* Setter */
-  const setTheme = (theme: ThemeType) => {
-    const html = document?.querySelector("html");
-
-    html?.classList.toggle("dark");
+  const setTheme = useCallback((theme: ThemeType) => {
+    document?.querySelector("html")?.classList.toggle("dark");
     setThemeState(theme);
     localStorage.setItem(localStorageKey, theme);
-  };
+  }, [localStorageKey]);
 
   return [themeState, setTheme];
 };

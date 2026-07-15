@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { Home, Settings, RefreshCcw, Search, Sparkles } from "lucide-react";
+import { Home, Settings, RefreshCcw, Sparkles } from "lucide-react";
 import { useMemoizedFn } from "ahooks";
 
 import {
@@ -11,7 +11,6 @@ import {
   CommandInput,
   CommandItem,
   CommandList,
-  CommandSeparator,
   CommandShortcut,
 } from "@/components/ui/command";
 

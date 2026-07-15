@@ -5,17 +5,17 @@ import CommandDialog from "@/components/framework/CommandDialog";
 import { Toaster } from "@/components/ui/sonner";
 import { Routes, Route } from "react-router";
 
-import Home from "@/views/Home";
-import Settings from "@/views/Settings";
-import Software from "@/views/Software";
-import Framework from "@/views/Framework";
-
 import { useNavigate } from "react-router";
-import { useTheme, I18nContext, useI18nLogic, nextTick } from "@/composables";
-import { createContext } from "react";
+import { useTheme, I18nContext, useI18nLogic } from "@/composables";
+import { createContext, lazy, Suspense } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAsyncEffect, useLocalStorageState } from "ahooks";
 import { AppTray } from "@/lib/tray";
+
+const Home = lazy(() => import("@/views/Home"));
+const Settings = lazy(() => import("@/views/Settings"));
+const Software = lazy(() => import("@/views/Software"));
+const Framework = lazy(() => import("@/views/Framework"));
 
 import type { UseThemeFnReturn } from "@/shared";
 
@@ -59,10 +59,8 @@ function App() {
     const $tray = new AppTray({
       tooltip: t("Tray.tooltip.default"),
     });
-    nextTick(() => {
-      $tray.init();
-      console.log($tray);
-    });
+    await $tray.init();
+    console.log($tray);
     const handleBeforeUnload = async () => {
       window.removeEventListener("unload", handleBeforeUnload);
       await $tray.quit();
@@ -82,12 +80,14 @@ function App() {
 
                 <div id="container">
                   <ScrollArea className="container-scroller">
-                    <Routes>
-                      <Route path="/" index element={<Home />} />
-                      <Route path="/settings" element={<Settings />} />
-                      <Route path="/software" element={<Software />} />
-                      <Route path="/framework" element={<Framework />} />
-                    </Routes>
+                    <Suspense fallback={null}>
+                      <Routes>
+                        <Route path="/" index element={<Home />} />
+                        <Route path="/settings" element={<Settings />} />
+                        <Route path="/software" element={<Software />} />
+                        <Route path="/framework" element={<Framework />} />
+                      </Routes>
+                    </Suspense>
                   </ScrollArea>
                 </div>
               </main>
