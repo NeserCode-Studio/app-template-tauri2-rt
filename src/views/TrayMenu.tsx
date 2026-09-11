@@ -2,7 +2,7 @@ import { useContext, useEffect, useCallback, useRef } from "react";
 import { getCurrentWindow, PhysicalSize } from "@tauri-apps/api/window";
 
 import { useI18n } from "@/composables";
-import { ThemeContext } from "@/App";
+import { ThemeContext } from "@/contexts/theme";
 import { WindowUtils } from "@/lib/window.utils";
 
 import { Monitor, EyeOff, Settings, LogOut } from "lucide-react";

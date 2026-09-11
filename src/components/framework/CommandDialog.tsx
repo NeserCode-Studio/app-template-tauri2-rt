@@ -1,5 +1,3 @@
-"use client";
-
 import * as React from "react";
 import { Home, Settings, RefreshCcw, Sparkles } from "lucide-react";
 import { useMemoizedFn } from "ahooks";
@@ -14,10 +12,11 @@ import {
   CommandShortcut,
 } from "@/components/ui/command";
 
-import { NavigatorContext } from "@/App";
+import { NavigatorContext } from "@/contexts/navigator";
 import { useI18n, useSuperCommand } from "@/composables";
-import { I18nContext } from "@/composables/useI18n";
-import { ThemeContext } from "@/App";
+import { I18nContext } from "@/contexts/i18n";
+import { ThemeContext } from "@/contexts/theme";
+import { useSettingsDialog } from "@/contexts/settings";
 
 const SUPER_PREFIX = "@super";
 const SUPER_CMD = "super";
@@ -34,6 +33,7 @@ export default function CommandMenu() {
   const { t } = useI18n();
   const [open, setOpen] = React.useState(false);
   const { navigator } = React.useContext(NavigatorContext);
+  const { openSettings } = useSettingsDialog();
   const i18nCtx = React.useContext(I18nContext);
   const setLang = i18nCtx?.setLang ?? (() => {});
   const { setThemeMode } = React.useContext(ThemeContext) ?? {};
@@ -42,7 +42,7 @@ export default function CommandMenu() {
   // cmdk 搜索值
   const [cmdkSearch, setCmdkSearch] = React.useState("");
 
-  const superCmd = useSuperCommand({ navigate: navigator, setLang, setTheme });
+  const superCmd = useSuperCommand({ navigate: navigator, setLang, setTheme, openSettings });
 
   // ── Super 模式判定 ────────────────────────────────────────
   const isSuperMode = cmdkSearch.startsWith(SUPER_PREFIX + " ");
@@ -72,7 +72,7 @@ export default function CommandMenu() {
       keywords: ["home", "index", "首页", "主页"],
     },
     {
-      value: "navigate::/settings",
+      value: "settings::open",
       icon: Settings,
       label: t("Command.turnto.settings"),
       shortcut: "⌘S",
@@ -103,6 +103,8 @@ export default function CommandMenu() {
 
     if (symbol === "navigate") {
       navigator(value);
+    } else if (symbol === "settings") {
+      openSettings();
     } else if (symbol === "reload") {
       navigator("/");
       window.location.reload();

@@ -11,9 +11,11 @@ import TitlebarOperations, {
   ThemeIcon,
 } from "@/components/framework/TitlebarOperations";
 import { useContext } from "react";
-import { ThemeContext, NavigatorContext } from "@/App";
+import { ThemeContext } from "@/contexts/theme";
+import { NavigatorContext } from "@/contexts/navigator";
 import TitlebarTitle from "./TitlebarTitle";
 import { useI18n } from "@/composables";
+import { useSettingsDialog } from "@/contexts/settings";
 
 export default function Titlebar() {
   /* I18n */
@@ -22,6 +24,7 @@ export default function Titlebar() {
   const { theme, setThemeMode } = useContext(ThemeContext);
   /* Navigator */
   const { navigator } = useContext(NavigatorContext);
+  const { openSettings } = useSettingsDialog();
 
   function toggleTheme() {
     if (theme === "dark") {
@@ -50,7 +53,7 @@ export default function Titlebar() {
             <MenubarItem
               className="menu-bar-item"
               onSelect={() => {
-                navigator("/settings");
+                openSettings();
               }}
             >
               {t("Titlebar.menu.turnto.settings")}

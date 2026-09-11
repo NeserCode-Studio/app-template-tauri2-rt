@@ -1,6 +1,6 @@
 export type SettingInputItemType = "text" | "email" | "password" | "number";
 
-export interface SettingItemGroup extends React.PropsWithChildren<{}> {
+export interface SettingItemGroup extends React.PropsWithChildren {
   title: string;
   description?: string;
 }

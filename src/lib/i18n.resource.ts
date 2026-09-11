@@ -63,6 +63,17 @@ export const I18nTexts = {
     "Framework.card.embla.description": "Pluggable carousel library for React",
     "Framework.card.embla.url": "https://www.embla-carousel.com/",
 
+    "Settings.tabs.search": "Search",
+    "Settings.tabs.general": "General",
+    "Settings.search.description": "Search all settings and review recent activity",
+    "Settings.general.description": "Manage common application preferences",
+    "Settings.search.placeholder": "Search settings...",
+    "Settings.search.history": "Recent searches",
+    "Settings.search.changed": "Recently changed",
+    "Settings.search.clear": "Clear history",
+    "Settings.search.empty": "No matching settings",
+    "Settings.search.noHistory": "No recent activity",
+
     "Settings.groups.examples.title": "Examples",
     "Settings.groups.examples.description":
       "This is an example of setting items",
@@ -170,6 +181,17 @@ export const I18nTexts = {
     "Framework.card.embla.name": "Embla Carousel",
     "Framework.card.embla.description": "React 可插拔轮播图库",
     "Framework.card.embla.url": "https://www.embla-carousel.com/",
+
+    "Settings.tabs.search": "搜索",
+    "Settings.tabs.general": "通用",
+    "Settings.search.description": "搜索所有设置项，查看近期搜索与修改记录",
+    "Settings.general.description": "管理应用的常用配置",
+    "Settings.search.placeholder": "搜索设置项...",
+    "Settings.search.history": "近期搜索",
+    "Settings.search.changed": "最近修改",
+    "Settings.search.clear": "清理记录",
+    "Settings.search.empty": "没有匹配的设置项",
+    "Settings.search.noHistory": "暂无历史记录",
 
     "Settings.groups.examples.title": "示例",
     "Settings.groups.examples.description": "这是设置项的示例",

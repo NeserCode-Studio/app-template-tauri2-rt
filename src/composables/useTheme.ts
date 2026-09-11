@@ -3,38 +3,37 @@ import { useEffect, useState, useCallback } from "react";
 import type { ThemeType, UseThemeFn } from "@/shared";
 
 export const useTheme: UseThemeFn = ({ localStorageKey = "theme" }) => {
-  const localTheme = localStorage.getItem(localStorageKey) as ThemeType;
-  const [themeState, setThemeState] = useState<ThemeType>(
-    localTheme ?? "light"
-  );
+  const [themeState, setThemeState] = useState<ThemeType>(() => {
+    const stored = localStorage.getItem(localStorageKey) as ThemeType | null;
+    if (stored === "light" || stored === "dark") return stored;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  });
 
-  /* Initial Theme & Media Query Listener */
+  /* 同步主题到 DOM：初值与后续每次变化都走这里，保证 state 与 DOM 一致 */
   useEffect(() => {
-    const localTheme = localStorage.getItem(localStorageKey);
-    const prefersDark = window.matchMedia(
-      "(prefers-color-scheme: dark)"
-    ).matches;
-    const initialTheme = localTheme || (prefersDark ? "dark" : "light");
-    document.documentElement.classList.toggle("dark", initialTheme === "dark");
+    document.documentElement.classList.toggle("dark", themeState === "dark");
+  }, [themeState]);
 
+  /* 系统主题变化监听：仅在用户未手动选择过主题时跟随系统 */
+  useEffect(() => {
     const matchMedia = window.matchMedia("(prefers-color-scheme: dark)");
     const onThemeChange = (event: MediaQueryListEvent) => {
-      const isDarkMode = event.matches;
-      if (!localStorage.getItem(localStorageKey)) {
-        document.documentElement.classList.toggle("dark", isDarkMode);
-        setThemeState(isDarkMode ? "dark" : "light");
-      }
+      if (localStorage.getItem(localStorageKey)) return;
+      setThemeState(event.matches ? "dark" : "light");
     };
-
     matchMedia.addEventListener("change", onThemeChange);
     return () => matchMedia.removeEventListener("change", onThemeChange);
   }, [localStorageKey]);
 
-  const setTheme = useCallback((theme: ThemeType) => {
-    document?.querySelector("html")?.classList.toggle("dark");
-    setThemeState(theme);
-    localStorage.setItem(localStorageKey, theme);
-  }, [localStorageKey]);
+  const setTheme = useCallback(
+    (theme: ThemeType) => {
+      setThemeState(theme);
+      localStorage.setItem(localStorageKey, theme);
+    },
+    [localStorageKey]
+  );
 
   return [themeState, setTheme];
 };

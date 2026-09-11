@@ -1,4 +1,4 @@
-import { TitleContext } from "@/App";
+import { TitleContext } from "@/contexts/title";
 import { memo, useContext } from "react";
 
 const TitlebarTitle = memo(function TitlebarTitle() {

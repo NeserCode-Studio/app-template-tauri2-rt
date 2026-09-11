@@ -25,13 +25,15 @@ export function SettingItemGroup({
   children,
 }: SettingItemGroup) {
   return (
-    <div className="setting-item-group">
-      <span className="group-info">
-        <span className="title">{title}</span>
-        <span className="description">{description}</span>
-      </span>
-      <div className="group-main">{children}</div>
-    </div>
+    <section className="flex flex-col gap-5">
+      <div className="flex flex-col gap-0.5">
+        <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
+        {description ? (
+          <p className="text-xs text-muted-foreground">{description}</p>
+        ) : null}
+      </div>
+      <div className="flex flex-col gap-5">{children}</div>
+    </section>
   );
 }
 
@@ -48,10 +50,12 @@ export function SettingInputItem({
   const { t } = useI18n();
 
   return (
-    <form action={onItemSubmit} className="setting-input-item setting-item">
-      {title ? <span className="title">{title}</span> : null}
-      {description ? <span className="description">{description}</span> : null}
-      <span className="main">
+    <form action={onItemSubmit} className="flex flex-col gap-1.5">
+      {title ? <span className="text-sm font-medium">{title}</span> : null}
+      {description ? (
+        <span className="text-xs text-muted-foreground">{description}</span>
+      ) : null}
+      <div className="flex items-center gap-2">
         <Input
           type={type}
           placeholder={
@@ -60,12 +64,12 @@ export function SettingInputItem({
           autoComplete={autoComplete ? "on" : "off"}
           name="input"
           defaultValue={value}
-          className="main"
+          className="flex-1"
         />
-        <Button type="submit">
+        <Button type="submit" size="sm">
           {submit ?? t("Settings.items.input.default.submit")}
         </Button>
-      </span>
+      </div>
     </form>
   );
 }
@@ -84,16 +88,18 @@ export function SettingSelectItem({
   const { t } = useI18n();
 
   return (
-    <form action={onItemSubmit} className="setting-select-item setting-item">
-      {title ? <span className="title">{title}</span> : null}
-      {description ? <span className="description">{description}</span> : null}
-      <span className="main">
+    <form action={onItemSubmit} className="flex flex-col gap-1.5">
+      {title ? <span className="text-sm font-medium">{title}</span> : null}
+      {description ? (
+        <span className="text-xs text-muted-foreground">{description}</span>
+      ) : null}
+      <div className="flex items-center gap-2">
         <Select
           name="select"
           onValueChange={onItemChange}
           defaultValue={value?.value}
         >
-          <SelectTrigger className="trigger">
+          <SelectTrigger className="flex-1">
             <SelectValue
               placeholder={
                 placeholder ?? t("Settings.items.select.default.placeholder")
@@ -113,10 +119,10 @@ export function SettingSelectItem({
             </SelectGroup>
           </SelectContent>
         </Select>
-        <Button type="submit">
+        <Button type="submit" size="sm">
           {submit ?? t("Settings.items.select.default.submit")}
         </Button>
-      </span>
+      </div>
     </form>
   );
 }
@@ -130,18 +136,22 @@ export function SettingOptionalItem({
   description,
 }: SettingOptionalItemProps) {
   return (
-    <form className="setting-optional-item setting-item">
-      {title ? <span className="title">{title}</span> : null}
-      {description ? <span className="description">{description}</span> : null}
-      <span className="main">
+    <div className="flex flex-col gap-1.5">
+      {title ? <span className="text-sm font-medium">{title}</span> : null}
+      {description ? (
+        <span className="text-xs text-muted-foreground">{description}</span>
+      ) : null}
+      <div className="flex items-center gap-2">
         <Checkbox
           onCheckedChange={onItemChange}
           defaultChecked={value}
           id={id}
           name="optional"
         />
-        <Label htmlFor={id}>{label}</Label>
-      </span>
-    </form>
+        <Label htmlFor={id} className="cursor-pointer text-sm font-normal">
+          {label}
+        </Label>
+      </div>
+    </div>
   );
 }

@@ -22,9 +22,6 @@ export interface SuperCommandItem {
   invokeArgs?: Record<string, unknown>;
   /** 前端动作（invoke 不存在时执行） */
   action?: () => SuperCommandResult | Promise<SuperCommandResult>;
-  /** 是否需要确认 */
-  confirm?: boolean;
-  confirmMessage?: string;
 }
 
 /** 注册表 */
@@ -35,8 +32,9 @@ export function createBuiltinCommands(ctx: {
   navigate: (path: string) => void;
   setLang: (lang: string) => void;
   setTheme: (theme: "light" | "dark") => void;
+  openSettings: () => void;
 }): SuperCommandItem[] {
-  const { navigate, setLang, setTheme } = ctx;
+  const { navigate, setLang, setTheme, openSettings } = ctx;
 
   return [
     {
@@ -51,8 +49,8 @@ export function createBuiltinCommands(ctx: {
       id: "navigate.settings",
       keywords: ["设置", "settings", "配置", "preferences"],
       action: () => {
-        navigate("/settings");
-        return { success: true, message: "Navigated to settings" };
+        openSettings();
+        return { success: true, message: "Opened settings dialog" };
       },
     },
     {
@@ -129,6 +127,7 @@ export function useSuperCommand(
     navigate: (path: string) => void;
     setLang: (lang: string) => void;
     setTheme: (theme: "light" | "dark") => void;
+    openSettings: () => void;
   },
   extraCommands: SuperCommandItem[] = []
 ): UseSuperCommandReturn {

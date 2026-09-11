@@ -1,19 +1,12 @@
 import { Tooltip } from "./Tooltip";
 
-import {
-  MinusIcon,
-  XMarkIcon,
-  SunIcon,
-  MoonIcon,
-  PaperClipIcon,
-} from "@heroicons/react/16/solid";
-import { ThemeContext } from "@/App";
+import { Minus, X, Sun, Moon, Paperclip } from "lucide-react";
+import { ThemeContext } from "@/contexts/theme";
 import { Separator } from "../ui/separator";
 import { useContext, useEffect } from "react";
 import { useLocalStorageState } from "ahooks";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
-import type { TitlebarOperationType } from "@/shared";
 import { useI18n } from "@/composables";
 import { WindowUtils } from "@/lib/window.utils";
 
@@ -23,30 +16,19 @@ export function ThemeIcon() {
   const { theme } = useContext(ThemeContext);
 
   if (theme === "dark") {
-    return <SunIcon className="icon" />;
+    return <Sun className="icon" />;
   } else {
-    return <MoonIcon className="icon" />;
+    return <Moon className="icon" />;
   }
 }
 
-async function handleOperation(
-  operation: TitlebarOperationType,
-  setter?: (a: any) => void,
-  trigger?: boolean | string
-) {
+async function handleOperation(operation: "minimize" | "close") {
   switch (operation) {
     case "minimize":
       await currentWindow.minimize();
       break;
     case "close":
       await WindowUtils.windowsQuit();
-      break;
-    case "theme":
-      if (setter) setter(trigger ?? "light");
-      break;
-    case "always-on-top":
-      await currentWindow.setAlwaysOnTop((trigger as boolean) ?? false);
-      if (setter) setter(trigger);
       break;
   }
 }
@@ -73,21 +55,19 @@ export default function TitlebarOperations() {
           <span
             className={[alwaysOnTop ? "pinned" : "", "operation"].join(" ")}
             onMouseUp={() => {
-              handleOperation("always-on-top", setAlwaysOnTop, !alwaysOnTop);
+              const next = !alwaysOnTop;
+              setAlwaysOnTop(next);
+              void currentWindow.setAlwaysOnTop(next);
             }}
           >
-            <PaperClipIcon className="icon" />
+            <Paperclip className="icon" />
           </span>
         </Tooltip>
         <Tooltip content={t("Titlebar.operations.theme.tooltip")}>
           <span
             className="operation"
             onMouseUp={() => {
-              handleOperation(
-                "theme",
-                setThemeMode,
-                theme === "dark" ? "light" : "dark"
-              );
+              setThemeMode(theme === "dark" ? "light" : "dark");
             }}
           >
             <ThemeIcon />
@@ -100,7 +80,7 @@ export default function TitlebarOperations() {
               handleOperation("minimize");
             }}
           >
-            <MinusIcon className="icon" />
+            <Minus className="icon" />
           </span>
         </Tooltip>
         <Tooltip content={t("Titlebar.operations.close.tooltip")}>
@@ -110,7 +90,7 @@ export default function TitlebarOperations() {
               handleOperation("close");
             }}
           >
-            <XMarkIcon className="icon" />
+            <X className="icon" />
           </span>
         </Tooltip>
       </div>
