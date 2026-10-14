@@ -1,4 +1,7 @@
 import type { LifecycleHook, LifecycleStage, LifecycleContext } from "./types";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Lifecycle");
 
 /**
  * 生命周期总线（模块级单例）。
@@ -20,6 +23,13 @@ class LifecycleBus {
     const list = [...(this.hooks.get(hook.stage) ?? []), hook];
     list.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
     this.hooks.set(hook.stage, list);
+
+    log.debug("register", {
+      stage: hook.stage,
+      id: hook.id,
+      once: !!hook.once,
+      priority: hook.priority ?? 0,
+    });
     return () => this.unregister(hook.id);
   }
 
@@ -27,8 +37,11 @@ class LifecycleBus {
   unregister(id: string): void {
     for (const [stage, list] of this.hooks) {
       const next = list.filter((h) => h.id !== id);
+      if (next.length === list.length) continue;
       if (next.length === 0) this.hooks.delete(stage);
       else this.hooks.set(stage, next);
+      log.debug("unregister", id);
+      return;
     }
   }
 
@@ -37,13 +50,18 @@ class LifecycleBus {
     stage: LifecycleStage,
     ctx?: Partial<LifecycleContext>
   ): Promise<void> {
+    // 日志打在开头：async 函数体在第一个 await 前是同步执行的，
+    // 打在末尾会让人误以为 fire 是同步完成的
+    const list = [...(this.hooks.get(stage) ?? [])];
+    log.info("fire start", stage, `(${list.length} hooks)`);
+
     const context: LifecycleContext = { stage, ...ctx };
     // 快照遍历：钩子执行期间 register/unregister 不影响本次遍历
-    const list = [...(this.hooks.get(stage) ?? [])];
     for (const hook of list) {
       await hook.run(context);
       if (hook.once) this.unregister(hook.id);
     }
+    log.info("fire done", stage);
   }
 }
 

@@ -133,6 +133,17 @@ export default function CommandMenu() {
     return () => document.removeEventListener("keydown", openShortcut);
   }, [openShortcut]);
 
+  /* 标题栏「编辑 > 查找」通过自定义事件打开命令面板 */
+  React.useEffect(() => {
+    const handler = () => {
+      setOpen(true);
+      setCmdkSearch("");
+    };
+    window.addEventListener("app:open-command-palette", handler);
+    return () =>
+      window.removeEventListener("app:open-command-palette", handler);
+  }, []);
+
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
       <CommandInput
@@ -151,7 +162,7 @@ export default function CommandMenu() {
                 value={cmdkSearch}
                 onSelect={handleSelect}
               >
-                <Sparkles className="mr-2 h-4 w-4" />
+                <Sparkles className="icon-md mr-2" />
                 <span>{SUPER_PREFIX}</span>
               </CommandItem>
             </CommandGroup>
@@ -168,7 +179,7 @@ export default function CommandMenu() {
                   onSelect={handleSelect}
                   keywords={item.keywords}
                 >
-                  <item.icon className="mr-2 h-4 w-4" />
+                  <item.icon className="icon-md mr-2" />
                   <span className="flex-1">{item.label}</span>
                   {item.shortcut && (
                     <CommandShortcut>{item.shortcut}</CommandShortcut>

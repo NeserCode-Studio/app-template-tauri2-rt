@@ -18,6 +18,32 @@ fn open_devtools(app: tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// 左键点击托盘图标：显隐主窗口。
+///
+/// 注意：最小化的窗口 `is_visible()` 仍返回 true，只看可见性会导致
+/// 「最小化 → 点托盘 → 仍然最小化」的死循环。必须同时判断最小化状态：
+/// - 可见且未最小化 → 隐藏（相当于收起到托盘）
+/// - 不可见 或 已最小化 → 取消最小化 + 显示 + 聚焦
+fn toggle_main_window(app: &tauri::AppHandle) {
+    let Some(window) = app.get_webview_window("main") else {
+        return;
+    };
+
+    let is_visible = window.is_visible().unwrap_or(false);
+    let is_minimized = window.is_minimized().unwrap_or(false);
+
+    if is_visible && !is_minimized {
+        let _ = window.hide();
+    } else {
+        // 先恢复再显示，否则窗口会停留在任务栏最小化态
+        if is_minimized {
+            let _ = window.unminimize();
+        }
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -57,15 +83,7 @@ pub fn run() {
                             }));
                         }
                     } else {
-                        if let Some(window) = tray.app_handle().get_webview_window("main") {
-                            let is_visible = window.is_visible().unwrap_or(true);
-                            if is_visible {
-                                let _ = window.hide();
-                            } else {
-                                let _ = window.show();
-                                let _ = window.set_focus();
-                            }
-                        }
+                        toggle_main_window(tray.app_handle());
                     }
                 })
                 .build(app)?;

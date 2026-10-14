@@ -4,6 +4,9 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { useState, useCallback } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("SuperCommand");
 
 /** 命令执行结果 */
 export interface SuperCommandResult {
@@ -159,21 +162,30 @@ export function useSuperCommand(
   const execute = useCallback(
     async (id: string): Promise<SuperCommandResult> => {
       const cmd = registry.find((c) => c.id === id);
-      if (!cmd) return { success: false, message: `Command not found: ${id}` };
+      if (!cmd) {
+        log.warn("execute: command not found", id);
+        return { success: false, message: `Command not found: ${id}` };
+      }
 
       try {
         // 后端优先
         if (cmd.invoke) {
+          log.info("execute (invoke)", id, "→", cmd.invoke);
           await invoke(cmd.invoke, cmd.invokeArgs ?? {});
+          log.info("execute done", id);
           return { success: true };
         }
         // 前端 fallback
         if (cmd.action) {
+          log.info("execute (action)", id);
           const result = await cmd.action();
+          log.info("execute done", id, result.success ? "ok" : "failed");
           return result;
         }
+        log.warn("execute: no handler", id);
         return { success: false, message: "No handler for this command" };
       } catch (err) {
+        log.error("execute failed", id, err);
         return { success: false, message: String(err) };
       }
     },

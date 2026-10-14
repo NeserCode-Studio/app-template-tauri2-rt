@@ -19,20 +19,53 @@ import type {
   SettingItemGroup,
 } from "@/shared";
 
+/** 统一的设置项外壳：左侧标题/描述，右侧控件，悬停高亮 */
+function SettingItemShell({
+  title,
+  description,
+  children,
+  className = "",
+}: {
+  title?: string;
+  description?: string;
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`group stack-3 rounded-xl border border-border/60 bg-card p-4 transition-colors hover:border-border hover:bg-accent/30 sm:flex-row sm:items-center sm:justify-between sm:gap-6 ${className}`}
+    >
+      <div className="flex min-w-0 flex-col gap-1">
+        {title ? (
+          <span className="text-sm leading-tight font-medium">{title}</span>
+        ) : null}
+        {description ? (
+          <span className="text-xs leading-relaxed text-muted-foreground">
+            {description}
+          </span>
+        ) : null}
+      </div>
+      <div className="flex shrink-0 items-center gap-2 sm:w-[22rem] sm:justify-end">
+        {children}
+      </div>
+    </div>
+  );
+}
+
 export function SettingItemGroup({
   title,
   description,
   children,
 }: SettingItemGroup) {
   return (
-    <section className="flex flex-col gap-5">
-      <div className="flex flex-col gap-0.5">
+    <section className="stack-3">
+      <div className="stack-1">
         <h3 className="text-sm font-semibold tracking-tight">{title}</h3>
         {description ? (
-          <p className="text-xs text-muted-foreground">{description}</p>
+          <p className="text-muted-xs">{description}</p>
         ) : null}
       </div>
-      <div className="flex flex-col gap-5">{children}</div>
+      <div className="stack-3">{children}</div>
     </section>
   );
 }
@@ -50,12 +83,8 @@ export function SettingInputItem({
   const { t } = useI18n();
 
   return (
-    <form action={onItemSubmit} className="flex flex-col gap-1.5">
-      {title ? <span className="text-sm font-medium">{title}</span> : null}
-      {description ? (
-        <span className="text-xs text-muted-foreground">{description}</span>
-      ) : null}
-      <div className="flex items-center gap-2">
+    <form action={onItemSubmit}>
+      <SettingItemShell title={title} description={description}>
         <Input
           type={type}
           placeholder={
@@ -69,7 +98,7 @@ export function SettingInputItem({
         <Button type="submit" size="sm">
           {submit ?? t("Settings.items.input.default.submit")}
         </Button>
-      </div>
+      </SettingItemShell>
     </form>
   );
 }
@@ -88,12 +117,8 @@ export function SettingSelectItem({
   const { t } = useI18n();
 
   return (
-    <form action={onItemSubmit} className="flex flex-col gap-1.5">
-      {title ? <span className="text-sm font-medium">{title}</span> : null}
-      {description ? (
-        <span className="text-xs text-muted-foreground">{description}</span>
-      ) : null}
-      <div className="flex items-center gap-2">
+    <form action={onItemSubmit}>
+      <SettingItemShell title={title} description={description}>
         <Select
           name="select"
           onValueChange={onItemChange}
@@ -122,7 +147,7 @@ export function SettingSelectItem({
         <Button type="submit" size="sm">
           {submit ?? t("Settings.items.select.default.submit")}
         </Button>
-      </div>
+      </SettingItemShell>
     </form>
   );
 }
@@ -136,22 +161,16 @@ export function SettingOptionalItem({
   description,
 }: SettingOptionalItemProps) {
   return (
-    <div className="flex flex-col gap-1.5">
-      {title ? <span className="text-sm font-medium">{title}</span> : null}
-      {description ? (
-        <span className="text-xs text-muted-foreground">{description}</span>
-      ) : null}
-      <div className="flex items-center gap-2">
-        <Checkbox
-          onCheckedChange={onItemChange}
-          defaultChecked={value}
-          id={id}
-          name="optional"
-        />
-        <Label htmlFor={id} className="cursor-pointer text-sm font-normal">
-          {label}
-        </Label>
-      </div>
-    </div>
+    <SettingItemShell title={title} description={description}>
+      <Checkbox
+        onCheckedChange={onItemChange}
+        defaultChecked={value}
+        id={id}
+        name="optional"
+      />
+      <Label htmlFor={id} className="cursor-pointer text-sm font-normal">
+        {label}
+      </Label>
+    </SettingItemShell>
   );
 }

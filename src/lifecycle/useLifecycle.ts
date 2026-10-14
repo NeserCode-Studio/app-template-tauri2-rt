@@ -8,8 +8,8 @@ import { lifecycle } from "./bus";
  * 组件挂载时注册、卸载时自动移除（register 返回的卸载函数作为 effect 清理）。
  * `run` 依赖的响应式值变化时，通过 `deps` 触发重新注册。
  *
- * 示例：组件想在应用退出前保存状态
- *   useLifecycle("before-quit", () => saveState(), [saveState]);
+ * 示例：组件想在应用就绪时上报一次统计
+ *   useLifecycle("ready", () => report(), [report]);
  */
 export function useLifecycle(
   stage: LifecycleStage,

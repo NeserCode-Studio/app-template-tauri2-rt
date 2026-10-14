@@ -1,14 +1,25 @@
 import { Tooltip } from "./Tooltip";
 
-import { Minus, X, Sun, Moon, Paperclip } from "lucide-react";
+import {
+  Minus,
+  X,
+  Sun,
+  Moon,
+  Paperclip,
+  Square,
+  Copy,
+} from "lucide-react";
 import { ThemeContext } from "@/contexts/theme";
 import { Separator } from "../ui/separator";
-import { useContext, useEffect } from "react";
+import { useContext, useEffect, useState } from "react";
 import { useLocalStorageState } from "ahooks";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 import { useI18n } from "@/composables";
 import { WindowUtils } from "@/lib/window.utils";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Titlebar");
 
 const currentWindow = getCurrentWindow();
 
@@ -16,10 +27,19 @@ export function ThemeIcon() {
   const { theme } = useContext(ThemeContext);
 
   if (theme === "dark") {
-    return <Sun className="icon" />;
+    return <Sun className="titlebar-op-icon" />;
   } else {
-    return <Moon className="icon" />;
+    return <Moon className="titlebar-op-icon" />;
   }
+}
+
+/** 最大化状态变化时的图标 */
+export function MaximizeIcon({ maximized }: { maximized: boolean }) {
+  return maximized ? (
+    <Copy className="titlebar-op-icon" />
+  ) : (
+    <Square className="titlebar-op-icon" />
+  );
 }
 
 async function handleOperation(operation: "minimize" | "close") {
@@ -33,6 +53,19 @@ async function handleOperation(operation: "minimize" | "close") {
   }
 }
 
+/** 切换最大化；返回切换后的状态 */
+async function toggleMaximize(): Promise<boolean> {
+  const maximized = await currentWindow.isMaximized().catch(() => false);
+  if (maximized) {
+    await currentWindow.unmaximize();
+  } else {
+    await currentWindow.maximize();
+  }
+  const next = await currentWindow.isMaximized().catch(() => false);
+  log.debug("toggleMaximize ->", next ? "maximized" : "restored");
+  return next;
+}
+
 export default function TitlebarOperations() {
   const { t } = useI18n();
   const { theme, setThemeMode } = useContext(ThemeContext);
@@ -42,30 +75,54 @@ export default function TitlebarOperations() {
       defaultValue: false,
     }
   );
+  const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
     currentWindow.setAlwaysOnTop(alwaysOnTop ?? false);
   }, [alwaysOnTop]);
 
+  /* 同步最大化状态：覆盖双击标题栏、系统快捷键、外部 resize 等场景 */
+  useEffect(() => {
+    let cancelled = false;
+
+    const sync = async () => {
+      const value = await currentWindow.isMaximized().catch(() => false);
+      if (!cancelled) setMaximized(value);
+    };
+
+    void sync();
+    const unlisten = currentWindow.onResized(() => {
+      void sync();
+    });
+
+    return () => {
+      cancelled = true;
+      unlisten.then((fn) => fn());
+    };
+  }, []);
+
   return (
     <>
-      <div className="title-bar-operations">
-        <Separator orientation="vertical" className="separator" />
+      <div className="inline-flex h-full w-fit flex-row items-center justify-center">
+        <Separator
+          orientation="vertical"
+          className="mx-0.5 h-1/2 rounded bg-neutral-300 transition-colors duration-100 ease-in-out dark:bg-neutral-700"
+        />
         <Tooltip content={t("Titlebar.operations.always-on-top.tooltip")}>
           <span
-            className={[alwaysOnTop ? "pinned" : "", "operation"].join(" ")}
+            className={alwaysOnTop ? "titlebar-op is-pinned" : "titlebar-op"}
             onMouseUp={() => {
               const next = !alwaysOnTop;
               setAlwaysOnTop(next);
               void currentWindow.setAlwaysOnTop(next);
             }}
           >
-            <Paperclip className="icon" />
+            <Paperclip className="titlebar-op-icon" />
           </span>
         </Tooltip>
         <Tooltip content={t("Titlebar.operations.theme.tooltip")}>
           <span
-            className="operation"
+            className="titlebar-op"
             onMouseUp={() => {
               setThemeMode(theme === "dark" ? "light" : "dark");
             }}
@@ -75,22 +132,38 @@ export default function TitlebarOperations() {
         </Tooltip>
         <Tooltip content={t("Titlebar.operations.minimize.tooltip")}>
           <span
-            className="operation"
+            className="titlebar-op"
             onMouseUp={() => {
               handleOperation("minimize");
             }}
           >
-            <Minus className="icon" />
+            <Minus className="titlebar-op-icon" />
+          </span>
+        </Tooltip>
+        <Tooltip
+          content={t(
+            maximized
+              ? "Titlebar.operations.restore.tooltip"
+              : "Titlebar.operations.maximize.tooltip"
+          )}
+        >
+          <span
+            className="titlebar-op"
+            onMouseUp={() => {
+              void toggleMaximize().then(setMaximized);
+            }}
+          >
+            <MaximizeIcon maximized={maximized} />
           </span>
         </Tooltip>
         <Tooltip content={t("Titlebar.operations.close.tooltip")}>
           <span
-            className="operation"
+            className="titlebar-op"
             onMouseUp={() => {
               handleOperation("close");
             }}
           >
-            <X className="icon" />
+            <X className="titlebar-op-icon" />
           </span>
         </Tooltip>
       </div>

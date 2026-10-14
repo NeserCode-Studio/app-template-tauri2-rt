@@ -5,7 +5,7 @@ export default function Home() {
 
   return (
     <div className="view-home">
-      <h1 className="title">{t("Home.title")}</h1>
+      <h1 className="view-title">{t("Home.title")}</h1>
     </div>
   );
 }

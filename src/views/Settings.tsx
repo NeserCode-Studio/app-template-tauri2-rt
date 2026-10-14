@@ -10,7 +10,15 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Clock, History, Trash2 } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  History,
+  Search,
+  Settings2,
+  Trash2,
+} from "lucide-react";
 
 import type { SettingSelectItemItem } from "@/shared";
 
@@ -165,22 +173,24 @@ export default function Settings() {
   return (
     <div className="view-settings">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="w-full justify-start">
-          <TabsTrigger value="search" className="flex-none">
+        <TabsList className="w-full justify-start gap-1 rounded-xl bg-muted/50 p-1">
+          <TabsTrigger value="search" className="flex-none gap-1.5 rounded-lg">
+            <Search className="icon-md" />
             {t("Settings.tabs.search")}
           </TabsTrigger>
-          <TabsTrigger value="general" className="flex-none">
+          <TabsTrigger value="general" className="flex-none gap-1.5 rounded-lg">
+            <Settings2 className="icon-md" />
             {t("Settings.tabs.general")}
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="search">
-          <div className="flex flex-col gap-4">
-            <p className="text-sm text-muted-foreground">
+        <TabsContent value="search" className="mt-5">
+          <div className="stack-5">
+            <p className="text-muted-sm">
               {t("Settings.search.description")}
             </p>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 icon-md -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -188,12 +198,12 @@ export default function Settings() {
                   if (e.key === "Enter") recordSearch(query);
                 }}
                 placeholder={t("Settings.search.placeholder")}
-                className="pl-8"
+                className="h-10 rounded-lg bg-muted/40 pl-9"
               />
             </div>
 
             {query.trim() ? (
-              <div className="flex flex-col gap-0.5">
+              <div className="stack-1">
                 {results.length ? (
                   results.map((r) => (
                     <button
@@ -203,25 +213,27 @@ export default function Settings() {
                         recordSearch(query);
                         jumpTo(r.group);
                       }}
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                      className="group flex items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-left text-sm transition-colors hover:border-border hover:bg-accent/50 hover:text-accent-foreground"
                     >
-                      {t(r.labelKey)}
+                      <Search className="icon-action" />
+                      <span className="truncate">{t(r.labelKey)}</span>
+                      <ChevronRight className="ml-auto icon-sm shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
                     </button>
                   ))
                 ) : (
-                  <p className="px-2 py-1.5 text-sm text-muted-foreground">
+                  <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-muted-sm">
                     {t("Settings.search.empty")}
-                  </p>
+                  </div>
                 )}
               </div>
             ) : (
-              <div className="flex flex-col gap-4">
+              <div className="stack-5">
                 {history.length || changed.length ? (
                   <>
                     {history.length ? (
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                          <Clock className="h-3.5 w-3.5" />
+                      <div className="stack-2">
+                        <div className="row-label">
+                          <Clock className="icon-sm" />
                           {t("Settings.search.history")}
                         </div>
                         <div className="flex flex-wrap gap-1.5">
@@ -230,7 +242,7 @@ export default function Settings() {
                               key={s}
                               type="button"
                               onClick={() => setQuery(s)}
-                              className="rounded-md bg-muted px-2 py-1 text-xs transition-colors hover:bg-accent"
+                              className="rounded-full border border-border/60 bg-muted/60 px-2.5 py-1 text-xs transition-colors hover:border-primary/40 hover:bg-accent hover:text-accent-foreground"
                             >
                               {s}
                             </button>
@@ -240,20 +252,21 @@ export default function Settings() {
                     ) : null}
 
                     {changed.length ? (
-                      <div className="flex flex-col gap-2">
-                        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-                          <History className="h-3.5 w-3.5" />
+                      <div className="stack-2">
+                        <div className="row-label">
+                          <History className="icon-sm" />
                           {t("Settings.search.changed")}
                         </div>
-                        <div className="flex flex-col gap-0.5">
+                        <div className="stack-1">
                           {changed.map((r) => (
                             <button
                               key={r.id}
                               type="button"
                               onClick={() => jumpTo(r.group)}
-                              className="flex items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                              className="group flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50 hover:text-accent-foreground"
                             >
-                              {r.label}
+                              <CheckCircle2 className="icon-action" />
+                              <span className="truncate">{r.label}</span>
                             </button>
                           ))}
                         </div>
@@ -267,23 +280,26 @@ export default function Settings() {
                       onClick={clearHistory}
                       className="self-start text-muted-foreground"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      <Trash2 className="icon-md" />
                       {t("Settings.search.clear")}
                     </Button>
                   </>
                 ) : (
-                  <p className="px-2 py-4 text-sm text-muted-foreground">
-                    {t("Settings.search.noHistory")}
-                  </p>
+                  <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-3 py-10 text-center">
+                    <Search className="h-5 w-5 text-muted-foreground/60" />
+                    <p className="text-muted-sm">
+                      {t("Settings.search.noHistory")}
+                    </p>
+                  </div>
                 )}
               </div>
             )}
           </div>
         </TabsContent>
 
-        <TabsContent value="general">
-          <div className="flex flex-col gap-5">
-            <p className="text-sm text-muted-foreground">
+        <TabsContent value="general" className="mt-5">
+          <div className="flex flex-col gap-4">
+            <p className="text-muted-sm">
               {t("Settings.general.description")}
             </p>
             <SettingInputItem

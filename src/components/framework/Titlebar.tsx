@@ -4,6 +4,7 @@ import {
   MenubarItem,
   MenubarMenu,
   MenubarSeparator,
+  MenubarShortcut,
   MenubarTrigger,
 } from "@/components/ui/menubar";
 
@@ -16,6 +17,7 @@ import { NavigatorContext } from "@/contexts/navigator";
 import TitlebarTitle from "./TitlebarTitle";
 import { useI18n } from "@/composables";
 import { useSettingsDialog } from "@/contexts/settings";
+import * as editorActions from "@/lib/editor.actions";
 
 export default function Titlebar() {
   /* I18n */
@@ -24,7 +26,7 @@ export default function Titlebar() {
   const { theme, setThemeMode } = useContext(ThemeContext);
   /* Navigator */
   const { navigator } = useContext(NavigatorContext);
-  const { openSettings } = useSettingsDialog();
+  const { openSettings, openAbout } = useSettingsDialog();
 
   function toggleTheme() {
     if (theme === "dark") {
@@ -35,15 +37,17 @@ export default function Titlebar() {
   }
 
   return (
-    <div className="title-bar-main" data-tauri-drag-region>
-      <Menubar className="menu-bar-main">
+    <div
+      className="fixed top-0 z-50 flex h-8 w-screen flex-row items-center justify-between border-b border-neutral-400 bg-white pl-2 shadow-sm transition-colors duration-100 ease-in-out dark:border-neutral-600 dark:bg-black"
+      data-tauri-drag-region
+    >
+      <Menubar className="h-6 w-fit gap-1 rounded-none border-0 bg-transparent p-0 text-neutral-600 shadow-none transition-colors duration-100 ease-in-out dark:text-neutral-200">
         <MenubarMenu>
-          <MenubarTrigger className="menu-bar-menu">
+          <MenubarTrigger className="h-full w-fit px-2 text-sm">
             {t("Titlebar.menu.turnto")}
           </MenubarTrigger>
-          <MenubarContent className="menu-bar-content">
+          <MenubarContent className="w-fit transition-all duration-100 ease-in-out">
             <MenubarItem
-              className="menu-bar-item"
               onSelect={() => {
                 navigator("/");
               }}
@@ -51,7 +55,6 @@ export default function Titlebar() {
               {t("Titlebar.menu.turnto.home")}
             </MenubarItem>
             <MenubarItem
-              className="menu-bar-item"
               onSelect={() => {
                 openSettings();
               }}
@@ -59,35 +62,71 @@ export default function Titlebar() {
               {t("Titlebar.menu.turnto.settings")}
             </MenubarItem>
             <MenubarSeparator />
-            <MenubarItem className="menu-bar-item" onSelect={toggleTheme}>
-              <span className="text">{t("Titlebar.menu.turnto.theme")}</span>
+            <MenubarItem onSelect={toggleTheme}>
+              {t("Titlebar.menu.turnto.theme")}
               <ThemeIcon />
             </MenubarItem>
-            <MenubarItem className="menu-bar-item">
-              {t("Titlebar.menu.turnto.exit")}
+            <MenubarItem>{t("Titlebar.menu.turnto.exit")}</MenubarItem>
+          </MenubarContent>
+        </MenubarMenu>
+
+        <MenubarMenu>
+          <MenubarTrigger className="h-full w-fit px-2 text-sm">
+            {t("Titlebar.menu.edit")}
+          </MenubarTrigger>
+          <MenubarContent className="w-fit transition-all duration-100 ease-in-out">
+            <MenubarItem onSelect={editorActions.undo}>
+              {t("Titlebar.menu.edit.undo")}
+              <MenubarShortcut>Ctrl+Z</MenubarShortcut>
+            </MenubarItem>
+            <MenubarItem onSelect={editorActions.redo}>
+              {t("Titlebar.menu.edit.redo")}
+              <MenubarShortcut>Ctrl+Shift+Z</MenubarShortcut>
+            </MenubarItem>
+
+            <MenubarSeparator />
+
+            <MenubarItem onSelect={editorActions.cut}>
+              {t("Titlebar.menu.edit.cut")}
+              <MenubarShortcut>Ctrl+X</MenubarShortcut>
+            </MenubarItem>
+            <MenubarItem onSelect={editorActions.copy}>
+              {t("Titlebar.menu.edit.copy")}
+              <MenubarShortcut>Ctrl+C</MenubarShortcut>
+            </MenubarItem>
+            <MenubarItem onSelect={() => void editorActions.paste()}>
+              {t("Titlebar.menu.edit.paste")}
+              <MenubarShortcut>Ctrl+V</MenubarShortcut>
+            </MenubarItem>
+
+            <MenubarSeparator />
+
+            <MenubarItem onSelect={editorActions.selectAll}>
+              {t("Titlebar.menu.edit.selectAll")}
+              <MenubarShortcut>Ctrl+A</MenubarShortcut>
+            </MenubarItem>
+            <MenubarItem onSelect={editorActions.find}>
+              {t("Titlebar.menu.edit.find")}
+              <MenubarShortcut>Ctrl+K</MenubarShortcut>
             </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
+
         <MenubarMenu>
-          <MenubarTrigger className="menu-bar-menu">
-            {t("Titlebar.menu.about")}
+          <MenubarTrigger className="h-full w-fit px-2 text-sm">
+            {t("Titlebar.menu.help")}
           </MenubarTrigger>
-          <MenubarContent className="menu-bar-content">
+          <MenubarContent className="w-fit transition-all duration-100 ease-in-out">
             <MenubarItem
-              className="menu-bar-item"
-              onSelect={() => {
-                navigator("/software");
-              }}
-            >
-              {t("Titlebar.menu.about.software")}
-            </MenubarItem>
-            <MenubarItem
-              className="menu-bar-item"
               onSelect={() => {
                 navigator("/framework");
               }}
             >
               {t("Titlebar.menu.about.framework")}
+            </MenubarItem>
+            <MenubarSeparator />
+            <MenubarItem onSelect={openAbout}>
+              {t("Titlebar.menu.about")}
             </MenubarItem>
           </MenubarContent>
         </MenubarMenu>

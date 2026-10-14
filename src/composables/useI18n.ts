@@ -1,6 +1,9 @@
 import { useState, useContext, useCallback } from "react";
 import { I18nTexts } from "../lib/i18n.resource";
 import { I18nContext } from "@/contexts/i18n";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("I18n");
 
 // 自定义 Hook：封装语言逻辑
 export function useI18nLogic() {
@@ -12,13 +15,20 @@ export function useI18nLogic() {
     (meaning: string) => {
       const texts =
         I18nTexts[lang as keyof typeof I18nTexts] || I18nTexts["zh-CN"];
-      return texts[meaning as keyof typeof texts] || meaning;
+      const hit = texts[meaning as keyof typeof texts];
+      // 未命中时回退返回 key 本身；这属于开发期问题，需要留痕
+      if (!hit) log.warn("missing i18n key", meaning, `lang=${lang}`);
+      return hit || meaning;
     },
     [lang]
   );
 
   const setLanguage = useCallback((newLang: string) => {
-    if (!Object.keys(I18nTexts).includes(newLang)) return;
+    if (!Object.keys(I18nTexts).includes(newLang)) {
+      log.warn("setLanguage: unsupported language", newLang);
+      return;
+    }
+    log.info("language changed", newLang);
     setLang(newLang);
     localStorage.setItem("app-language", newLang);
   }, []);

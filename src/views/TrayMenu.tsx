@@ -5,13 +5,12 @@ import { useI18n } from "@/composables";
 import { ThemeContext } from "@/contexts/theme";
 import { WindowUtils } from "@/lib/window.utils";
 
-import { Monitor, EyeOff, Settings, LogOut } from "lucide-react";
+import { Info, Settings, LogOut } from "lucide-react";
 
-type MenuAction = "show" | "hide" | "settings" | "quit";
+type MenuAction = "about" | "settings" | "quit";
 
-const menuItems: { action: MenuAction; icon: typeof Monitor; labelKey: string }[] = [
-  { action: "show", icon: Monitor, labelKey: "Tray.menu.showWindow" },
-  { action: "hide", icon: EyeOff, labelKey: "Tray.menu.hideWindow" },
+const menuItems: { action: MenuAction; icon: typeof Info; labelKey: string }[] = [
+  { action: "about", icon: Info, labelKey: "Tray.menu.about" },
   { action: "settings", icon: Settings, labelKey: "Tray.menu.settings" },
   { action: "quit", icon: LogOut, labelKey: "Tray.menu.quit" },
 ];
@@ -46,26 +45,16 @@ export default function TrayMenu() {
   const handleAction = useCallback(async (action: MenuAction) => {
     const win = trayWin.current;
     switch (action) {
-      case "show": {
+      case "about": {
         const mainWin = await WindowUtils.getWindowByLabel("main");
-        if (mainWin) {
-          await mainWin.show();
-          await mainWin.setFocus();
-        }
-        break;
-      }
-      case "hide": {
-        const mainWin = await WindowUtils.getWindowByLabel("main");
-        if (mainWin) await mainWin.hide();
+        if (mainWin) await mainWin.emit("navigate", "/about");
+        await WindowUtils.showAndFocus("main");
         break;
       }
       case "settings": {
         const mainWin = await WindowUtils.getWindowByLabel("main");
-        if (mainWin) {
-          await mainWin.show();
-          await mainWin.setFocus();
-          await mainWin.emit("navigate", "/settings");
-        }
+        if (mainWin) await mainWin.emit("navigate", "/settings");
+        await WindowUtils.showAndFocus("main");
         break;
       }
       case "quit": {
@@ -101,7 +90,7 @@ export default function TrayMenu() {
                 <Icon className="w-4 h-4 shrink-0" />
                 <span>{t(item.labelKey)}</span>
               </button>
-              {index === 1 && !isLast && (
+              {index === 0 && !isLast && (
                 <div
                   className={`mx-3 my-1 h-px ${
                     theme === "dark" ? "bg-[#333333]" : "bg-[#e0e0e0]"
