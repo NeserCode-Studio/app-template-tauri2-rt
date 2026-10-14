@@ -3,7 +3,10 @@
 // ============================================================
 
 import { invoke } from "@tauri-apps/api/core";
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback } from "react";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("SuperCommand");
 
 /** 命令执行结果 */
 export interface SuperCommandResult {
@@ -22,9 +25,6 @@ export interface SuperCommandItem {
   invokeArgs?: Record<string, unknown>;
   /** 前端动作（invoke 不存在时执行） */
   action?: () => SuperCommandResult | Promise<SuperCommandResult>;
-  /** 是否需要确认 */
-  confirm?: boolean;
-  confirmMessage?: string;
 }
 
 /** 注册表 */
@@ -35,8 +35,9 @@ export function createBuiltinCommands(ctx: {
   navigate: (path: string) => void;
   setLang: (lang: string) => void;
   setTheme: (theme: "light" | "dark") => void;
+  openSettings: () => void;
 }): SuperCommandItem[] {
-  const { navigate, setLang, setTheme } = ctx;
+  const { navigate, setLang, setTheme, openSettings } = ctx;
 
   return [
     {
@@ -51,8 +52,8 @@ export function createBuiltinCommands(ctx: {
       id: "navigate.settings",
       keywords: ["设置", "settings", "配置", "preferences"],
       action: () => {
-        navigate("/settings");
-        return { success: true, message: "Navigated to settings" };
+        openSettings();
+        return { success: true, message: "Opened settings dialog" };
       },
     },
     {
@@ -129,6 +130,7 @@ export function useSuperCommand(
     navigate: (path: string) => void;
     setLang: (lang: string) => void;
     setTheme: (theme: "light" | "dark") => void;
+    openSettings: () => void;
   },
   extraCommands: SuperCommandItem[] = []
 ): UseSuperCommandReturn {
@@ -160,29 +162,35 @@ export function useSuperCommand(
   const execute = useCallback(
     async (id: string): Promise<SuperCommandResult> => {
       const cmd = registry.find((c) => c.id === id);
-      if (!cmd) return { success: false, message: `Command not found: ${id}` };
+      if (!cmd) {
+        log.warn("execute: command not found", id);
+        return { success: false, message: `Command not found: ${id}` };
+      }
 
       try {
         // 后端优先
         if (cmd.invoke) {
+          log.info("execute (invoke)", id, "→", cmd.invoke);
           await invoke(cmd.invoke, cmd.invokeArgs ?? {});
+          log.info("execute done", id);
           return { success: true };
         }
         // 前端 fallback
         if (cmd.action) {
+          log.info("execute (action)", id);
           const result = await cmd.action();
+          log.info("execute done", id, result.success ? "ok" : "failed");
           return result;
         }
+        log.warn("execute: no handler", id);
         return { success: false, message: "No handler for this command" };
       } catch (err) {
+        log.error("execute failed", id, err);
         return { success: false, message: String(err) };
       }
     },
     [registry]
   );
 
-  return useMemo(
-    () => ({ commands: registry, register, search, execute }),
-    [registry, register, search, execute]
-  );
+  return { commands: registry, register, search, execute };
 }

@@ -4,8 +4,8 @@ export default function Software() {
   const { t } = useI18n();
 
   return (
-    <div className="view-software">
-      <h1 className="title">{t("Software.title")}</h1>
+    <div className="view">
+      <h1 className="view-title">{t("Software.title")}</h1>
     </div>
   );
 }

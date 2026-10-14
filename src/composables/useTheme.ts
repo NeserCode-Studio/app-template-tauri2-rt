@@ -1,52 +1,46 @@
-import { useEffect, useState } from "react";
-import { nextTick } from ".";
+import { useEffect, useState, useCallback } from "react";
 
 import type { ThemeType, UseThemeFn } from "@/shared";
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("Theme");
 
 export const useTheme: UseThemeFn = ({ localStorageKey = "theme" }) => {
-  const localTheme = localStorage.getItem(localStorageKey) as ThemeType;
-  const [themeState, setThemeState] = useState<ThemeType>(
-    localTheme ?? "light"
-  );
-
-  /* Initial Theme */
-  useEffect(() => {
-    const localTheme = localStorage.getItem(localStorageKey);
-    const prefersDark = window.matchMedia(
-      "(prefers-color-scheme: dark)"
-    ).matches;
-    const theme = localTheme || (prefersDark ? "dark" : "light");
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, []);
-
-  /* Queue Update */
-  nextTick(() => {
-    const html = document.querySelector("html");
-    const matchMedia = window.matchMedia("(prefers-color-scheme: dark)");
-
-    /* Listener */
-    const onThemeChange = (event: MediaQueryListEvent) => {
-      const isDarkMode = event.matches;
-      if (!localTheme) {
-        html?.classList.toggle("dark", isDarkMode);
-        setThemeState(isDarkMode ? "dark" : "light");
-      }
-    };
-
-    matchMedia.addEventListener("change", onThemeChange);
-    return () => {
-      matchMedia.removeEventListener("change", onThemeChange);
-    };
+  const [themeState, setThemeState] = useState<ThemeType>(() => {
+    const stored = localStorage.getItem(localStorageKey) as ThemeType | null;
+    if (stored === "light" || stored === "dark") return stored;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
   });
 
-  /* Setter */
-  const setTheme = (theme: ThemeType) => {
-    const html = document?.querySelector("html");
+  /* 同步主题到 DOM：初值与后续每次变化都走这里，保证 state 与 DOM 一致 */
+  useEffect(() => {
+    document.documentElement.classList.toggle("dark", themeState === "dark");
+    log.debug("theme applied to DOM", themeState);
+  }, [themeState]);
 
-    html?.classList.toggle("dark");
-    setThemeState(theme);
-    localStorage.setItem(localStorageKey, theme);
-  };
+  /* 系统主题变化监听：仅在用户未手动选择过主题时跟随系统 */
+  useEffect(() => {
+    const matchMedia = window.matchMedia("(prefers-color-scheme: dark)");
+    const onThemeChange = (event: MediaQueryListEvent) => {
+      if (localStorage.getItem(localStorageKey)) return;
+      const next = event.matches ? "dark" : "light";
+      log.info("follow system theme change", next);
+      setThemeState(next);
+    };
+    matchMedia.addEventListener("change", onThemeChange);
+    return () => matchMedia.removeEventListener("change", onThemeChange);
+  }, [localStorageKey]);
+
+  const setTheme = useCallback(
+    (theme: ThemeType) => {
+      log.info("setTheme", theme, "(user choice, stops following system)");
+      setThemeState(theme);
+      localStorage.setItem(localStorageKey, theme);
+    },
+    [localStorageKey]
+  );
 
   return [themeState, setTheme];
 };

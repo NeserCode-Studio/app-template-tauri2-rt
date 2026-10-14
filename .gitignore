@@ -22,3 +22,19 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# WorkBuddy workspace data
+.workbuddy/
+
+# Agent workspace data
+.agents/
+.omo/
+
+# TypeScript incremental build cache
+*.tsbuildinfo
+
+# Vite emits these alongside vite.config.ts during build
+vite.config.js
+vite.config.d.ts
+vite.config.js.map
+vite.config.d.ts.map

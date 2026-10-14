@@ -3,41 +3,49 @@ import "./App.css";
 import Titlebar from "@/components/framework/Titlebar";
 import CommandDialog from "@/components/framework/CommandDialog";
 import { Toaster } from "@/components/ui/sonner";
-import { Routes, Route } from "react-router";
+import { Routes, Route, useNavigate } from "react-router";
 
-import Home from "@/views/Home";
-import Settings from "@/views/Settings";
-import Software from "@/views/Software";
-import Framework from "@/views/Framework";
-
-import { useNavigate } from "react-router";
-import { useTheme, I18nContext, useI18nLogic, nextTick } from "@/composables";
-import { createContext } from "react";
+import { useTheme, useI18nLogic } from "@/composables";
+import { lazy, Suspense, useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { useAsyncEffect, useLocalStorageState } from "ahooks";
-import { AppTray } from "@/lib/tray";
+import { useLocalStorageState } from "ahooks";
+import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
+import { listen } from "@tauri-apps/api/event";
+import { WindowUtils } from "@/lib/window.utils";
 
-import type { UseThemeFnReturn } from "@/shared";
+import { ThemeContext } from "@/contexts/theme";
+import { NavigatorContext } from "@/contexts/navigator";
+import { TitleContext } from "@/contexts/title";
+import { I18nContext } from "@/contexts/i18n";
+import { lifecycle } from "@/lifecycle";
+import SettingsDialog from "@/components/framework/SettingsDialog";
+import AboutDialog from "@/components/framework/AboutDialog";
+import { SettingsDialogContext } from "@/contexts/settings";
+import { createLogger } from "@/lib/logger";
 
-/* Context Provide */
-const ThemeContext = createContext<{
-  theme: UseThemeFnReturn[0];
-  setThemeMode: UseThemeFnReturn[1];
-}>({
-  theme: "light",
-  setThemeMode: () => {},
-});
-const NavigatorContext = createContext<{
-  navigator: (path: string) => void;
-}>({
-  navigator: (_path: string) => {},
-});
-const TitleContext = createContext<{
-  title?: string;
-  setTitle: (newTitle: string) => void;
-}>({
-  title: "App template",
-  setTitle: () => {},
+const log = createLogger("App");
+
+const Home = lazy(() => import("@/views/Home"));
+const Software = lazy(() => import("@/views/Software"));
+const Framework = lazy(() => import("@/views/Framework"));
+const TrayMenu = lazy(() => import("@/views/TrayMenu"));
+
+/**
+ * 应用就绪钩子：主窗口显示并聚焦。
+ *
+ * 注册在模块作用域而非 useEffect —— effect 的清理函数会在 fire 完成前
+ * 被 React 调用（async 函数体在第一个 await 前是同步的），导致钩子被提前
+ * 卸载、从未执行。托盘窗口跳过逻辑放在 run 内部。
+ */
+const $windowMain = new WindowUtils("main");
+lifecycle.register({
+  id: "window.render-focus",
+  stage: "ready",
+  once: true,
+  run: () => {
+    if (getCurrentWindow().label === "tray") return;
+    return $windowMain.renderFocus();
+  },
 });
 
 function App() {
@@ -54,50 +62,132 @@ function App() {
     defaultValue: t("Titlebar.default.title"),
   });
 
-  useAsyncEffect(async () => {
-    /* App Tray */
-    const $tray = new AppTray({
-      tooltip: t("Tray.tooltip.default"),
-    });
-    nextTick(() => {
-      $tray.init();
-      console.log($tray);
-    });
-    const handleBeforeUnload = async () => {
-      window.removeEventListener("unload", handleBeforeUnload);
-      await $tray.quit();
-    };
+  /* Detect current window */
+  const currentLabel = getCurrentWindow().label;
 
-    window.addEventListener("unload", handleBeforeUnload);
+  /* 弹窗状态 */
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const openAbout = useCallback(() => setAboutOpen(true), []);
+
+  /* 生命周期阶段只触发一次（StrictMode 下 effect 会 double-invoke）
+     注册在模块作用域，此处只负责按序触发。 */
+  const firedRef = useRef(false);
+
+  /* 挂载完成后依次触发 mount → ready
+     两者放在同一个 effect 内按序 fire，保证阶段顺序；
+     ready 触发的窗口聚焦等动作此时 React 已挂载完成。 */
+  useEffect(() => {
+    if (firedRef.current) return;
+    firedRef.current = true;
+
+    void lifecycle.fire("mount").then(() => lifecycle.fire("ready"));
   }, []);
-  return (
-    <>
-      <I18nContext.Provider value={{ lang, t, setLang: setLanguage }}>
-        <ThemeContext.Provider value={{ theme, setThemeMode }}>
-          <TitleContext.Provider value={{ title, setTitle }}>
-            <NavigatorContext.Provider value={{ navigator: navigate }}>
-              <main id="app-main">
-                <Titlebar />
-                <CommandDialog />
 
-                <div id="container">
-                  <ScrollArea className="container-scroller">
-                    <Routes>
-                      <Route path="/" index element={<Home />} />
-                      <Route path="/settings" element={<Settings />} />
-                      <Route path="/software" element={<Software />} />
-                      <Route path="/framework" element={<Framework />} />
-                    </Routes>
-                  </ScrollArea>
-                </div>
-              </main>
-              <Toaster richColors theme={theme} position="bottom-right" />
-            </NavigatorContext.Provider>
-          </TitleContext.Provider>
+  useEffect(() => {
+    if (currentLabel === "tray") return;
+
+    const unlistenPopup = listen<{ x: number; y: number }>(
+      "tray-popup",
+      async (event) => {
+        const trayWindow = await WindowUtils.getWindowByLabel("tray");
+        if (!trayWindow) {
+          log.warn("tray-popup: tray window not found");
+          return;
+        }
+        const size = await trayWindow.outerSize();
+        const x = Math.round(event.payload.x - size.width / 2);
+        const y = Math.max(0, Math.round(event.payload.y - size.height));
+        await trayWindow.setPosition(new PhysicalPosition(x, y));
+        await trayWindow.show();
+        await trayWindow.setFocus();
+        log.info("tray menu popped", { x, y });
+      }
+    );
+
+    const unlistenNavigate = listen<string>("navigate", (event) => {
+      const target = event.payload;
+      log.info("navigate event", target);
+      if (target === "/settings") {
+        openSettings();
+      } else if (target === "/about") {
+        openAbout();
+      } else {
+        navigate(target);
+      }
+    });
+
+    return () => {
+      void unlistenPopup.then((fn) => fn());
+      void unlistenNavigate.then((fn) => fn());
+    };
+  }, [navigate, currentLabel, openSettings, openAbout]);
+
+  /* 固定 Context value 引用，避免任意状态变化导致所有消费者全量重渲染 */
+  const i18nValue = useMemo(
+    () => ({ lang, t, setLang: setLanguage }),
+    [lang, t, setLanguage]
+  );
+  const themeValue = useMemo(
+    () => ({ theme, setThemeMode }),
+    [theme, setThemeMode]
+  );
+  const titleValue = useMemo(() => ({ title, setTitle }), [title, setTitle]);
+  const navigatorValue = useMemo(() => ({ navigator: navigate }), [navigate]);
+  const settingsValue = useMemo(
+    () => ({ openSettings, openAbout }),
+    [openSettings, openAbout]
+  );
+
+  if (currentLabel === "tray") {
+    return (
+      <I18nContext.Provider value={i18nValue}>
+        <ThemeContext.Provider value={themeValue}>
+          <Suspense fallback={null}>
+            <TrayMenu />
+          </Suspense>
         </ThemeContext.Provider>
       </I18nContext.Provider>
+    );
+  }
+
+  return (
+    <>
+      <SettingsDialogContext.Provider value={settingsValue}>
+        <I18nContext.Provider value={i18nValue}>
+          <ThemeContext.Provider value={themeValue}>
+            <TitleContext.Provider value={titleValue}>
+              <NavigatorContext.Provider value={navigatorValue}>
+                <main id="app-main" className="app-shell">
+                  <Titlebar />
+                  <CommandDialog />
+
+                  <div id="container" className="app-body">
+                    <ScrollArea className="h-[calc(100vh-2rem)] w-full">
+                      <Suspense fallback={null}>
+                        <Routes>
+                          <Route path="/" index element={<Home />} />
+                          <Route path="/software" element={<Software />} />
+                          <Route path="/framework" element={<Framework />} />
+                        </Routes>
+                      </Suspense>
+                    </ScrollArea>
+                  </div>
+                </main>
+                <SettingsDialog
+                  open={settingsOpen}
+                  onOpenChange={setSettingsOpen}
+                />
+                <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
+                <Toaster richColors theme={theme} position="bottom-right" />
+              </NavigatorContext.Provider>
+            </TitleContext.Provider>
+          </ThemeContext.Provider>
+        </I18nContext.Provider>
+      </SettingsDialogContext.Provider>
     </>
   );
 }
 
-export { App, ThemeContext, TitleContext, NavigatorContext };
+export { App };
