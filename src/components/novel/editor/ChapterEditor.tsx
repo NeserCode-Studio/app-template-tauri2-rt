@@ -251,7 +251,28 @@ export default function ChapterEditor({
         );
         applyCards(next);
       }
-      /* 提交即固化，草稿完成使命。 */
+
+      /*
+       * 草稿只在"提交的就是它自己"时才作废。
+       *
+       * 携带暂存草稿去改旧段落时，index >= 0，提交的是那张卡的文本，
+       * 草稿本身还没写进去——此时必须把它放回输入框，否则刚写的那段
+       * 就在提交的一瞬间被清掉了。
+       */
+      const stashed = draftRef.current;
+      if (index >= 0 && stashed) {
+        /*
+         * 提交旧卡后回到追加模式，并把暂存段落放回输入框。
+         * 草稿此时"回到"了编辑框，因此上面的暂存卡片同步撤掉，
+         * 否则同一段文字会同时出现在卡片和输入框里。
+         */
+        draftRef.current = null;
+        setDraft(null);
+        setEditingIndex(-1);
+        requestAnimationFrame(() => composerRef.current?.load(stashed, "end", true));
+        return;
+      }
+
       draftRef.current = null;
       setDraft(null);
       setEditingIndex(-1);
@@ -309,7 +330,7 @@ export default function ChapterEditor({
     setDraft(null);
     setEditingIndex(-1);
     composerRef.current?.clear();
-    requestAnimationFrame(() => composerRef.current?.load(stashed ?? "", "end"));
+    requestAnimationFrame(() => composerRef.current?.load(stashed ?? "", "end", Boolean(stashed)));
   }, [scheduleSave]);
 
   /** 取回暂存段落：清空输入框回到追加模式，并把草稿放回去。 */
@@ -318,7 +339,7 @@ export default function ChapterEditor({
     const text = draft ?? "";
     draftRef.current = null;
     setDraft(null);
-    requestAnimationFrame(() => composerRef.current?.load(text, "end"));
+    requestAnimationFrame(() => composerRef.current?.load(text, "end", true));
   }, [draft]);
 
   /** 丢弃暂存段落。 */
@@ -608,9 +629,13 @@ export default function ChapterEditor({
        * 底部编辑区：分割线以下整块都是输入区。
        *
        * 刻意不做 max-width 居中：分割线以下整条都是编辑区，
-       * 输入框背景横向铺满，只靠左右内边距保持可读行长。
+       * 输入框背景透明，透出应用底色；顶界由 ComposerInput 内那条
+       * 80% 宽的细线给出，因此这里不再画满宽 border-t。
+       *
+       * 底色必须透明：应用外壳用的是 neutral-50 / neutral-700，
+       * 而 bg-background 是另一套 token，直接铺会留下一块色差。
        */}
-      <div className="shrink-0 border-t bg-background">
+      <div className="shrink-0">
         <ComposerInput
           ref={composerRef}
           editingIndex={editingIndex}

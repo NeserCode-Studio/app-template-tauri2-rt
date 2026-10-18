@@ -6,8 +6,13 @@ import { useI18n } from "@/composables";
 export interface ComposerHandle {
   /** 把焦点移入输入框，可指定光标位置。 */
   focus: (caret?: "start" | "end") => void;
-  /** 写入文本（载入卡片到输入框时用）。 */
-  load: (text: string, caret?: "start" | "end") => void;
+  /**
+   * 写入文本（载入卡片到输入框时用）。
+   *
+   * animate 用于"暂存段落归位"那一次：让用户看见这段字从上方卡片
+   * 落回了输入框。普通编辑载入卡片文本不该闪。
+   */
+  load: (text: string, caret?: "start" | "end", animate?: boolean) => void;
   /** 清空输入框。 */
   clear: () => void;
   /** 读取当前输入内容。 */
@@ -69,13 +74,19 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
         if (caret === "start") el.setSelectionRange(0, 0);
         else el.setSelectionRange(el.value.length, el.value.length);
       },
-      load(text, caret = "end") {
+      load(text, caret = "end", animate = false) {
         const el = textareaRef.current;
         if (!el) return;
         el.value = text;
         el.focus();
         if (caret === "start") el.setSelectionRange(0, 0);
         else el.setSelectionRange(text.length, text.length);
+        if (animate) {
+          /* 重放动画：先移除再强制回流，才能对同一段文字重复触发。 */
+          el.classList.remove("animate-draft-return");
+          void el.offsetWidth;
+          el.classList.add("animate-draft-return");
+        }
       },
       clear() {
         const el = textareaRef.current;
@@ -87,7 +98,15 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
     }));
 
     return (
-      <div className="flex flex-col gap-1.5 px-6 py-3">
+      <div className="flex flex-col gap-1.5 px-6 pb-3 pt-2">
+        {/*
+         * 编辑区顶部的分隔线：只占 80% 宽并居中。
+         *
+         * 满宽的横线会把编辑区切成一块独立面板，与上方正文割裂；
+         * 收窄后它读起来更像"正文到此为止，接下来是书写区"的界标。
+         */}
+        <div className="mx-auto mb-1 h-px w-4/5 bg-border" />
+
         {/*
          * 暂存的新段落。
          *
@@ -133,11 +152,11 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
             placeholder={t("Editor.input.placeholder")}
             aria-label={t("Editor.input.placeholder")}
             /*
-             * 底部分割线以下整体是编辑区：输入框自身不再画边框，
-             * 而是把背景延伸到整个编辑区。这样"正文"与"正在写"
-             * 之间只有一条分割线，不再是框中框。
+             * 背景透明，透出应用本身的底色——输入区不该是块比周围更亮的板子。
+             * 聚焦不画任何边框 / 描边：底部本来就该始终是"在写"的状态，
+             * 再叠一圈高亮反而像弹出了一个输入控件。
              */
-            className="prose-article -mx-6 w-[calc(100%+3rem)] resize-none bg-background px-6 py-2 outline-none transition-colors placeholder:text-muted-foreground/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
+            className="prose-article w-full resize-none border-0 bg-transparent px-0 py-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
             onKeyDown={(e) => {
               // 输入法组合中：Enter 属于候选确认，绝不提交。
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;

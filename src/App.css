@@ -267,3 +267,23 @@ html {
 html.dark {
   color-scheme: dark;
 }
+
+/*
+ * 暂存段落"归位"动画。
+ *
+ * 携带草稿去改旧段落、回车提交后，草稿会落回输入框。这一下不能让
+ * 用户自己猜文字去了哪，用一次很轻的高亮淡出表示"它回来了"。
+ * 只有 600ms 左右，且不做位移，避免在打字时分散注意力。
+ */
+@keyframes draft-return {
+  0% {
+    background-color: color-mix(in oklab, var(--primary) 14%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.animate-draft-return {
+  animation: draft-return 600ms ease-out;
+}
