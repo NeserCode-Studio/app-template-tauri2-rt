@@ -237,7 +237,10 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
          * 这一行的位置是被"编辑已有段落"的状态提示占住的——用户点了某张
          * 旧段落后，输入框就被那条段落占住，没有出口就只能继续改它，
          * 所以"回到最新段落"必须一直在。但既然行本来就在，追加新段落时
-         * 就顺手放一句操作提示，不必再让整行随状态闪进闪出。
+         * 就让左边空着，不必再让整行随状态闪进闪出。
+         *
+         * 追加态左位刻意不放操作提示：placeholder 里已经写着"回车结束本段"，
+         * 同一句话在下面再说一遍是纯重复，而且那里离手指更近、反而先被读到。
          *
          * 右侧最外是提交按钮：它是这一行唯一的主动作，放在最右端符合
          * "确认在末端"的读法。
@@ -248,7 +251,7 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
               {t("Editor.input.editing")}
             </span>
           ) : (
-            <span className="min-w-0 truncate">{t("Editor.input.hint")}</span>
+            <span className="min-w-0" />
           )}
           <div className="flex shrink-0 items-center gap-1">
             {editingIndex >= 0 && onReturnToNew ? (
