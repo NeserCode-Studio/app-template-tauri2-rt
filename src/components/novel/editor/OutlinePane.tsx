@@ -545,6 +545,22 @@ export default function OutlinePane({
     [volumes, chaptersByVolume]
   );
 
+  /**
+   * 目标父级下的同级序列，口径同样要对齐 moveNode。
+   *
+   * 跨父级移动时，moveNode 的 toSide 是「目标父级下、已按 order 排好、
+   * 且不含被拖节点」的列表。顶层同样要把卷与游离章合并——空卷的列表
+   * 是空的，此时落点只能是 0（追加进去），这正是期望行为。
+   */
+  const siblingsOfTarget = useCallback(
+    (targetParentId: string | null): OutlineNode[] => {
+      if (targetParentId !== null) return chaptersByVolume.get(targetParentId) ?? [];
+      return [...volumes.filter((v) => v.parentId === null), ...(chaptersByVolume.get(null) ?? [])]
+        .sort((a, b) => a.order - b.order);
+    },
+    [volumes, chaptersByVolume]
+  );
+
   function handleDragStart(e: DragStartEvent) {
     setActiveId(String(e.active.id));
     const centers = new Map<string, number>();
@@ -639,11 +655,19 @@ export default function OutlinePane({
       return;
     }
     /*
-     * 同级序列取自被拖节点自身，而不是 targetParentId：
-     * 降级场景下（章拖进卷），落点下标是相对"目标卷的章"算的，
-     * 若用源兄弟算就会插错位置。siblingsOf 已按 order 排好。
+     * 下标必须在「目标父级」的空间里算，与 moveNode 的两个分支对齐：
+     * - 同父级换位：moveNode 取 source 侧的兄弟（已剔除自己）。
+     * - 跨父级：moveNode 取 target 侧的兄弟（不含自己，因为它还在源侧）。
+     *
+     * 之前统一用 `siblingsOf(source)`，于是"把游离章拖进空卷"时
+     * 拿到的是顶层列表（2 卷 + 2 游离章），算出的下标落在顶层空间；
+     * 而 moveNode ��空卷的 toSide 是空数组，下标被 clamp 到 0 ——
+     * 章本该进卷，最后却仍留在顶层（或落到别的位置），表现为"拖不进去"。
      */
-    const siblings = siblingsOf(source);
+    const siblings =
+      source.parentId === targetParentId
+        ? siblingsOf(source)
+        : siblingsOfTarget(targetParentId);
     const centers: number[] = [];
     for (const n of siblings) {
       if (n.id === nodeId) continue;
@@ -857,7 +881,7 @@ export default function OutlinePane({
               return (
                 <div key={item.id}>
                   {needsDivider ? (
-                    <div className="mx-2 mb-1.5 h-px bg-border/70" aria-hidden="true" />
+                    <div className="mx-2 my-2 h-px bg-border/70" aria-hidden="true" />
                   ) : null}
                   <div className="mt-0.5 flex flex-col gap-0.5">
                     {renderChapterList(null, [item])}
@@ -876,7 +900,7 @@ export default function OutlinePane({
                 className="mb-1"
               >
                 {needsDivider ? (
-                  <div className="mx-2 mb-1.5 h-px bg-border/70" aria-hidden="true" />
+                  <div className="mx-2 my-2 h-px bg-border/70" aria-hidden="true" />
                 ) : null}
                 <VolumeRow
                   volume={volume}
