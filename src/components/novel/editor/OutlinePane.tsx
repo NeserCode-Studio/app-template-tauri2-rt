@@ -658,7 +658,7 @@ export default function OutlinePane({
         <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto">
         <div className="w-full px-2 pb-3">
           {/* 卷分组 */}
-          {volumes.map((volume) => {
+          {volumes.map((volume, vi) => {
             const isCollapsed = collapsed[volume.id];
             return (
               <DropZone
@@ -667,6 +667,22 @@ export default function OutlinePane({
                 dragging={Boolean(activeId) && overRef?.kind !== "before"}
                 className="mb-1"
               >
+                {/*
+                 * 卷与卷之间的分割线。
+                 *
+                 * 放进 DropZone 内部而不是外层：DropZone 是可放置区域，
+                 * 在它外面插元素不影响命中，但在它内部插一个纯装饰节点
+                 * 不会把"这一整块卷"的可放置范围割裂。
+                 *
+                 * 首个卷不加：顶边紧贴面板上沿，画一条线只会显得是
+                 * 被裁掉一半的边框。
+                 */}
+                {vi > 0 ? (
+                  <div
+                    className="mx-2 mb-1.5 h-px bg-border/70"
+                    aria-hidden="true"
+                  />
+                ) : null}
                 <div className="group flex items-center gap-1 rounded-md px-2 py-1 hover:bg-accent/40">
                   <button
                     type="button"
