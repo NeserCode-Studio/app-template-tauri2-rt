@@ -158,7 +158,7 @@ export default function ProgressPane({ chapterWords }: { chapterWords: number })
   const curve = useMemo(() => {
     const daily = stats?.daily ?? {};
     const netMode = (stats?.curveMode ?? "net") === "net";
-    const out: { key: string; day: string; words: number }[] = [];
+    const out: { key: string; day: string; label: string | null; words: number }[] = [];
     let running = 0;
     for (let i = CURVE_DAYS - 1; i >= 0; i -= 1) {
       const d = new Date();
@@ -175,9 +175,21 @@ export default function ProgressPane({ chapterWords }: { chapterWords: number })
        * 没有全量水位线，跨窗口累加需要从作品总字数倒推，容易出错。
        */
       running += net;
+      const dayOfMonth = d.getDate();
+      /*
+       * 日期标注要稀疏。
+       *
+       * 右栏约 250px，14 列每列不到 20px。原来每列都写 "1/1" 这种
+       * 月/日，两字符在 9px 下既被截断又长得像数字，读起来是"一堆 1..1.."，
+       * 完全看不出是日期。改为：只标每 3 天（跨月那天额外标出月份），
+       * 单日只写日号——"3" 不可能被误读成别的东西。
+       */
+      const isMonthStart = dayOfMonth === 1;
+      const showLabel = isMonthStart || dayOfMonth % 3 === 0;
       out.push({
         key,
         day: `${d.getMonth() + 1}/${d.getDate()}`,
+        label: showLabel ? (isMonthStart ? `${d.getMonth() + 1}月` : String(dayOfMonth)) : null,
         words: netMode ? net : running,
       });
     }
@@ -289,11 +301,11 @@ export default function ProgressPane({ chapterWords }: { chapterWords: number })
                       Math.round((c.words / scaleMax) * 100)
                     )}%`,
                   }}
-                  title={`${c.day}: ${c.words}`}
+                  title={`${c.day} · ${c.words} ${t("Editor.history.words")}`}
                 />
               </div>
               <span className="w-full truncate text-center text-[9px] text-muted-foreground/70">
-                {c.day}
+                {c.label ?? ""}
               </span>
             </div>
           ))}
