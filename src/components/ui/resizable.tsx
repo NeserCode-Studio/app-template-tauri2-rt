@@ -33,7 +33,13 @@ function ResizablePanelGroup({
         data-slot="resizable-panel-group"
         data-resizing={resizing ? "true" : undefined}
         className={cn(
-          "group flex h-full w-full data-[panel-group-direction=vertical]:flex-col",
+          /*
+           * 注意：这里不能加 Tailwind 的 `group` 类。
+           * `group-hover:` 编译成 `:is(:where(.group):hover *)`，只要祖先
+           * 带 .group 且被 hover，整棵子树里所有 group-hover 都会亮起来——
+           * 而 PanelGroup 是编辑器里最大的一棵子树。所以用具名 group。
+           */
+          "flex h-full w-full group/panels data-[panel-group-direction=vertical]:flex-col",
           className
         )}
         {...props}
@@ -64,7 +70,7 @@ const ResizablePanel = React.forwardRef<
        */
       className={cn(
         "transition-[flex-grow] duration-200 ease-out",
-        "group-data-[resizing=true]/group:transition-none",
+        "group-data-[resizing=true]/panels:transition-none",
         props.className
       )}
       {...props}
