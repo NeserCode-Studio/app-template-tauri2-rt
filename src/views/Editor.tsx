@@ -29,7 +29,12 @@ import { useI18n } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useWorkspace } from "@/contexts/workspace";
-import { addNode as addOutlineNode, removeNode, updateNode } from "@/services/outline";
+import {
+  addNode as addOutlineNode,
+  moveNode as moveOutlineNode,
+  removeNode,
+  updateNode,
+} from "@/services/outline";
 import {
   createChapter as createChapterFile,
   countWorkWords,
@@ -146,6 +151,27 @@ export default function Editor() {
 
   /* ---------- 章节跳转 ---------- */
 
+  /** 结构树拖放：排序与升降级。 */
+  const moveOutline = useCallback(
+    async (nodeId: string, targetParentId: string | null, targetIndex: number) => {
+      if (!root || !currentWorkId) return;
+      setOutline(await moveOutlineNode(root, currentWorkId, nodeId, targetParentId, targetIndex));
+    },
+    [root, currentWorkId, setOutline]
+  );
+
+  /** 结构树内联编辑：章状态与摘要。 */
+  const updateOutlineMeta = useCallback(
+    async (
+      nodeId: string,
+      patch: { status?: "draft" | "revising" | "final"; synopsis?: string }
+    ) => {
+      if (!root || !currentWorkId) return;
+      setOutline(await updateNode(root, currentWorkId, nodeId, patch));
+    },
+    [root, currentWorkId, setOutline]
+  );
+
   const chapterIndex = chapters.findIndex((c) => c.id === chapter?.id);
   const prevId = chapterIndex > 0 ? chapters[chapterIndex - 1]?.id : null;
   const nextId =
@@ -229,7 +255,12 @@ export default function Editor() {
         {/* 左栏：结构树 */}
         <ResizablePanel defaultSize={18} minSize={12} maxSize={24}>
           <div className="h-full border-r">
-            <OutlinePane onCreateChapter={createChapter} onCreateVolume={createVolume} />
+            <OutlinePane
+              onCreateChapter={createChapter}
+              onCreateVolume={createVolume}
+              onMoveNode={moveOutline}
+              onUpdateNode={updateOutlineMeta}
+            />
           </div>
         </ResizablePanel>
 

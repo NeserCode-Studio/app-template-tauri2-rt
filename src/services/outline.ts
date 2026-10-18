@@ -118,6 +118,93 @@ export async function removeNode(root: string, workId: string, nodeId: string): 
 }
 
 /**
+ * 移动节点：改父级并重排同级顺序。
+ *
+ * 结构树是扁平数组 + `parentId`，所以"排序"和"升降级"是同一个操作。
+ * 三个约束：
+ *
+ * 1. **不能移进自己的子树**。会把祖先挪到后代底下，形成环，
+ *    之后树遍历会死循环。搬运前先沿 parentId 链检查。
+ * 2. **order 要整体重算**。只改被拖动那一个的 order 会留下空洞和重复，
+ *    排序结果取决于历史操作顺序，不再可预期。这里在目标父级下
+ *    按最终顺序重新编号 0..n-1。
+ * 3. **只影响源父级与目标父级**，其余节点的 order 保持不变。
+ */
+export async function moveNode(
+  root: string,
+  workId: string,
+  nodeId: string,
+  targetParentId: string | null,
+  targetIndex: number
+): Promise<Outline> {
+  const outline = await loadOutline(root, workId);
+  const node = outline.nodes.find((n) => n.id === nodeId);
+  if (!node) return outline;
+
+  /* 环检测：目标若在自己的子树里则拒绝。 */
+  let cursor = targetParentId;
+  while (cursor) {
+    if (cursor === nodeId) {
+      log.warn("move rejected: target inside subtree", { nodeId, targetParentId });
+      return outline;
+    }
+    cursor = outline.nodes.find((n) => n.id === cursor)?.parentId ?? null;
+  }
+
+  const sourceParentId = node.parentId;
+  if (sourceParentId === targetParentId) {
+    /*
+     * 同级内换位：先取出再按目标下标插入。
+     * targetIndex 指的是"移除自己之后"的最终位置，
+     * 否则向下移动会把节点插到自己前面一位。
+     */
+    const siblings = outline.nodes
+      .filter((n) => n.parentId === targetParentId)
+      .sort((a, b) => a.order - b.order)
+      .filter((n) => n.id !== nodeId);
+    const clamped = Math.max(0, Math.min(targetIndex, siblings.length));
+    siblings.splice(clamped, 0, node);
+    return persistOrder(root, workId, outline, siblings);
+  }
+
+  /* 跨父级：从源侧取走，插入目标侧。 */
+  const fromSide = outline.nodes
+    .filter((n) => n.parentId === sourceParentId && n.id !== nodeId)
+    .sort((a, b) => a.order - b.order);
+  const toSide = outline.nodes
+    .filter((n) => n.parentId === targetParentId)
+    .sort((a, b) => a.order - b.order);
+  const clamped = Math.max(0, Math.min(targetIndex, toSide.length));
+  toSide.splice(clamped, 0, { ...node, parentId: targetParentId });
+
+  /* 两侧都要重排：源侧留下空洞、目标侧插入后序号冲突。 */
+  const renumbered = persistSideOrders([fromSide, toSide]);
+  return persistOrder(root, workId, outline, renumbered.flat());
+}
+
+/** 把若干组"已排好序的兄弟列表"合并成节点补丁表。 */
+function persistSideOrders(sides: OutlineNode[][]): OutlineNode[][] {
+  return sides.map((siblings) =>
+    siblings.map((n, i) => outlineNodeSchema.parse({ ...n, order: i }))
+  );
+}
+
+/** 把补丁写回整棵树并落盘。 */
+async function persistOrder(
+  root: string,
+  workId: string,
+  outline: Outline,
+  ordered: OutlineNode[]
+): Promise<Outline> {
+  const patches = new Map(ordered.map((n) => [n.id, n]));
+  const next: Outline = {
+    nodes: outline.nodes.map((n) => patches.get(n.id) ?? n),
+  };
+  await saveOutline(root, workId, next);
+  return next;
+}
+
+/**
  * 修复历史遗留：结构树里的章 id 与章文件名对不上。
  *
  * 成因是早期版本建章时，章文件与结构树节点各自生成了一个随机 id，
