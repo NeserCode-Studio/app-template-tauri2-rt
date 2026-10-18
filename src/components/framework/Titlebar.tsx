@@ -117,14 +117,6 @@ export default function Titlebar() {
             {t("Titlebar.menu.help")}
           </MenubarTrigger>
           <MenubarContent className="w-fit transition-all duration-100 ease-in-out">
-            <MenubarItem
-              onSelect={() => {
-                navigator("/framework");
-              }}
-            >
-              {t("Titlebar.menu.about.framework")}
-            </MenubarItem>
-            <MenubarSeparator />
             <MenubarItem onSelect={openAbout}>
               {t("Titlebar.menu.about")}
             </MenubarItem>

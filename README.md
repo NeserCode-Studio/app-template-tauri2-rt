@@ -1,10 +1,10 @@
 <div align="center">
 
-# app-template
+# novels-yes
 
-**Tauri 2 + React 19 桌面应用开发模板**
+**Tauri 2 + React 19 本地优先纯文本小说写作工具**
 
-开箱即用的桌面应用骨架 —— 窗口管理、系统托盘、命令面板、设置中心、多语言、主题切换，一次配好，直接写业务。
+面向中文长篇创作者的写作应用：把小说的结构（作品 / 卷 / 章 / 场景）做成一等公民，正文以纯文本落盘，不绑架用户数据。基于 app-template（Tauri 2 桌面框架）扩展，复用其窗口管理、系统托盘、命令面板、设置中心与多语言能力，并在其上构建小说专属的编辑器、结构树、素材库与进度统计。
 
 [![Tauri](https://img.shields.io/badge/Tauri-2-blue?style=flat-round&logo=tauri&logoColor=white)](https://tauri.app)
 [![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-round&logo=react&logoColor=black)](https://react.dev)
@@ -20,15 +20,14 @@
 
 | | |
 | --- | --- |
-| **双窗口架构** | 主窗口 + 托盘弹窗，同一 bundle 按窗口标签分流 |
-| **无边框标题栏** | Windows 风格原生菜单（转到 / 编辑 / 帮助），标题栏可拖拽 |
-| **系统托盘** | 托盘图标 + 自绘弹出菜单，左键显隐主窗口、右键唤出菜单 |
-| **命令面板** | `⌘K` / `Ctrl+K` 唤起，支持模糊搜索与快捷键提示 |
-| **设置中心** | 通用设置项组件（输入框 / 下拉 / 开关），内置搜索与修改记录 |
-| **主题切换** | 亮色 / 暗色，跟随系统，用户手动选择后不再自动跟随 |
-| **国际化** | 中英双语，语言可运行时切换 |
-| **生命周期钩子** | 阶段化的启动 / 挂载 / 就绪钩子，业务初始化有明确落点 |
-| **跨窗口通信** | Rust ↔ 前端双向事件通道，托盘可直接唤起主窗口功能 |
+| **本地优先** | 正文明文落盘（UTF-8），随时可被 Git 或任意编辑器接管，应用不绑定用户数据 |
+| **结构驱动** | 作品 / 卷 / 章 / 场景是可导航实体，统计与检索建立在这层结构之上 |
+| **自研卡片式编辑器** | 章内容为卡片列表，底部常驻唯一输入框，回车固化卡片；重算收敛到单卡 |
+| **章即页** | 默认单章视野，上滑上一章、下滑下一章，右栏提供翻章按钮 |
+| **素材库** | 人物 / 地点 / 物品等类型化条目，写作时可侧边查阅与高亮提及 |
+| **全站搜索** | 一次搜索覆盖章标题、正文与素材条目，命中高亮 |
+| **进度统计** | 今日目标、连续写作天数与字数曲线 |
+| **专注 / 打字机 / Zen** | 多种不打断写作的模式 |
 
 技术底座：**Tauri 2** · **React 19** · **TypeScript** · **Tailwind CSS 4** · **shadcn/ui** · **Radix UI** · **Rust**
 
@@ -82,25 +81,16 @@ src/
 ├── App.css               # 设计令牌 + 组件类
 │
 ├── components/
-│   ├── framework/        # 框架组件
-│   │   ├── Titlebar*         # 无边框标题栏
-│   │   ├── CommandDialog     # 命令面板
-│   │   ├── SettingsDialog    # 设置弹窗
-│   │   ├── AboutDialog       # 关于弹窗
-│   │   └── Tooltip
+│   ├── framework/        # 框架组件（标题栏、命令面板、设置、关于、托盘菜单）
 │   └── ui/               # shadcn/ui 组件库
 │
 ├── views/                # 页面
-│   ├── Home / Software / Framework
+│   ├── Library           # 作品库（M1）
+│   ├── Editor            # 编辑器（M3，待实现）
 │   └── TrayMenu          # 托盘菜单
 │
-├── composables/          # 业务 Hook
-│   ├── useTheme          # 主题
-│   ├── useI18n           # 国际化
-│   ├── useToast          # 轻提示
-│   └── useSuperCommand   # 命令注册表
-│
-├── contexts/             # 全局 Context
+├── composables/          # 业务 Hook（useTheme / useI18n / useToast / useSuperCommand）
+├── contexts/             # 全局 Context（后续新增 workspace / library / outline / codex / progress）
 ├── lifecycle/            # 生命周期总线（阶段：mount / ready）
 ├── lib/                  # 工具与资源
 │   ├── i18n.resource.ts  # 中英文案表
@@ -111,9 +101,9 @@ src/
 └── shared/               # 共享类型
 
 src-tauri/
-├── tauri.conf.json       # 窗口与打包配置
-├── capabilities/         # 权限白名单
-└── src/lib.rs            # 托盘与 Rust 命令
+├── tauri.conf.json       # 窗口与打包配置（productName: novels-yes）
+├── capabilities/         # 权限白名单（dialog / fs）
+└── src/lib.rs            # 托盘与 Rust 命令（含 dialog / fs 插件）
 ```
 
 ---

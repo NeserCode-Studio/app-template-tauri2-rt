@@ -8,9 +8,8 @@ import {
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/composables";
-import { useNavigatorContext } from "@/contexts/navigator";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { ExternalLink, Info } from "lucide-react";
+import { ExternalLink } from "lucide-react";
 
 export interface AboutDialogProps {
   open: boolean;
@@ -26,7 +25,6 @@ interface AboutMeta {
 
 export default function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
   const { t } = useI18n();
-  const { navigator } = useNavigatorContext();
   const [meta, setMeta] = useState<AboutMeta | null>(null);
 
   /* 弹窗打开时拉取应用元信息；失败时降级为「未知」而非报错 */
@@ -96,18 +94,6 @@ export default function AboutDialog({ open, onOpenChange }: AboutDialogProps) {
         </p>
 
         <div className="flex items-center justify-between gap-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="text-muted-foreground"
-            onClick={() => {
-              onOpenChange(false);
-              navigator("/framework");
-            }}
-          >
-            <Info className="icon-md" />
-            {t("Titlebar.menu.about.framework")}
-          </Button>
           <Button variant="outline" size="sm" onClick={openWebsite}>
             {t("About.website")}
             <ExternalLink className="icon-md" />

@@ -190,21 +190,26 @@
       transition-colors duration-100 ease-in-out dark:bg-neutral-700;
   }
 
+  /* ===== 作品库 ===== */
+  .view-library {
+    @apply relative z-0 h-full w-full transition-colors duration-100 ease-in-out;
+  }
+  .library-empty {
+    @apply flex h-full min-h-[60vh] w-full flex-col items-center justify-center gap-4 text-muted-foreground;
+  }
+  .library-empty .icon-lg {
+    @apply h-10 w-10 opacity-50;
+  }
+
   /* ===== 视图容器 ===== */
   .view {
     @apply relative z-0 h-full w-full transition-colors duration-100 ease-in-out;
-  }
-  .view-home {
-    @apply flex h-full min-h-screen w-full flex-col items-center justify-center;
   }
   .view-title {
     @apply h-full w-fit text-2xl font-semibold;
   }
   .view-settings {
     @apply flex h-auto w-full flex-col gap-6;
-  }
-  .view-framework {
-    @apply mx-auto w-full max-w-4xl px-6 pt-6 pb-8;
   }
 
   /* ===== 标题栏操作按钮 =====

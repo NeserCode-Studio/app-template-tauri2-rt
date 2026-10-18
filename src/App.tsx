@@ -25,9 +25,7 @@ import { createLogger } from "@/lib/logger";
 
 const log = createLogger("App");
 
-const Home = lazy(() => import("@/views/Home"));
-const Software = lazy(() => import("@/views/Software"));
-const Framework = lazy(() => import("@/views/Framework"));
+const Library = lazy(() => import("@/views/Library"));
 const TrayMenu = lazy(() => import("@/views/TrayMenu"));
 
 /**
@@ -167,9 +165,7 @@ function App() {
                     <ScrollArea className="h-[calc(100vh-2rem)] w-full">
                       <Suspense fallback={null}>
                         <Routes>
-                          <Route path="/" index element={<Home />} />
-                          <Route path="/software" element={<Software />} />
-                          <Route path="/framework" element={<Framework />} />
+                          <Route path="/" index element={<Library />} />
                         </Routes>
                       </Suspense>
                     </ScrollArea>

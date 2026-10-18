@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "app-template",
+  "productName": "novels-yes",
   "version": "0.1.0",
-  "identifier": "com.app-template.app",
+  "identifier": "com.novels-yes.app",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:8888",
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "app-template",
+        "title": "novels-yes",
         "width": 800,
         "height": 600,
         "minWidth": 800,
