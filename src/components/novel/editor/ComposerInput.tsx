@@ -232,38 +232,34 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
         </div>
 
         {/*
-         * 提示行：左侧状态，右侧"回到最新段落"。
-         * 用户点了某张旧卡片后，底部输入框就被那条卡片占住了，
-         * 没有出口就只能继续改那张卡；这里给出明确的返回入口。
-         */}
-        {/*
-         * 状态行只在"正在改已有卡片"时出现。
+         * 提示行常驻：左状态，右操作。
          *
-         * 原本常驻显示"回车提交 · Shift+回车换行"，但那是两处重复与
-         * 一处多余的提示：回车提交已经写在输入框的 placeholder 里，
-         * 而 Shift+回车换行在本编辑器里没有意义——段落不主动折行，
-         * 换出来的软换行进了卡片正文反而是脏数据。
+         * 这一行的位置是被"编辑已有段落"的状态提示占住的——用户点了某张
+         * 旧段落后，输入框就被那条段落占住，没有出口就只能继续改它，
+         * 所以"回到最新段落"必须一直在。但既然行本来就在，追加新段落时
+         * 就顺手放一句操作提示，不必再让整行随状态闪进闪出。
          *
-         * 追加新段落时这一行没有任何信息，纯占高度，全部隐去。
+         * 右侧最外是提交按钮：它是这一行唯一的主动作，放在最右端符合
+         * "确认在末端"的读法。
          */}
-        <div className="-mr-6 flex items-center justify-between gap-2 text-xs text-muted-foreground/60">
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground/60">
           {editingIndex >= 0 ? (
             <span className="min-w-0 truncate font-semibold text-foreground">
               {t("Editor.input.editing")}
             </span>
           ) : (
-            <span className="min-w-0" />
+            <span className="min-w-0 truncate">{t("Editor.input.hint")}</span>
           )}
           <div className="flex shrink-0 items-center gap-1">
             {editingIndex >= 0 && onReturnToNew ? (
-            <button
-              type="button"
-              onClick={onReturnToNew}
-              className="flex shrink-0 items-center gap-1 rounded px-1 py-0.5 font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-            >
-              <CornerDownLeft className="icon-sm" />
-              {t("Editor.input.returnNew")}
-            </button>
+              <button
+                type="button"
+                onClick={onReturnToNew}
+                className="flex shrink-0 items-center gap-1 rounded px-1 py-0.5 font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                <CornerDownLeft className="icon-sm" />
+                {t("Editor.input.returnNew")}
+              </button>
             ) : null}
             <Button
               type="button"
