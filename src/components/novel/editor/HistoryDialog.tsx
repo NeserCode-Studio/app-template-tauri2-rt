@@ -10,9 +10,13 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useState } from "react";
+
 import { useI18n } from "@/composables";
 import { listHistory, type HistoryEntry } from "@/services/chapter";
 import type { Chapter } from "@/shared/schema";
+
+import HistoryPreviewDialog from "./HistoryPreviewDialog";
 
 /** 快照时间显示：今天只显示时刻，更早的补上日期。 */
 function formatAt(at: number, now: number): string {
@@ -43,6 +47,8 @@ export default function HistoryDialog({
   const { t } = useI18n();
   const now = Date.now();
   const entries: HistoryEntry[] = listHistory(chapter);
+  /** 点某一版本时打开全文预览。 */
+  const [preview, setPreview] = useState<number | null>(null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -67,7 +73,16 @@ export default function HistoryDialog({
                     h.index < 0 ? "border-primary/40 bg-accent/40" : "",
                   ].join(" ")}
                 >
-                  <span className="min-w-0 flex-1">
+                  {/*
+                   * 整块可点开看全文。两段预览只能让人认出"是这一版"，
+                   * 不足以判断内容是不是要的——真正的确认在预览弹窗里做。
+                   */}
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => setPreview(h.index)}
+                    title={t("Editor.history.preview")}
+                  >
                     <span className="flex items-center gap-1.5">
                       {h.index < 0 ? (
                         <Clock className="icon-sm shrink-0 text-primary" />
@@ -106,7 +121,7 @@ export default function HistoryDialog({
                       {h.words} {t("Editor.history.words")} · {h.cardCount}{" "}
                       {t("Editor.history.cards")}
                     </span>
-                  </span>
+                  </button>
                   <span className="flex shrink-0 flex-col gap-1">
                     {h.index < 0 ? null : (
                       <>
@@ -140,6 +155,19 @@ export default function HistoryDialog({
             {t("Editor.history.empty")}
           </p>
         )}
+
+        <HistoryPreviewDialog
+          open={preview !== null}
+          chapter={chapter}
+          index={preview}
+          onOpenChange={(o) => {
+            if (!o) setPreview(null);
+          }}
+          onRollback={(i) => {
+            setPreview(null);
+            onRollback(i);
+          }}
+        />
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>

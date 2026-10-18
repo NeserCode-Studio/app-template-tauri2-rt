@@ -173,6 +173,21 @@ export function listHistory(chapter: Chapter): HistoryEntry[] {
 }
 
 /**
+ * 取某个版本的完整正文（预览用）。
+ *
+ * 列表里的两段预览只能让人大致认出"是这一版"，无法确认内容是不是要的。
+ * 真正决定回不回滚要看全文，所以这里单独取——不在 HistoryEntry 里塞全文，
+ * 20 个版本各带一份正文会让列表渲染白白多出几十 KB 字符串。
+ *
+ * `index === -1` 取当前正文。
+ */
+export function historyText(chapter: Chapter, index: number): string[] {
+  const cards = index < 0 ? chapter.cards : (chapter.history ?? [])[index]?.cards;
+  if (!cards) return [];
+  return cards.map((c) => c.text.trim()).filter(Boolean);
+}
+
+/**
  * 删除某个历史快照。
  *
  * 快照占章文件的体积，上限 20 份之外还会被静默挤出。删除单个快照的价值在于
