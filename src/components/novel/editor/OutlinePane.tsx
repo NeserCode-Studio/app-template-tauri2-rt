@@ -521,7 +521,7 @@ export default function OutlinePane({
         items={list.map((n) => NODE_PREFIX + n.id)}
         strategy={verticalListSortingStrategy}
       >
-        <ul className="flex flex-col gap-0.5">
+        <ul className="mt-0.5 flex flex-col gap-0.5">
           {list.map((node, i) => (
               <SortableChapter
                 key={node.id}

@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { ArrowDown, ArrowUp, Combine, MoreHorizontal, Scissors, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, Combine, MoreHorizontal, Scissors, Trash2 } from "lucide-react";
 import { Pencil } from "lucide-react";
 
 import {
@@ -54,7 +54,12 @@ function MentionHover({
        * 信息密度按"以后还会加字段"来设计：正文摘要限制两行、标签与按钮压到
        * 一行，整体走紧凑排版，避免后续每加一个属性就把卡片撑高。
        */}
-      <HoverCardContent className="w-64 space-y-1 p-2.5 text-xs" align="start">
+      {/*
+       * 右侧的"打开素材库"按钮与左侧标题行同高：把头部行和按钮并排在同一个
+       * flex 行里，按钮不再另起一行独占高度。
+       */}
+      <HoverCardContent className="flex w-64 items-start gap-2 p-2.5 text-xs" align="start">
+        <div className="min-w-0 flex-1 space-y-1">
         <div className="flex items-baseline gap-1.5">
           <span
             className="size-1.5 shrink-0 translate-y-px rounded-full"
@@ -84,14 +89,16 @@ function MentionHover({
             ))}
           </p>
         ) : null}
+        </div>
         {onOpenEntry ? (
           <Button
             variant="ghost"
             size="sm"
-            className="h-6 w-full justify-start px-1 text-[11px]"
+            className="h-[22px] shrink-0 px-1.5 text-[11px]"
             onClick={() => onOpenEntry(entryId)}
+            title={t("Codex.library.title")}
           >
-            {t("Codex.library.title")}
+            <BookOpen className="icon-sm" />
           </Button>
         ) : null}
       </HoverCardContent>
