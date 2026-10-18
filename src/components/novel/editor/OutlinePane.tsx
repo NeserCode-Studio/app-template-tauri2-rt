@@ -207,7 +207,12 @@ function SortableChapter({
       }}
       style={{
         transform: sessionActive ? CSS.Transform.toString(transform) : undefined,
-        transition,
+        /*
+         * 松手后不留 transition：位移已随真实顺序一起消失，若还保留过渡动画，
+         * 卡片会从落点再滑回旧槽位，看上去像"顺序没换"。
+         * 拖拽期间（sessionActive）保留，错位预览才有平滑跟随。
+         */
+        transition: sessionActive ? transition : undefined,
       }}
       className="group relative px-1"
     >
@@ -711,7 +716,8 @@ export default function OutlinePane({
         </div>
         </ScrollArea>
 
-        <DragOverlay>
+        {/* dropAnimation 置空：浮层默认会飞回落点，我们已落盘重排，无需这层回落动画。 */}
+        <DragOverlay dropAnimation={null}>
           {activeNode ? (
             <div className="flex items-center gap-2 rounded-md bg-accent px-2 py-1.5 text-sm shadow-lg">
               <GripVertical className="icon-sm shrink-0 opacity-60" />
