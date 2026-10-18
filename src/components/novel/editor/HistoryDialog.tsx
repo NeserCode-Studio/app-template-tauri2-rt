@@ -8,12 +8,22 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useState } from "react";
 
 import { useI18n } from "@/composables";
-import { listHistory, type HistoryEntry } from "@/services/chapter";
+import { historyText, listHistory, type HistoryEntry } from "@/services/chapter";
 import type { Chapter } from "@/shared/schema";
 
 import HistoryPreviewDialog from "./HistoryPreviewDialog";
@@ -49,6 +59,14 @@ export default function HistoryDialog({
   const entries: HistoryEntry[] = listHistory(chapter);
   /** 点某一版本时打开全文预览。 */
   const [preview, setPreview] = useState<number | null>(null);
+  /**
+   * 待删除的版本下标。
+   *
+   * 删除快照不可撤销——不像回滚会把原正文存回去，删掉就是彻底没了。
+   * 所以必须先看内容、再确认，而不是给一个一次点击就能生效的垃圾桶图标。
+   * null 表示没有待删除项。
+   */
+  const [pendingDrop, setPendingDrop] = useState<number | null>(null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -61,7 +79,12 @@ export default function HistoryDialog({
           <DialogDescription>{t("Editor.history.confirm")}</DialogDescription>
         </DialogHeader>
 
-        {entries.length > 1 ? (
+        {/*
+         * 只剩当前版本时仍然显示这一行，而不是切成"暂无快照"空态——
+         * 否则用户删掉最后一个旧版本后，看到的是"没有历史"，
+         * 会误以为整章的历史被清空了。
+         */}
+        {entries.length ? (
           <ScrollArea className="max-h-96">
             <ul className="flex flex-col gap-1 pr-3">
               {entries.map((h) => (
@@ -139,7 +162,7 @@ export default function HistoryDialog({
                           className="h-7 text-muted-foreground hover:text-destructive"
                           aria-label={t("Editor.history.drop")}
                           title={t("Editor.history.drop")}
-                          onClick={() => onDelete(h.index)}
+                          onClick={() => setPendingDrop(h.index)}
                         >
                           <Trash2 className="icon-sm" />
                         </Button>
@@ -151,7 +174,7 @@ export default function HistoryDialog({
             </ul>
           </ScrollArea>
         ) : (
-          <p className="py-8 text-center text-sm text-muted-foreground">
+          <p className="py-10 text-center text-sm text-muted-foreground">
             {t("Editor.history.empty")}
           </p>
         )}
@@ -168,6 +191,38 @@ export default function HistoryDialog({
             onRollback(i);
           }}
         />
+
+        {/* 删除确认：先看清内容再决定，不可撤销。 */}
+        <AlertDialog open={pendingDrop !== null} onOpenChange={(o) => {
+          if (!o) setPendingDrop(null);
+        }}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("Editor.history.dropConfirm")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("Editor.history.dropHint")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <div className="max-h-48 overflow-y-auto rounded-md border p-3 text-xs leading-relaxed">
+              {pendingDrop === null
+                ? ""
+                : (historyText(chapter, pendingDrop).join("\n") ||
+                  t("Editor.chapter.new"))}
+            </div>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("Editor.split.cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                onClick={() => {
+                  if (pendingDrop !== null) onDelete(pendingDrop);
+                  setPendingDrop(null);
+                }}
+              >
+                {t("Editor.history.drop")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
         <DialogFooter>
           <Button variant="ghost" onClick={() => onOpenChange(false)}>
