@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Check, History, Loader2, Pencil, Save, Trash2, Undo2 } from "lucide-react";
+import { Check, History, Loader2, Pencil, Save, Trash2, Undo2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import CardItem from "./CardItem";
@@ -730,7 +730,6 @@ export default function ChapterEditor({
       {/* 章标题区 */}
       <header className="flex items-center justify-between gap-3 border-b px-6 py-3">
         <div className="flex min-w-0 items-center gap-2">
-          <BookOpen className="icon-md shrink-0 text-muted-foreground" />
           <h2 className="truncate text-base font-semibold">
             {chapter.title || t("Editor.title.placeholder")}
           </h2>
@@ -795,14 +794,13 @@ export default function ChapterEditor({
           </Button>
           {/* 历史版本：编辑器撤销栈退出即失效，这里是跨会话的唯一退路。 */}
           <Button
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            aria-label={t("Editor.history.open")}
-            title={t("Editor.history.open")}
+            size="sm"
+            variant="outline"
+            className="h-7"
             onClick={() => setHistoryOpen(true)}
           >
             <History className="icon-sm" />
+            {t("Editor.history.open")}
           </Button>
           {/*
            * 撤回合并：合并是"破坏性"的（少了一张卡），

@@ -1,5 +1,3 @@
-import { Clock, History, Trash2 } from "lucide-react";
-
 import {
   Dialog,
   DialogContent,
@@ -72,10 +70,7 @@ export default function HistoryDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <History className="icon-sm" />
-            {t("Editor.history.title")}
-          </DialogTitle>
+          <DialogTitle>{t("Editor.history.title")}</DialogTitle>
           <DialogDescription>{t("Editor.history.confirm")}</DialogDescription>
         </DialogHeader>
 
@@ -107,9 +102,6 @@ export default function HistoryDialog({
                     title={t("Editor.history.preview")}
                   >
                     <span className="flex items-center gap-1.5">
-                      {h.index < 0 ? (
-                        <Clock className="icon-sm shrink-0 text-primary" />
-                      ) : null}
                       <span className="text-xs tabular-nums text-muted-foreground">
                         {formatAt(h.at, now)}
                       </span>
@@ -159,12 +151,10 @@ export default function HistoryDialog({
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-7 text-muted-foreground hover:text-destructive"
-                          aria-label={t("Editor.history.drop")}
-                          title={t("Editor.history.drop")}
+                          className="h-7 text-xs text-muted-foreground hover:text-destructive"
                           onClick={() => setPendingDrop(h.index)}
                         >
-                          <Trash2 className="icon-sm" />
+                          {t("Editor.history.drop")}
                         </Button>
                       </>
                     )}

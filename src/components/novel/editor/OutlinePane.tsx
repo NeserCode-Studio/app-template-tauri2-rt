@@ -22,6 +22,12 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/composables";
 import { useOutline } from "@/contexts/outline";
 import type { OutlineNode } from "@/shared/schema";
@@ -609,28 +615,36 @@ export default function OutlinePane({
       {/* 标题栏 */}
       <div className="flex items-center justify-between gap-2 px-3 py-2">
         <h2 className="row-label">{t("Editor.side.outline")}</h2>
-        <div className="flex items-center gap-0.5">
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            onClick={() => setChapterDialogIn(null)}
-            aria-label={t("Editor.side.addChapter")}
-            title={t("Editor.side.addChapter")}
-          >
-            <Plus className="icon-sm" />
-          </Button>
-          <Button
-            size="icon"
-            variant="ghost"
-            className="size-7"
-            onClick={() => setVolumeDialog(true)}
-            aria-label={t("Editor.side.addVolume")}
-            title={t("Editor.side.addVolume")}
-          >
-            <BookOpen className="icon-sm" />
-          </Button>
-        </div>
+        {/*
+         * 新建卷与新建章合并成一个入口。
+         *
+         * 两个图标按钮并排时，用户得先分辨哪个是哪个；加上"章"是主路径、
+         * "卷"是低频操作，并排等权重反而把主路径藏起来了。改成下拉后，
+         * 主路径在一个明确的下拉项上，低频项排在下面。
+         */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              aria-label={t("Editor.side.add")}
+              title={t("Editor.side.add")}
+            >
+              <Plus className="icon-sm" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-32">
+            <DropdownMenuItem onSelect={() => setChapterDialogIn(null)}>
+              <Plus className="icon-sm" />
+              {t("Editor.side.addChapter")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setVolumeDialog(true)}>
+              <BookOpen className="icon-sm" />
+              {t("Editor.side.addVolume")}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <DndContext
@@ -660,7 +674,7 @@ export default function OutlinePane({
                     onClick={() =>
                       setCollapsed((prev) => ({ ...prev, [volume.id]: !prev[volume.id] }))
                     }
-                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
                   >
                     <ChevronRight
                       className={[
@@ -668,9 +682,13 @@ export default function OutlinePane({
                         isCollapsed ? "" : "rotate-90",
                       ].join(" ")}
                     />
-                    <BookOpen className="icon-sm shrink-0 text-muted-foreground" />
                     <span className="truncate text-sm font-medium">{volume.title}</span>
-                    <span className="ml-auto text-xs text-muted-foreground/60">
+                    {/*
+                     * 章数跟在名称后面而不是推到最右：名称与数量是同一条信息
+                     * （"这卷有多少章"），推到右侧会被两端的操作按钮挤远，
+                     * 视线要来回扫才联系得上。
+                     */}
+                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground/60">
                       {(chaptersByVolume.get(volume.id) ?? []).length}
                     </span>
                   </button>
