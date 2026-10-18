@@ -1,3 +1,5 @@
+mod fs_bridge;
+
 use tauri::{
     Manager,
     image::Image,
@@ -95,6 +97,18 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![greet, open_devtools])
+        .invoke_handler(tauri::generate_handler![
+            greet,
+            open_devtools,
+            fs_bridge::fs_read_text,
+            fs_bridge::fs_write_text,
+            fs_bridge::fs_read_dir,
+            fs_bridge::fs_create_dir,
+            fs_bridge::fs_remove,
+            fs_bridge::fs_rename,
+            fs_bridge::fs_exists,
+            fs_bridge::fs_stat,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
