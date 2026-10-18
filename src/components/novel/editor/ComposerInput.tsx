@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useImperativeHandle, useRef } from "react";
+import { forwardRef, useImperativeHandle, useRef } from "react";
 import { CornerDownLeft, X } from "lucide-react";
 
 import { useI18n } from "@/composables";
@@ -58,14 +58,6 @@ export interface ComposerInputProps {
  *    否则输入法确认候选词会被当成提交，吞掉一段字。
  * 3. Shift+Enter 保留为换行，不提交。
  */
-/**
- * 输入框高度上限（px）。
- *
- * 超出的部分改为滚动。没有上限的话，一段长草稿会把正文区整个顶出视口，
- * 输入框虽然还"贴着底"，但正文已被推到屏幕外，写作时失去上下文。
- */
-const MAX_COMPOSER_HEIGHT = 220;
-
 const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
   function ComposerInput(
     { onSubmit, editingIndex, onReturnToNew, pendingDraft, onRestoreDraft, onDiscardDraft },
@@ -73,24 +65,6 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
   ) {
     const { t } = useI18n();
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-
-    /**
-     * 按内容自适应高度，夹在最小与最大值之间。
-     *
-     * textarea 的高度只能由 `rows` 决定，写死了三行：写一段话就要手动滚，
-     * 而空着时又占着三行不必要的高度。这里改成"内容多少就多高"，
-     * 但**必须有上限**——否则一段长文本会把整个正文区顶出视口，
-     * 输入框永远贴不了底，上下文全被它吃掉。
-     *
-     * 做法是先把高度归零再读 scrollHeight：直接赋值新高度不会让元素收缩，
-     * 内容变短时高度只会往下走。
-     */
-    const resize = useCallback(() => {
-      const el = textareaRef.current;
-      if (!el) return;
-      el.style.height = "auto";
-      el.style.height = `${Math.min(el.scrollHeight, MAX_COMPOSER_HEIGHT)}px`;
-    }, []);
 
     useImperativeHandle(ref, () => ({
       focus(caret = "end") {
@@ -104,8 +78,6 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
         const el = textareaRef.current;
         if (!el) return;
         el.value = text;
-        /* 载入草稿或卡片原文后同样要重新适配高度。 */
-        resize();
         el.focus();
         if (caret === "start") el.setSelectionRange(0, 0);
         else el.setSelectionRange(text.length, text.length);
@@ -118,15 +90,12 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
       },
       clear() {
         const el = textareaRef.current;
-        if (el) {
-          el.value = "";
-          resize();
-        }
+        if (el) el.value = "";
       },
       read() {
         return textareaRef.current?.value ?? "";
       },
-    }), [resize]);
+    }), []);
 
     return (
       <div className="flex flex-col gap-1.5 px-6 pb-3 pt-2">
@@ -174,7 +143,6 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
         <div className="relative">
           <textarea
             ref={textareaRef}
-            rows={3}
             placeholder={t("Editor.input.placeholder")}
             aria-label={t("Editor.input.placeholder")}
             /*
@@ -182,9 +150,12 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
              * 聚焦不画任何边框 / 描边：底部本来就该始终是"在写"的状态，
              * 再叠一圈高亮反而像弹出了一个输入控件。
              */
-            className="prose-article max-h-[220px] min-h-[3lh] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 py-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
-            /* 输入过程中同步高度：内容增删都要跟上，不只是 load/clear。 */
-            onInput={resize}
+            /*
+             * field-sizing: content 让 textarea 高度跟着内容走，不需要 JS 测量。
+             * min-h 给空稿一个落脚点；max-h 封顶后由 overflow-y-auto 内部滚动，
+             * 免得长草稿把正文区整个顶出视口。
+             */
+            className="prose-article [field-sizing:content] max-h-[220px] min-h-[3lh] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 py-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
             onKeyDown={(e) => {
               // 输入法组合中：Enter 属于候选确认，绝不提交。
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;
