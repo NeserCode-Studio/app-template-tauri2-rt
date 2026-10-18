@@ -57,3 +57,13 @@ export function codexEntryFile(workId: string, type: string, entryId: string): s
 export function trashDir(): string {
   return TRASH_DIR;
 }
+
+/** 回收站内的清单文件：记录被删项的原始路径与类型，供恢复使用。 */
+export function trashIndexFile(): string {
+  return joinRel(TRASH_DIR, "index.json");
+}
+
+/** 单条回收记录在清单里的存放文件。 */
+export function trashItemFile(itemId: string): string {
+  return joinRel(TRASH_DIR, itemId + ".json");
+}

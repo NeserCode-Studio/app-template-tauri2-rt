@@ -41,10 +41,11 @@ import {
 import {
   createChapter as createChapterFile,
   countWorkWords,
-  deleteChapter as deleteChapterFile,
   loadChapter,
   renameChapter as renameChapterFile,
 } from "@/services/chapter";
+import { chapterFile, chapterTextFile } from "@/services/paths";
+import { moveToTrash } from "@/services/trash";
 import { recordWorkWords } from "@/services/stats";
 import { createLogger } from "@/lib/logger";
 import type { Chapter } from "@/shared/schema";
@@ -208,7 +209,24 @@ export default function Editor() {
   const deleteCurrentChapter = useCallback(async () => {
     if (!root || !currentWorkId || !chapter) return;
     const index = chapters.findIndex((c) => c.id === chapter.id);
-    await deleteChapterFile(root, currentWorkId, chapter.id);
+    /*
+     * 先入回收站再摘节点。
+     *
+     * 顺序很关键：若先删文件再入回收站，清单里记的会是"不存在"的路径，
+     * 恢复时拿不到任何数据。反过来则先有备份，后摘引用。
+     */
+    const node = chapters[index];
+    await moveToTrash(root, {
+      kind: "chapter",
+      originId: chapter.id,
+      paths: [
+        chapterFile(currentWorkId, chapter.id),
+        chapterTextFile(currentWorkId, chapter.id),
+      ],
+      title: chapter.title,
+      parentId: node?.parentId ?? null,
+      order: node?.order ?? 0,
+    });
     const next = await removeNode(root, currentWorkId, chapter.id);
     setOutline(next);
     /* 选中相邻的章；没有别的章就回到空态。 */

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookMarked, FolderOpen, Plus } from "lucide-react";
+import { BookMarked, FolderOpen, Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
 import WorkCard from "@/components/novel/WorkCard";
+import TrashDialog from "@/components/novel/TrashDialog";
 import { useI18n, useToast } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useWorkspace } from "@/contexts/workspace";
@@ -61,6 +62,7 @@ export default function Library() {
   const [type, setType] = useState("");
   const [pendingArchive, setPendingArchive] = useState<string | null>(null);
   const [wordCounts, setWordCounts] = useState<Record<string, number>>({});
+  const [trashOpen, setTrashOpen] = useState(false);
 
   /** 统计字数：阶段 2 先从 stats.json 读取，阶段 6 再做实时更新。 */
   const loadWordCounts = useCallback(async () => {
@@ -216,6 +218,10 @@ export default function Library() {
             <FolderOpen className="icon-md" />
             {t("Library.workspace.change")}
           </Button>
+          <Button variant="ghost" size="sm" onClick={() => setTrashOpen(true)}>
+            <Trash2 className="icon-md" />
+            {t("Trash.title")}
+          </Button>
           <Button size="sm" onClick={openCreate}>
             <Plus className="icon-md" />
             {t("Library.action.new")}
@@ -340,6 +346,13 @@ export default function Library() {
       </Dialog>
 
       {/* 归档确认 */}
+      <TrashDialog
+        open={trashOpen}
+        root={root}
+        onOpenChange={setTrashOpen}
+        onRestored={() => void loadWordCounts()}
+      />
+
       <AlertDialog
         open={pendingArchive !== null}
         onOpenChange={(openState) => {
