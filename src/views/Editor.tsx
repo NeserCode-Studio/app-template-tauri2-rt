@@ -76,7 +76,7 @@ import { moveToTrash } from "@/services/trash";
 import { useCodex } from "@/contexts/codex";
 import { recordWorkWords } from "@/services/stats";
 import { createLogger } from "@/lib/logger";
-import type { Chapter } from "@/shared/schema";
+import type { Chapter, OutlineNode } from "@/shared/schema";
 
 const log = createLogger("Editor");
 
@@ -278,11 +278,34 @@ export default function Editor() {
     [root, currentWorkId, setOutline]
   );
 
-  const chapterIndex = chapters.findIndex((c) => c.id === chapter?.id);
-  const prevId = chapterIndex > 0 ? chapters[chapterIndex - 1]?.id : null;
+  /*
+   * 翻章用的章节序列：按结构树的视觉顺序排，即
+   * 「顶层的游离章 → 各卷，卷按 order、卷内章按 order」。
+   *
+   * 不能直接用 context 里的 chapters：那是把所有章拍平后只按 order 排的，
+   * 同一卷内的章 order 是 0,1,2…，不同卷又是另一组 0,1,2…，
+   * 拍平排序的结果与树上看到的顺序无关。于是"首卷第一章"点下一章会
+   * 跳到某个游离章（截图里的 bug），而不是首卷第二章。
+   */
+  const chapterSequence = useMemo(() => {
+    const byParent = new Map<string | null, OutlineNode[]>();
+    for (const c of chapters) {
+      const list = byParent.get(c.parentId);
+      if (list) list.push(c);
+      else byParent.set(c.parentId, [c]);
+    }
+    /* 游离章排在所有卷之前，与结构树的渲染顺序一致。 */
+    return [
+      ...(byParent.get(null) ?? []),
+      ...volumes.flatMap((v) => byParent.get(v.id) ?? []),
+    ];
+  }, [chapters, volumes]);
+
+  const chapterIndex = chapterSequence.findIndex((c) => c.id === chapter?.id);
+  const prevId = chapterIndex > 0 ? chapterSequence[chapterIndex - 1]?.id : null;
   const nextId =
-    chapterIndex >= 0 && chapterIndex < chapters.length - 1
-      ? chapters[chapterIndex + 1]?.id
+    chapterIndex >= 0 && chapterIndex < chapterSequence.length - 1
+      ? chapterSequence[chapterIndex + 1]?.id
       : null;
 
   const work = currentWorkId ? works[currentWorkId] : null;
@@ -641,7 +664,8 @@ export default function Editor() {
             <section className="flex flex-col gap-2">
               <h2 className="row-label">{t("Editor.side.jump")}</h2>
               <p className="text-sm text-muted-foreground">
-                {chapterIndex >= 0 ? chapterIndex + 1 : 0} / {chapters.length}
+                {chapterIndex >= 0 ? chapterIndex + 1 : 0} /{" "}
+                {chapterSequence.length}
               </p>
               <p className="text-xs text-muted-foreground/70 tabular-nums">
                 {words} {t("Editor.chapter.words")}
