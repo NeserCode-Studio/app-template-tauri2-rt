@@ -36,7 +36,11 @@ const log = createLogger("OutlinePane");
 
 export interface OutlinePaneProps {
   /** 新建章节：创建后自动打开。 */
-  onCreateChapter: (title: string, parentVolumeId: string | null) => Promise<void>;
+  onCreateChapter: (
+    title: string,
+    parentVolumeId: string | null,
+    meta?: { status?: "draft" | "revising" | "final"; synopsis?: string }
+  ) => Promise<void>;
   /** 新建卷。 */
   onCreateVolume: (title: string) => Promise<void>;
   /** 移动节点（排序 / 升降级）。 */
@@ -357,6 +361,10 @@ export default function OutlinePane({
 
   function handleDragStart(e: DragStartEvent) {
     setActiveId(String(e.active.id));
+    log.info("[outline-dnd] start", {
+      active: String(e.active.id),
+      registered: nodeEls.current.size,
+    });
   }
 
   function handleDragOver(e: DragOverEvent) {
@@ -378,13 +386,20 @@ export default function OutlinePane({
   function handleDragEnd(e: DragEndEvent) {
     const active = String(e.active.id);
     const over = e.over ? String(e.over.id) : null;
+    log.info("[outline-dnd] end", { active, over });
     setActiveId(null);
     setOverId(null);
-    if (!over) return;
+    if (!over) {
+      log.warn("[outline-dnd] abort: over is null");
+      return;
+    }
 
     const nodeId = active.slice(NODE_PREFIX.length);
     const source = nodeById.get(nodeId);
-    if (!source) return;
+    if (!source) {
+      log.warn("[outline-dnd] abort: node not found", { nodeId });
+      return;
+    }
 
     /*
      * 父级归属仍取 `over`：跨卷升降级需要知道落在哪个容器里，
@@ -395,7 +410,10 @@ export default function OutlinePane({
 
     const el = nodeEls.current.get(nodeId);
     if (!el) {
-      log.warn("outline drag: node rect unavailable", { nodeId });
+      log.warn("[outline-dnd] abort: element not registered", {
+        nodeId,
+        known: [...nodeEls.current.keys()],
+      });
       return;
     }
     /* 松手这一刻才读：拖动全程 transform 都在变，早读的矩形已过期。 */
@@ -408,16 +426,32 @@ export default function OutlinePane({
       const rect = other.getBoundingClientRect();
       centers.push(rect.top + rect.height / 2);
     }
-    const index = computeIndexByPosition(centers, live.top + live.height / 2);
+    const draggedCenter = live.top + live.height / 2;
+    const index = computeIndexByPosition(centers, draggedCenter);
     const siblings = chaptersByVolume.get(targetParentId) ?? [];
     const without = siblings.filter((n) => n.id !== nodeId);
+    log.info("[outline-dnd] computed", {
+      nodeId,
+      targetParentId,
+      draggedCenter: Math.round(draggedCenter),
+      centers: centers.map((c) => Math.round(c)),
+      index,
+      before: siblings.map((n) => n.id.slice(0, 4)),
+    });
     /* 落回原位就不写盘，避免无意义的 outline 落盘与全树刷新。 */
-    if (index < 0 || index > without.length) return;
+    if (index < 0 || index > without.length) {
+      log.warn("[outline-dnd] abort: index out of range", { index, len: without.length });
+      return;
+    }
     const before = siblings.map((n) => n.id).join(",");
     const after = [...without.slice(0, index), { id: nodeId }, ...without.slice(index)]
       .map((n) => n.id)
       .join(",");
-    if (before === after) return;
+    if (before === after) {
+      log.warn("[outline-dnd] abort: order unchanged", { index });
+      return;
+    }
+    log.info("[outline-dnd] committing move", { nodeId, targetParentId, index });
     void onMoveNode(nodeId, targetParentId, index);
   }
 
@@ -472,16 +506,24 @@ export default function OutlinePane({
         title={t("Editor.side.addVolume")}
         placeholder={t("Editor.side.volume")}
         onOpenChange={setVolumeDialog}
-        onConfirm={onCreateVolume}
+        onConfirm={(input) => onCreateVolume(input.title)}
       />
       <CreateNodeDialog
         open={chapterDialogIn !== undefined}
         title={t("Editor.side.addChapter")}
         placeholder={t("Editor.side.chapter")}
+        volumes={volumes}
+        defaultParentId={chapterDialogIn}
+        withMeta
         onOpenChange={(o) => {
           if (!o) setChapterDialogIn(undefined);
         }}
-        onConfirm={(name) => onCreateChapter(name, chapterDialogIn ?? null)}
+        onConfirm={(input) =>
+          onCreateChapter(input.title, input.parentId, {
+            status: input.status,
+            synopsis: input.synopsis,
+          })
+        }
       />
       <ChapterMetaDialog
         open={metaTarget !== null}
@@ -547,12 +589,7 @@ export default function OutlinePane({
                 dragging={Boolean(activeId) && overRef?.kind !== "before"}
                 className="mb-1"
               >
-                {/*
-                 * `w-full` 是关键：不加的话这一行的宽度由内容撑开，
-                 * 收起卷时下面的章卡片消失，行会跟着变窄，右侧的
-                 * 章节数与加号就整体向左跳。
-                 */}
-                <div className="group flex w-full items-center gap-1 rounded-md px-2 py-1 hover:bg-accent/40">
+                <div className="group flex items-center gap-1 rounded-md px-2 py-1 hover:bg-accent/40">
                   <button
                     type="button"
                     onClick={() =>

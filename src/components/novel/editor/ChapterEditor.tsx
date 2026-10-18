@@ -39,6 +39,8 @@ export interface ChapterEditorProps {
    */
   onRename?: () => void;
   onDelete?: () => void;
+  /** 打开素材库并选中条目（正文 hover 卡点击）。 */
+  onOpenCodexEntry?: (entryId: string) => void;
 }
 
 /** 防抖自动保存间隔（计划书 §6.3：800ms）。 */
@@ -93,6 +95,7 @@ export default function ChapterEditor({
   onWordsCommitted,
   onRename,
   onDelete,
+  onOpenCodexEntry,
 }: ChapterEditorProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -693,6 +696,7 @@ export default function ChapterEditor({
                 onSplit={splitCard}
                 onMergeDown={mergeDown}
                 onDelete={deleteCard}
+                onOpenCodexEntry={onOpenCodexEntry}
               />
             ))}
           </div>

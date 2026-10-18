@@ -64,6 +64,9 @@ export async function addNode(
      * 打开章节就会按结构树 id 去找一个不存在的文件。
      */
     id?: string;
+    /** 建章时顺手带上状态与摘要，省得建完再去详情里改。 */
+    status?: "draft" | "revising" | "final";
+    synopsis?: string;
   }
 ): Promise<Outline> {
   const outline = await loadOutline(root, workId);
@@ -74,6 +77,8 @@ export async function addNode(
     title: input.title,
     parentId: input.parentId,
     order: nextOrder(outline, input.parentId),
+    status: input.status,
+    synopsis: input.synopsis,
     createdAt: now,
     updatedAt: now,
   });
@@ -144,7 +149,10 @@ export async function moveNode(
 ): Promise<Outline> {
   const outline = await loadOutline(root, workId);
   const node = outline.nodes.find((n) => n.id === nodeId);
-  if (!node) return outline;
+  if (!node) {
+    log.error("[moveNode] node not found", { nodeId, workId });
+    return outline;
+  }
 
   /* 环检测：目标若在自己的子树里则拒绝。 */
   let cursor = targetParentId;
@@ -157,6 +165,16 @@ export async function moveNode(
   }
 
   const sourceParentId = node.parentId;
+  log.info("[moveNode] enter", {
+    nodeId,
+    sourceParentId,
+    targetParentId,
+    targetIndex,
+    currentOrder: outline.nodes
+      .filter((n) => n.parentId === sourceParentId)
+      .sort((a, b) => a.order - b.order)
+      .map((n) => ({ id: n.id.slice(0, 4), order: n.order })),
+  });
   if (sourceParentId === targetParentId) {
     /*
      * 同级内换位：先取出再按目标下标插入。
@@ -169,7 +187,15 @@ export async function moveNode(
       .filter((n) => n.id !== nodeId);
     const clamped = Math.max(0, Math.min(targetIndex, siblings.length));
     siblings.splice(clamped, 0, node);
-    return persistOrder(root, workId, outline, siblings);
+    const result = await persistOrder(root, workId, outline, siblings);
+    log.info("[moveNode] same-parent done", {
+      nodeId,
+      result: result.nodes
+        .filter((n) => n.parentId === sourceParentId)
+        .sort((a, b) => a.order - b.order)
+        .map((n) => ({ id: n.id.slice(0, 4), order: n.order })),
+    });
+    return result;
   }
 
   /* 跨父级：从源侧取走，插入目标侧。 */
@@ -206,6 +232,11 @@ async function persistOrder(
     nodes: outline.nodes.map((n) => patches.get(n.id) ?? n),
   };
   await saveOutline(root, workId, next);
+  log.info("[persistOrder] written", {
+    workId,
+    touched: patches.size,
+    ids: [...patches.keys()].map((id) => id.slice(0, 4)),
+  });
   return next;
 }
 

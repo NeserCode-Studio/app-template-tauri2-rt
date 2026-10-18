@@ -14,6 +14,82 @@ import { useCodex } from "@/contexts/codex";
 import { usePreferences } from "@/contexts/preferences";
 import type { Card } from "@/shared/schema";
 import TextContextMenu from "./TextContextMenu";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
+import { Button } from "@/components/ui/button";
+
+/**
+ * 正文里的素材提及：悬停浮出条目速览。
+ *
+ * 高亮只是"这里有个名字"的信号，用户真正需要的是"这个人是谁"——
+ * 不查就得打断写作去翻素材库。加悬停卡后，鼠标一过就知道，
+ * 点一下才跳转。
+ */
+function MentionHover({
+  entryId,
+  text,
+  color,
+  onOpenEntry,
+}: {
+  entryId: string;
+  text: string;
+  color: string;
+  onOpenEntry?: (entryId: string) => void;
+}) {
+  const { t } = useI18n();
+  const { entries, colorOf } = useCodex();
+  const entry = entries.find((e) => e.id === entryId) ?? null;
+  if (!entry) return <mark className="rounded-sm px-0.5">{text}</mark>;
+
+  return (
+    <HoverCard openDelay={300} closeDelay={120}>
+      <HoverCardTrigger asChild>
+        <mark
+          className="cursor-help rounded-sm px-0.5 text-foreground"
+          style={{ backgroundColor: `${color}2e` }}
+        >
+          {text}
+        </mark>
+      </HoverCardTrigger>
+      <HoverCardContent className="w-64 p-3" align="start">
+        <div className="flex items-center gap-1.5">
+          <span
+            className="size-2 shrink-0 rounded-full"
+            style={{ backgroundColor: colorOf(entry.type) }}
+          />
+          <span className="truncate text-sm font-medium">{entry.name}</span>
+          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">
+            {t(`Codex.type.${entry.type}`)}
+          </span>
+        </div>
+        {entry.aliases.length ? (
+          <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">
+            / {entry.aliases.join(" / ")}
+          </p>
+        ) : null}
+        {entry.body ? (
+          <p className="mt-1.5 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
+            {entry.body}
+          </p>
+        ) : null}
+        {entry.tags.length ? (
+          <p className="mt-1.5 text-[10px] text-muted-foreground/60">
+            {entry.tags.join(" · ")}
+          </p>
+        ) : null}
+        {onOpenEntry ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2 h-6 w-full justify-start px-1 text-[11px]"
+            onClick={() => onOpenEntry(entryId)}
+          >
+            {t("Codex.library.title")}
+          </Button>
+        ) : null}
+      </HoverCardContent>
+    </HoverCard>
+  );
+}
 
 /**
  * 把正文按素材提及切成片段。
@@ -75,6 +151,8 @@ export interface CardItemProps {
   onSplit: (index: number) => void;
   onMergeDown: (index: number) => void;
   onDelete: (index: number) => void;
+  /** 打开素材库并选中该条目（hover 卡片点击时）。 */
+  onOpenCodexEntry?: (entryId: string) => void;
 }
 
 /**
@@ -95,6 +173,7 @@ export default function CardItem({
   onSplit,
   onMergeDown,
   onDelete,
+  onOpenCodexEntry,
 }: CardItemProps) {
   const { t } = useI18n();
   const { entries, colorOf } = useCodex();
@@ -192,15 +271,13 @@ export default function CardItem({
           ? " "
           : parts.map((part, i) =>
               part.entryId ? (
-                <mark
+                <MentionHover
                   key={i}
-                  className="rounded-sm bg-primary/15 px-0.5 text-foreground"
-                  style={{
-                    backgroundColor: `${colorById.get(part.entryId) ?? "#7c3aed"}2e`,
-                  }}
-                >
-                  {part.text}
-                </mark>
+                  entryId={part.entryId}
+                  text={part.text}
+                  color={colorById.get(part.entryId) ?? "#7c3aed"}
+                  onOpenEntry={onOpenCodexEntry}
+                />
               ) : (
                 <span key={i}>{part.text}</span>
               )

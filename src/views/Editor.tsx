@@ -61,6 +61,7 @@ import {
 } from "@/services/chapter";
 import { chapterFile, chapterTextFile } from "@/services/paths";
 import { moveToTrash } from "@/services/trash";
+import { useCodex } from "@/contexts/codex";
 import { recordWorkWords } from "@/services/stats";
 import { createLogger } from "@/lib/logger";
 import type { Chapter } from "@/shared/schema";
@@ -77,6 +78,7 @@ export default function Editor() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const { root } = useWorkspace();
+  const { setCurrentEntryId } = useCodex();
   const { currentWorkId, works } = useLibrary();
   const {
     chapters,
@@ -158,7 +160,11 @@ export default function Editor() {
   );
 
   const createChapter = useCallback(
-    async (title: string, parentVolumeId: string | null) => {
+    async (
+      title: string,
+      parentVolumeId: string | null,
+      meta?: { status?: "draft" | "revising" | "final"; synopsis?: string }
+    ) => {
       if (!root || !currentWorkId) return;
       /*
        * 先建章文件拿到 id，再以同一个 id 登记进结构树。
@@ -173,6 +179,8 @@ export default function Editor() {
         title,
         parentId: parentVolumeId,
         id: created.id,
+        status: meta?.status,
+        synopsis: meta?.synopsis,
       });
       setOutline(next);
       setChapter(created);
@@ -379,6 +387,10 @@ export default function Editor() {
                   setRenaming(true);
                 }}
                 onDelete={() => setPendingDelete(chapter.id)}
+                onOpenCodexEntry={(entryId) => {
+                  setCurrentEntryId(entryId);
+                  navigate("/codex");
+                }}
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3">

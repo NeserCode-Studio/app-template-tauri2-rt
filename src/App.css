@@ -253,6 +253,18 @@
       tabular-nums text-muted-foreground/50;
   }
 
+  /*
+   * ScrollArea 内容撑满视口。
+   *
+   * Radix 的 viewport 把 children 包进一个 `display: table; min-width: 100%`
+   * 的容器里，table 会收缩到内容宽度——于是子树里的 `w-full` 是相对一个
+   * 随内容变化的宽度解析的，展开/收起时整行会跟着伸缩，右侧元素左右跳。
+   * 强制这个 table 撑满即可，需要时仍可 shrink-to-fit 的地方单独放开。
+   */
+  [data-radix-scroll-area-viewport] > div {
+    width: 100%;
+  }
+
   /* ===== 标题栏操作按钮 =====
      作用在自有 <span> 上，非 shadcn 组件，故可收纳于此。
      注意：标题栏里的 <Separator> 是 shadcn 组件，其样式在调用处平铺。
