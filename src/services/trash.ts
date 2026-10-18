@@ -321,6 +321,15 @@ export async function restoreFromTrash(root: string, itemId: string): Promise<bo
   await fs2.remove(file);
   await reattachNode(root, raw);
   await reattachWork(root, raw);
+  /*
+   * 恢复一卷会连带恢复它名下所有章，那些子章的独立回收记录就成了空壳：
+   * 正文已经随卷搬回去了，再点"恢复"只会报「原位置已被占用」。
+   * 留着它们既误导又占列表，所以卷恢复成功后一并清掉。
+   *
+   * 只清理「同一部作品 + 记录在 subtree 里」的章记录。不按 parentId
+   * 模糊匹配：那可能命中用户另外删的同级章，清掉就真找不回来了。
+   */
+  await dropRolledUpChildren(root, raw);
   await writeIndex(
     root,
     (await readIndex(root)).filter((id) => id !== itemId)
@@ -328,6 +337,51 @@ export async function restoreFromTrash(root: string, itemId: string): Promise<bo
   log.info("restored from trash", { itemId });
   return true;
 }
+
+/**
+ * 清掉随卷一起被恢复掉的子章回收记录。
+ *
+ * 删一卷会产生 N+1 条记录（卷 + 每章各一条）。恢复卷时 subtree 整棵挂回，
+ * 那些单章记录的正文已回到磁盘，留着只会让用户再次点击时报
+   * 「原位置已被占用」——而这个报错对他毫无意义，因为他没想再恢复一次。
+   */
+async function dropRolledUpChildren(root: string, item: TrashItem): Promise<void> {
+  if (item.kind !== "volume") return;
+  const childIds = new Set(item.subtree.map((n) => n.id));
+  if (!childIds.size) return;
+
+  const fs2 = createFs(root);
+  let dropped = 0;
+  for (const otherId of await readIndex(root)) {
+    const otherFile = trashItemFile(otherId);
+    if (!(await fs2.exists(otherFile))) continue;
+    let other: TrashItem;
+    try {
+      other = trashItemSchema.parse(JSON.parse(await fs2.readText(otherFile)));
+    } catch {
+      continue;
+    }
+    if (other.kind !== "chapter") continue;
+    /*
+     * 同一部作品才认。理论上不同作品的章 id 不会相重，但清理是
+     * 不可逆的，多一道校验比赌一次好。
+     */
+    if (other.workId !== null && item.workId !== null && other.workId !== item.workId) {
+      continue;
+    }
+    if (!childIds.has(other.originId)) continue;
+    /* 记录与数据文件一起清，不在 .trash 里留孤儿。 */
+    await purgeFromTrash(root, otherId);
+    dropped++;
+  }
+  if (dropped) {
+    log.info("rolled-up chapter records dropped", {
+      volume: item.originId,
+      dropped,
+    });
+  }
+}
+
 
 /**
  * 把恢复的作品重新登记进工作区清单。
