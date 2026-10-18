@@ -24,10 +24,13 @@ import { SettingsDialogContext } from "@/contexts/settings";
 import { createLogger } from "@/lib/logger";
 import { WorkspaceProvider } from "@/contexts/workspace.provider";
 import { LibraryProvider } from "@/contexts/library.provider";
+import { PreferencesProvider } from "@/contexts/preferences.provider";
+import { OutlineProvider } from "@/contexts/outline.provider";
 
 const log = createLogger("App");
 
 const Library = lazy(() => import("@/views/Library"));
+const Editor = lazy(() => import("@/views/Editor"));
 const TrayMenu = lazy(() => import("@/views/TrayMenu"));
 
 /**
@@ -153,8 +156,10 @@ function App() {
   }
 
   return (
-    <WorkspaceProvider>
-      <LibraryProvider>
+    <PreferencesProvider>
+      <WorkspaceProvider>
+        <LibraryProvider>
+          <OutlineProvider>
         <SettingsDialogContext.Provider value={settingsValue}>
         <I18nContext.Provider value={i18nValue}>
           <ThemeContext.Provider value={themeValue}>
@@ -169,6 +174,7 @@ function App() {
                       <Suspense fallback={null}>
                         <Routes>
                           <Route path="/" index element={<Library />} />
+                          <Route path="/editor" element={<Editor />} />
                         </Routes>
                       </Suspense>
                     </ScrollArea>
@@ -185,8 +191,10 @@ function App() {
           </ThemeContext.Provider>
         </I18nContext.Provider>
         </SettingsDialogContext.Provider>
-      </LibraryProvider>
-    </WorkspaceProvider>
+          </OutlineProvider>
+        </LibraryProvider>
+      </WorkspaceProvider>
+    </PreferencesProvider>
   );
 }
 

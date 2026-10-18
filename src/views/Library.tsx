@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { BookMarked, FolderOpen, Plus } from "lucide-react";
+import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -41,6 +42,7 @@ type DialogMode =
 export default function Library() {
   const { t } = useI18n();
   const toast = useToast();
+  const navigate = useNavigate();
   const { root, recent, isOpen, pick, open } = useWorkspace();
   const {
     workspace,
@@ -215,7 +217,10 @@ export default function Library() {
                 work={work}
                 words={wordCounts[work.id] ?? 0}
                 isCurrent={currentWorkId === work.id}
-                onOpen={(id) => setCurrentWorkId(id)}
+                onOpen={(id) => {
+                  setCurrentWorkId(id);
+                  void navigate("/editor");
+                }}
                 onRename={openRename}
                 onArchive={setPendingArchive}
                 onUnarchive={(id) => {

@@ -5,6 +5,17 @@
 
 :root {
   --radius: 0.625rem;
+  /* 排版偏好：由 PreferencesProvider 写入，这里给出默认值兜底 */
+  --app-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
+    "PingFang SC", sans-serif;
+  --app-font-ui-size: 14px;
+  --app-font-article: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC",
+    SimSun, serif;
+  --app-font-article-size: 18px;
+  --app-line-height: 1.8;
+  --app-line-width: 40em;
+  --app-indent: 2em;
+  --app-paragraph-gap: 0;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -210,6 +221,26 @@
   }
   .view-settings {
     @apply flex h-auto w-full flex-col gap-6;
+  }
+
+  /* Article typography tokens (plan 3.1 / 7.3).
+     Kept separate from app UI tokens: serif body, larger line height,
+     constrained measure. Values are injected by PreferencesProvider. */
+  .prose-article {
+    font-family: var(--app-font-article);
+    font-size: var(--app-font-article-size);
+    line-height: var(--app-line-height);
+  }
+  .article-body {
+    max-width: var(--app-line-width);
+  }
+  .article-paragraph {
+    text-indent: var(--app-indent);
+    margin-bottom: var(--app-paragraph-gap);
+    text-align: justify;
+  }
+  .article-paragraph.is-empty {
+    text-indent: 0;
   }
 
   /* ===== 标题栏操作按钮 =====
