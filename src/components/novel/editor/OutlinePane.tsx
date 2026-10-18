@@ -13,6 +13,7 @@ import {
   type CollisionDetection,
   closestCenter,
   pointerWithin,
+  type ClientRect,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -354,6 +355,18 @@ export default function OutlinePane({
   const nodeById = useMemo(() => new Map(chapters.map((c) => [c.id, c])), [chapters]);
   /** 章节点 DOM：位置法算插入下标时要读实时矩形。 */
   const nodeEls = useRef(new Map<string, HTMLElement>());
+  /**
+   * 拖拽开始那一刻的布局快照（元素自身几何，不含 sortable 的 transform）。
+   *
+   * 落点不能靠松手瞬间 `getBoundingClientRect()` 现场读：dnd-kit 把被拖卡片钉在
+   * 原位、只用 transform 位移其它兄弟节点，所以此刻读到的仍是起始矩形，这正是
+   * 之前无论拖到哪都恒算出 index 0 的原因。这里在开始时记下原始矩形，松手时用
+   * dnd-kit 的 `delta.y` 叠加出用户真正落下的位置。
+   */
+  const layoutAtStart = useRef<{
+    activeRect: ClientRect;
+    centers: Map<string, number>;
+  } | null>(null);
 
   const activeNode = activeId ? nodeById.get(activeId.slice(NODE_PREFIX.length)) ?? null : null;
   /** 命中具体节点时抑制容器高亮，避免同时亮两处。 */
@@ -361,6 +374,13 @@ export default function OutlinePane({
 
   function handleDragStart(e: DragStartEvent) {
     setActiveId(String(e.active.id));
+    const centers = new Map<string, number>();
+    for (const [id, el] of nodeEls.current) {
+      const r = el.getBoundingClientRect();
+      centers.set(id, r.top + r.height / 2);
+    }
+    const activeRect = e.active.rect.current.initial;
+    if (activeRect) layoutAtStart.current = { activeRect, centers };
     log.info("[outline-dnd] start", {
       active: String(e.active.id),
       registered: nodeEls.current.size,
@@ -374,6 +394,7 @@ export default function OutlinePane({
   function handleDragCancel() {
     setActiveId(null);
     setOverId(null);
+    layoutAtStart.current = null;
   }
 
   /**
@@ -408,35 +429,47 @@ export default function OutlinePane({
     const ref = parseDroppableId(over);
     const targetParentId = ref?.kind === "into" ? ref.parentId : (ref ? nodeById.get(ref.nodeId)?.parentId ?? source.parentId : source.parentId);
 
-    const el = nodeEls.current.get(nodeId);
-    if (!el) {
+    if (!nodeEls.current.has(nodeId)) {
       log.warn("[outline-dnd] abort: element not registered", {
         nodeId,
         known: [...nodeEls.current.keys()],
       });
       return;
     }
-    /* 松手这一刻才读：拖动全程 transform 都在变，早读的矩形已过期。 */
-    const live = el.getBoundingClientRect();
+    /*
+     * 落点几何必须来自「拖拽开始时的布局 + 指针位移」：兄弟节点保持起始中心，
+     * 被拖卡片中心 = 起始中心 + delta.y。绕开 sortable transform 的渲染时序。
+     */
+    const snap = layoutAtStart.current;
+    const activeRect = e.active.rect.current.translated ?? snap?.activeRect ?? null;
+    if (!activeRect) {
+      log.warn("[outline-dnd] abort: no active rect", { nodeId });
+      return;
+    }
     const centers: number[] = [];
+    const centersLog: { id: string; title: string; center: number }[] = [];
     for (const n of chaptersByVolume.get(targetParentId) ?? []) {
       if (n.id === nodeId) continue;
-      const other = nodeEls.current.get(n.id);
-      if (!other) continue;
-      const rect = other.getBoundingClientRect();
-      centers.push(rect.top + rect.height / 2);
+      const center = snap?.centers.get(n.id);
+      if (center === undefined) continue;
+      centers.push(center);
+      centersLog.push({ id: n.id.slice(0, 4), title: n.title, center: Math.round(center) });
     }
-    const draggedCenter = live.top + live.height / 2;
+    const base = snap
+      ? snap.activeRect.top + snap.activeRect.height / 2
+      : activeRect.top + activeRect.height / 2;
+    const draggedCenter = base + e.delta.y;
     const index = computeIndexByPosition(centers, draggedCenter);
     const siblings = chaptersByVolume.get(targetParentId) ?? [];
     const without = siblings.filter((n) => n.id !== nodeId);
     log.info("[outline-dnd] computed", {
       nodeId,
       targetParentId,
+      deltaY: Math.round(e.delta.y),
       draggedCenter: Math.round(draggedCenter),
-      centers: centers.map((c) => Math.round(c)),
+      centers: centersLog,
       index,
-      before: siblings.map((n) => n.id.slice(0, 4)),
+      before: siblings.map((n) => `${n.title}(${n.id.slice(0, 4)})`),
     });
     /* 落回原位就不写盘，避免无意义的 outline 落盘与全树刷新。 */
     if (index < 0 || index > without.length) {
@@ -453,6 +486,7 @@ export default function OutlinePane({
     }
     log.info("[outline-dnd] committing move", { nodeId, targetParentId, index });
     void onMoveNode(nodeId, targetParentId, index);
+    layoutAtStart.current = null;
   }
 
   /* ---------- 章节详情 ---------- */
