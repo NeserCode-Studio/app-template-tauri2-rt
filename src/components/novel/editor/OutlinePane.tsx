@@ -4,13 +4,15 @@ import {
   DndContext,
   DragOverlay,
   PointerSensor,
-  closestCenter,
   useDroppable,
   useSensor,
   useSensors,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
+  type CollisionDetection,
+  closestCenter,
+  pointerWithin,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -75,6 +77,24 @@ function parseDroppableId(id: string): DropRef | null {
   if (id.startsWith(NODE_PREFIX)) return { kind: "before", nodeId: id.slice(NODE_PREFIX.length) };
   return null;
 }
+
+/**
+ * 碰撞检测：节点优先于容器。
+ *
+ * 卷容器（`drop:<id>`）把整组章节都包在里面，它的几何中心远大于单个章节。
+ * 用 closestCenter 时，靠近列表上下两端往往"容器更近"，于是松手被解析成
+ * "追加到卷末尾"——看起来就是能拖、但顺序不变。
+ *
+ * 规则很简单：指针正落在某个章节行上就用那一行（`node:`），
+ * 只有指针落在空白处（章节之间、卷的空白区）才用容器（`drop:`）。
+ */
+const collisionDetection: CollisionDetection = (args) => {
+  const pointerHits = pointerWithin(args);
+  const nodeHits = pointerHits.filter((hit) => String(hit.id).startsWith(NODE_PREFIX));
+  if (nodeHits.length) return nodeHits;
+  if (pointerHits.length) return pointerHits;
+  return closestCenter(args);
+};
 
 /**
  * 相对时间：侧栏要的是"多久之前"，不是绝对时刻。
@@ -173,7 +193,7 @@ function SortableChapter({
           type="button"
           aria-label={editMetaLabel}
           title={editMetaLabel}
-          className="absolute right-1 top-1 flex size-5 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          className="absolute bottom-0.5 right-1 flex size-5 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
             onEditMeta();
@@ -458,7 +478,7 @@ export default function OutlinePane({
 
       <DndContext
         sensors={sensors}
-        collisionDetection={closestCenter}
+        collisionDetection={collisionDetection}
         onDragStart={handleDragStart}
         onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { ArrowDown, ArrowUp, Combine, MoreHorizontal, Scissors, Trash2 } from "lucide-react";
+import { Pencil } from "lucide-react";
 
 import {
   DropdownMenu,
@@ -66,7 +67,8 @@ export interface CardItemProps {
   dimmed: boolean;
   /** 打字机模式：当前卡片是否固定在视口舒适线。 */
   isActive: boolean;
-  onClick: (index: number) => void;
+  /** 载入输入框编辑。 */
+  onEdit: (index: number) => void;
   onMoveUp: (index: number) => void;
   onMoveDown: (index: number) => void;
   onSplit: (index: number) => void;
@@ -86,7 +88,7 @@ export default function CardItem({
   total,
   dimmed,
   isActive,
-  onClick,
+  onEdit,
   onMoveUp,
   onMoveDown,
   onSplit,
@@ -125,22 +127,35 @@ export default function CardItem({
 
   return (
     <div
-      role="button"
-      tabIndex={0}
       data-card-index={index}
-      onClick={() => onClick(index)}
-      onKeyDown={(e) => {
-        if (e.key === "Enter" || e.key === " ") {
-          e.preventDefault();
-          onClick(index);
-        }
-      }}
       className={[
-        "group relative article-paragraph cursor-text rounded-sm px-1 py-0.5 transition-opacity",
+        /*
+         * 卡片本身不再吞点击：正文要保持可选中，才能右键复制、
+         * 拖选片段去搜索。编辑改由段首铅笔图标触发（见 onEdit）。
+         */
+        "group relative article-paragraph cursor-text rounded-sm py-0.5 pr-1 pl-6 transition-opacity",
         dimmed ? "opacity-35" : "opacity-100",
         isActive ? "bg-accent/40" : "hover:bg-accent/20",
       ].join(" ")}
     >
+      {/* 段首铅笔：唯一的编辑入口。图标而非整卡可点，避免和选中文字打架。 */}
+      <button
+        type="button"
+        aria-label={t("Editor.card.edit")}
+        title={t("Editor.card.edit")}
+        className={[
+          "absolute left-0 top-0.5 flex size-5 items-center justify-center rounded text-muted-foreground/40",
+          "opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100",
+          isActive ? "opacity-100" : "",
+        ].join(" ")}
+        onClick={(e) => {
+          e.stopPropagation();
+          onEdit(index);
+        }}
+      >
+        <Pencil className="icon-sm" />
+      </button>
+
       <p className={isEmpty ? "is-empty min-h-[1lh] text-muted-foreground/40" : ""}>
         {isEmpty
           ? " "
@@ -174,7 +189,7 @@ export default function CardItem({
             <button
               type="button"
               className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-              aria-label={t("Editor.card.edit")}
+              aria-label={t("Editor.card.more")}
               onClick={(e) => e.stopPropagation()}
             >
               <MoreHorizontal className="icon-sm" />
@@ -227,7 +242,7 @@ export default function CardItem({
       </div>
 
       {/* 卡片序号：仅在悬停时淡入，帮助定位光标 */}
-      <span className="absolute -left-8 top-0 w-6 text-right text-xs text-muted-foreground/0 tabular-nums transition-colors group-hover:text-muted-foreground/40">
+      <span className="absolute -left-7 top-0 w-5 text-right text-xs text-muted-foreground/0 tabular-nums transition-colors group-hover:text-muted-foreground/40">
         {index + 1}
       </span>
     </div>

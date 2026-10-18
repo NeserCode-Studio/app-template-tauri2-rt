@@ -638,7 +638,7 @@ export default function ChapterEditor({
         {cards.length ? (
           <div
             ref={listRef}
-            className="article-body prose-article mx-auto flex flex-col pl-8"
+            className="article-body prose-article mx-auto flex flex-col pl-9"
           >
             {cards.map((card, index) => (
               <CardItem
@@ -648,7 +648,7 @@ export default function ChapterEditor({
                 total={cards.length}
                 dimmed={dimOthers && editingIndex !== index}
                 isActive={editingIndex === index}
-                onClick={handleCardClick}
+                onEdit={handleCardClick}
                 onMoveUp={moveUp}
                 onMoveDown={moveDown}
                 onSplit={splitCard}
