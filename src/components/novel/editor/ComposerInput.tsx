@@ -187,7 +187,15 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
                 return;
               }
 
-              if (e.key !== "Enter" || e.shiftKey) return;
+              /*
+               * Shift+回车不再插入换行：一段就是一段。
+               *
+               * 段落不主动折行，正文宽度由排版决定，所以在输入框里
+               * 硬敲一个 \n 进卡片只会成为脏数据——导出时是一行空行，
+               * 统计字数时还可能被当成一个字符。既然换行没有表达力，
+               * 就让回车一律提交，别给一个会写坏正文的手势。
+               */
+              if (e.key !== "Enter") return;
 
               e.preventDefault();
               const text = e.currentTarget.value.trim();
@@ -205,19 +213,22 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
          * 用户点了某张旧卡片后，底部输入框就被那条卡片占住了，
          * 没有出口就只能继续改那张卡；这里给出明确的返回入口。
          */}
-        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground/60">
-          <span className="min-w-0 truncate">
-            {editingIndex >= 0 ? (
-              <>
-                <span className="font-semibold text-foreground">
-                  {t("Editor.input.editing")}
-                </span>
-                <span className="mx-1">·</span>
-              </>
-            ) : null}
-            {t("Editor.input.hint")}
-          </span>
-          {editingIndex >= 0 && onReturnToNew ? (
+        {/*
+         * 状态行只在"正在改已有卡片"时出现。
+         *
+         * 原本常驻显示"回车提交 · Shift+回车换行"，但那是两处重复与
+         * 一处多余的提示：回车提交已经写在输入框的 placeholder 里，
+         * 而 Shift+回车换行在本编辑器里没有意义——段落不主动折行，
+         * 换出来的软换行进了卡片正文反而是脏数据。
+         *
+         * 追加新段落时这一行没有任何信息，纯占高度，全部隐去。
+         */}
+        {editingIndex >= 0 ? (
+          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground/60">
+            <span className="min-w-0 truncate font-semibold text-foreground">
+              {t("Editor.input.editing")}
+            </span>
+            {onReturnToNew ? (
             <button
               type="button"
               onClick={onReturnToNew}
@@ -226,8 +237,9 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
               <CornerDownLeft className="icon-sm" />
               {t("Editor.input.returnNew")}
             </button>
-          ) : null}
-        </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
