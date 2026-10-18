@@ -91,6 +91,16 @@ export default function ChapterEditor({
   const [splitTarget, setSplitTarget] = useState<number | null>(null);
   /** 上一次合并，用于"撤回合并"按钮。 */
   const [lastMerge, setLastMerge] = useState<LastMerge | null>(null);
+  /**
+   * 暂存的新段落。
+   *
+   * 写新段落时点开一张旧卡片，原来输入框里的草稿会被卡片的原文覆盖，
+   * 于是"刚写的那段"凭空丢了。这里把草稿扣下来，贴在编辑区上方，
+   * 随时可取回。持久化到磁盘没有意义——它只是编辑器的编辑态。
+   */
+  const [draft, setDraft] = useState<string | null>(null);
+  /** draft 的 ref 副本：回调里读最新值，不必把 draft 塞进依赖。 */
+  const draftRef = useRef<string | null>(null);
 
   const composerRef = useRef<ComposerHandle | null>(null);
   const historyRef = useRef<CommandHistory<Card[]> | null>(null);
@@ -136,6 +146,9 @@ export default function ChapterEditor({
     setEditingIndex(-1);
     setSaveState("saved");
     pendingCards.current = null;
+    /* 草稿只对当前章有意义，切章即丢弃。 */
+    draftRef.current = null;
+    setDraft(null);
     historyRef.current = new CommandHistory<Card[]>(initialCards);
     composerRef.current?.clear();
     /*
@@ -238,6 +251,9 @@ export default function ChapterEditor({
         );
         applyCards(next);
       }
+      /* 提交即固化，草稿完成使命。 */
+      draftRef.current = null;
+      setDraft(null);
       setEditingIndex(-1);
     },
     [cards, applyCards]
@@ -245,6 +261,18 @@ export default function ChapterEditor({
 
   /** 点击卡片：载入输入框编辑。 */
   const handleCardClick = useCallback((index: number) => {
+    /*
+     * 正在写新段落时点开旧卡片，先把草稿暂存起来。
+     * load() 会覆盖 textarea.value，若不扣下草稿就直接被冲掉了。
+     * 已经在编辑某张卡时则不暂存——那时输入框里的内容属于那张卡。
+     */
+    if (editingIndexRef.current < 0) {
+      const pending = composerRef.current?.read().trim() ?? "";
+      if (pending) {
+        draftRef.current = pending;
+        setDraft(pending);
+      }
+    }
     setEditingIndex(index);
     // 下一帧再 focus，确保 textarea 已渲染出 editing 提示。
     requestAnimationFrame(() => {
@@ -262,20 +290,41 @@ export default function ChapterEditor({
    */
   const returnToNew = useCallback(() => {
     const index = editingIndexRef.current;
-    const draft = composerRef.current?.read().trim() ?? "";
-    if (index >= 0 && draft) {
+    const typed = composerRef.current?.read().trim() ?? "";
+    if (index >= 0 && typed) {
       const now = Date.now();
       const next = cardsRef.current.map((c, i) =>
-        i === index ? cardSchema.parse({ ...c, text: draft, updatedAt: now }) : c
+        i === index ? cardSchema.parse({ ...c, text: typed, updatedAt: now }) : c
       );
       setCards(next);
       historyRef.current?.record(next);
       scheduleSave(next);
     }
+    /*
+     * 回到追加模式：若先前暂存过新段落，一并取回输入框。
+     * 否则会出现"点了回到最新段落，草稿却还孤零零挂在上面"的错位。
+     */
+    const stashed = draftRef.current;
+    draftRef.current = null;
+    setDraft(null);
     setEditingIndex(-1);
     composerRef.current?.clear();
-    requestAnimationFrame(() => composerRef.current?.focus("end"));
+    requestAnimationFrame(() => composerRef.current?.load(stashed ?? "", "end"));
   }, [scheduleSave]);
+
+  /** 取回暂存段落：清空输入框回到追加模式，并把草稿放回去。 */
+  const restoreDraft = useCallback(() => {
+    setEditingIndex(-1);
+    const text = draft ?? "";
+    draftRef.current = null;
+    setDraft(null);
+    requestAnimationFrame(() => composerRef.current?.load(text, "end"));
+  }, [draft]);
+
+  /** 丢弃暂存段落。 */
+  const discardDraft = useCallback(() => {
+    setDraft(null);
+  }, []);
 
   /* cards 的 ref 副本，供回调读取最新值。 */
   const cardsRef = useRef(cards);
@@ -555,16 +604,22 @@ export default function ChapterEditor({
         )}
       </div>
 
-      {/* 底部输入框：常驻，不随卡片数量滚动消失 */}
-      <div className="border-t px-6 py-3">
-        <div className="mx-auto max-w-3xl">
-          <ComposerInput
-            ref={composerRef}
-            editingIndex={editingIndex}
-            onSubmit={handleSubmit}
-            onReturnToNew={returnToNew}
-          />
-        </div>
+      {/*
+       * 底部编辑区：分割线以下整块都是输入区。
+       *
+       * 刻意不做 max-width 居中：分割线以下整条都是编辑区，
+       * 输入框背景横向铺满，只靠左右内边距保持可读行长。
+       */}
+      <div className="shrink-0 border-t bg-background">
+        <ComposerInput
+          ref={composerRef}
+          editingIndex={editingIndex}
+          onSubmit={handleSubmit}
+          onReturnToNew={returnToNew}
+          pendingDraft={draft}
+          onRestoreDraft={restoreDraft}
+          onDiscardDraft={discardDraft}
+        />
       </div>
     </div>
   );

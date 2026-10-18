@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
-import { CornerDownLeft } from "lucide-react";
+import { CornerDownLeft, X } from "lucide-react";
 
 import { useI18n } from "@/composables";
 
@@ -29,6 +29,17 @@ export interface ComposerInputProps {
    * 未提交时按 Esc 也会走这条路。
    */
   onReturnToNew?: () => void;
+  /**
+   * 暂存的新段落（未回车固化、也未落到正文里）。
+   *
+   * 用户在写新段落时点开某张旧卡片，草稿不会凭空消失——它作为一张卡片
+   * 贴在输入框正上方（与输入框同属底部编辑区），点一下即可取回继续写。
+   */
+  pendingDraft?: string | null;
+  /** 取回暂存段落。 */
+  onRestoreDraft?: () => void;
+  /** 丢弃暂存段落。 */
+  onDiscardDraft?: () => void;
 }
 
 /**
@@ -43,7 +54,10 @@ export interface ComposerInputProps {
  * 3. Shift+Enter 保留为换行，不提交。
  */
 const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
-  function ComposerInput({ onSubmit, editingIndex, onReturnToNew }, ref) {
+  function ComposerInput(
+    { onSubmit, editingIndex, onReturnToNew, pendingDraft, onRestoreDraft, onDiscardDraft },
+    ref
+  ) {
     const { t } = useI18n();
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -73,14 +87,57 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
     }));
 
     return (
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5 px-6 py-3">
+        {/*
+         * 暂存的新段落。
+         *
+         * 贴在输入框正上方而非正文末尾：它属于"还没提交的新段落"，
+         * 视觉上属于编辑区，和正文卡片区分开，避免读起来像是正文的最后一段。
+         */}
+        {pendingDraft ? (
+          <div className="group/draft relative flex items-start gap-2 rounded-md border border-dashed bg-muted/20 px-3 py-2">
+            <button
+              type="button"
+              onClick={onRestoreDraft}
+              className="prose-article min-w-0 flex-1 text-left text-sm"
+            >
+              {pendingDraft}
+            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                onClick={onRestoreDraft}
+                className="rounded px-1.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+              >
+                {t("Editor.input.restoreDraft")}
+              </button>
+              {onDiscardDraft ? (
+                <button
+                  type="button"
+                  onClick={onDiscardDraft}
+                  aria-label={t("Editor.input.discardDraft")}
+                  title={t("Editor.input.discardDraft")}
+                  className="flex size-5 items-center justify-center rounded text-muted-foreground/50 transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <X className="icon-sm" />
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         <div className="relative">
           <textarea
             ref={textareaRef}
             rows={3}
             placeholder={t("Editor.input.placeholder")}
             aria-label={t("Editor.input.placeholder")}
-            className="prose-article w-full resize-none rounded-md border bg-background px-3 py-2 outline-none transition-colors placeholder:text-muted-foreground/50 focus-visible:border-ring"
+            /*
+             * 底部分割线以下整体是编辑区：输入框自身不再画边框，
+             * 而是把背景延伸到整个编辑区。这样"正文"与"正在写"
+             * 之间只有一条分割线，不再是框中框。
+             */
+            className="prose-article -mx-6 w-[calc(100%+3rem)] resize-none bg-background px-6 py-2 outline-none transition-colors placeholder:text-muted-foreground/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset"
             onKeyDown={(e) => {
               // 输入法组合中：Enter 属于候选确认，绝不提交。
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;

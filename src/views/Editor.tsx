@@ -331,18 +331,46 @@ export default function Editor() {
                   <h2 className="row-label">{t("Editor.side.actions")}</h2>
 
                   {renaming ? (
-                    <Input
-                      autoFocus
-                      value={renameDraft}
-                      className="h-7 text-sm"
-                      aria-label={t("Editor.chapter.renameTitle")}
-                      onChange={(e) => setRenameDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.nativeEvent.isComposing) return;
-                        if (e.key === "Enter") void renameChapter();
-                        if (e.key === "Escape") setRenaming(false);
-                      }}
-                    />
+                    /*
+                     * 重命名必须有明确的确认 / 取消。
+                     * 只靠 Enter 提交的话，用户没有"我改了主意"的出口——
+                     * Esc 只绑在输入框失焦前，鼠标点别处就直接提交了。
+                     */
+                    <div className="flex flex-col gap-1.5">
+                      <Input
+                        autoFocus
+                        value={renameDraft}
+                        className="h-7 text-sm"
+                        aria-label={t("Editor.chapter.renameTitle")}
+                        onChange={(e) => setRenameDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.nativeEvent.isComposing) return;
+                          if (e.key === "Enter") void renameChapter();
+                          if (e.key === "Escape") setRenaming(false);
+                        }}
+                      />
+                      <div className="flex items-center gap-1.5">
+                        <Button
+                          size="sm"
+                          className="h-7 flex-1"
+                          disabled={!renameDraft.trim()}
+                          onClick={() => void renameChapter()}
+                        >
+                          {t("Editor.chapter.confirmRename")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 flex-1"
+                          onClick={() => {
+                            setRenaming(false);
+                            setRenameDraft("");
+                          }}
+                        >
+                          {t("Editor.chapter.cancelRename")}
+                        </Button>
+                      </div>
+                    </div>
                   ) : (
                     <Button
                       size="sm"
