@@ -64,6 +64,7 @@ export default function Library() {
     archive,
     unarchive,
     remove,
+    refresh,
     setWorkspaceAlias,
     setCurrentWorkId,
   } = useLibrary();
@@ -402,7 +403,18 @@ export default function Library() {
         open={trashOpen}
         root={root}
         onOpenChange={setTrashOpen}
-        onRestored={() => void loadWordCounts()}
+        onRestored={() => {
+          /*
+           * 恢复后必须重读清单，不能只刷字数。
+           *
+           * 原先这里只调 loadWordCounts()，而它是按 workspace.order /
+           * workspace.archived 遍历的——恢复一部作品时清单刚变，React 里的
+           * workspace 还是旧的，那个 id 根本不在遍历范围里，于是既不显示
+           * 也不报错，看上去就是"恢复没反应"。refresh() 会重读
+           * novels-yes.json 与各 work.json，字数随后由 orderKey 的 effect 补上。
+           */
+          void refresh();
+        }}
       />
 
       {/*

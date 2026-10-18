@@ -16,7 +16,7 @@
  */
 
 import { createFs, joinRel } from "./fs";
-import { trashItemFile, TRASH_DIR } from "./paths";
+import { trashItemFile, workMetaFile, workspaceFile, TRASH_DIR } from "./paths";
 import { z } from "zod";
 import { createLogger } from "@/lib/logger";
 
@@ -245,12 +245,66 @@ export async function restoreFromTrash(root: string, itemId: string): Promise<bo
   }
   await fs2.remove(file);
   await reattachNode(root, raw);
+  await reattachWork(root, raw);
   await writeIndex(
     root,
     (await readIndex(root)).filter((id) => id !== itemId)
   );
   log.info("restored from trash", { itemId });
   return true;
+}
+
+/**
+ * 把恢复的作品重新登记进工作区清单。
+ *
+ * 删除作品时 `deleteWork` 会把它从 novels-yes.json 的 order 里摘掉，
+ * 目录搬回磁盘只是搬回了文件——清单不认它，作品库照样当这部作品不存在
+ * （只有下次冷启动时靠"扫 works/ 目录"的兜底才偶然露出来）。
+ * 所以恢复必须同时把 id 塞回 order，否则"恢复"只是把文件放回原处。
+ *
+ * 这里直接读写 novels-yes.json 而不调 services/workspace：workspace 反过来
+ * 依赖 trash（删除要走回收站），再从 trash 引回去就是一个循环依赖。
+ */
+async function reattachWork(root: string, item: TrashItem): Promise<void> {
+  if (item.kind !== "work") return;
+  const fs2 = createFs(root);
+  const file = workspaceFile();
+  if (!(await fs2.exists(file))) return;
+  try {
+    const raw = JSON.parse(await fs2.readText(file)) as {
+      order?: string[];
+      archived?: string[];
+    };
+    const order = raw.order ?? [];
+    if (order.includes(item.originId)) return;
+    raw.order = [...order, item.originId];
+    await fs2.writeText(file, JSON.stringify(raw, null, 2));
+    /*
+     * 归档标记也要抹平：删除一部已归档作品时，清单里的 archived 会被摘掉，
+     * 但 work.json 的 archived 仍是 true。恢复出来若带着这个标记，卡片会
+     * 直接渲染成归档态、"继续写作"点不动——比没恢复更让人困惑。
+     * （deleteWork 也从清单里摘了 archived，所以恢复出来应当是常规作品。）
+     */
+    await clearWorkArchived(root, item.originId);
+    log.info("work re-registered in manifest", { id: item.originId });
+  } catch (err) {
+    /* 清单坏了就跳过：文件已经搬回去了，冷启动的目录兜底还能救回来。 */
+    log.error("work re-register failed", err);
+  }
+}
+
+/** 抹掉作品自身的归档标记，使恢复出来的作品是常规态。 */
+async function clearWorkArchived(root: string, workId: string): Promise<void> {
+  try {
+    const fs2 = createFs(root);
+    const meta = workMetaFile(workId);
+    if (!(await fs2.exists(meta))) return;
+    const raw = JSON.parse(await fs2.readText(meta)) as { archived?: boolean };
+    if (raw.archived !== true) return;
+    await fs2.writeText(meta, JSON.stringify({ ...raw, archived: false }, null, 2));
+  } catch (err) {
+    log.warn("work archived flag not cleared on restore", { workId, err });
+  }
 }
 
 /** 把章 / 卷重新登记回结构树。 */

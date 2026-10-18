@@ -115,10 +115,20 @@ export default function WorkCard({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
-            <DropdownMenuItem onSelect={() => onRename(work.id)}>
-              <Pencil className="icon-sm" />
-              {t("Library.action.rename")}
-            </DropdownMenuItem>
+            {work.archived ? null : (
+              /*
+               * 归档作品不给改名。
+               *
+               * 归档的含义是"收起来、不再动"，继续写作按钮已经禁用了，
+               * 留着改名入口等于在这个状态下还允许改作品本身。这里在菜单层
+               * 直接不给，而不是点进去再报错——归档是明确的静默状态，
+               * 不该有"你不能这么做"的错误提示来打断它。
+               */
+              <DropdownMenuItem onSelect={() => onRename(work.id)}>
+                <Pencil className="icon-sm" />
+                {t("Library.action.rename")}
+              </DropdownMenuItem>
+            )}
             {work.archived ? (
               <DropdownMenuItem onSelect={() => onUnarchive(work.id)}>
                 <ArchiveRestore className="icon-sm" />

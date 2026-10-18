@@ -142,7 +142,17 @@ export async function saveWork(root: string, work: Work): Promise<void> {
   await fs2.writeText(workMetaFile(work.id), JSON.stringify(validated, null, 2));
 }
 
-/** 把作品移入归档（保留数据，仅从常规列表移除）。 */
+/**
+ * 把作品移入归档（保留数据，仅从常规列表移除）。
+ *
+ * 归档状态写在两处，因为它们回答的是两个不同的问题：
+ * - novels-yes.json 决定"这个库现在显示哪些作品"（列表分区）；
+ * - work.json 的 archived 决定"这部作品本身是不是归档态"（卡片渲染）。
+ *
+ * 以前只改了清单，卡片却读 work.json，于是内存里看着对劲，
+ * 一离开作品库界面重新加载，归档标记就没了：继续写作重新亮起，
+ * 菜单里也退回"归档"。两处必须一起写。
+ */
 export async function archiveWork(root: string, ws: Workspace, workId: string): Promise<Workspace> {
   const next = workspaceSchema.parse({
     ...ws,
@@ -150,6 +160,7 @@ export async function archiveWork(root: string, ws: Workspace, workId: string): 
     archived: ws.archived.includes(workId) ? ws.archived : [...ws.archived, workId],
   });
   await saveWorkspace(root, next);
+  await setWorkArchived(root, workId, true);
   return next;
 }
 
@@ -161,5 +172,23 @@ export async function unarchiveWork(root: string, ws: Workspace, workId: string)
     archived: ws.archived.filter((id) => id !== workId),
   });
   await saveWorkspace(root, next);
+  await setWorkArchived(root, workId, false);
   return next;
+}
+
+/**
+ * 改写作品自身的归档标记。
+ *
+ * 元数据可能已被用户手工删掉或损坏，这里刻意吞掉异常：归档的清单部分
+ * 已经落盘成功了，为了一条附属标记把整个操作报失败不划算——
+ * 冷启动时的目录兜底扫描仍会把这这部作品捡回来。
+ */
+async function setWorkArchived(root: string, workId: string, archived: boolean): Promise<void> {
+  try {
+    const work = await loadWork(root, workId);
+    if (work.archived === archived) return;
+    await saveWork(root, { ...work, archived });
+  } catch (err) {
+    log.warn("work archived flag not persisted", { workId, err });
+  }
 }
