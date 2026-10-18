@@ -167,8 +167,12 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
              * field-sizing: content 让 textarea 高度跟着内容走，不需要 JS 测量。
              * min-h 给空稿一个落脚点；max-h 封顶后由 overflow-y-auto 内部滚动，
              * 免得长草稿把正文区整个顶出视口。
+             *
+             * 右侧用 -mr-6 + w 补偿把文本框撑出容器内边距，让滚动条贴着
+             * 面板边缘。只留 pr 的话滚动条会离边框差一整个 px-6（24px），
+             * 视觉上像是飘在中间。左边不补偿，文字仍与正文对齐。
              */
-            className="prose-article [field-sizing:content] scrollbar-app max-h-[220px] min-h-[3lh] w-full resize-none overflow-y-auto border-0 bg-transparent py-1 pr-3 pl-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
+            className="prose-article [field-sizing:content] scrollbar-app -mr-6 max-h-[220px] min-h-[3lh] w-[calc(100%+1.5rem)] resize-none overflow-y-auto border-0 bg-transparent py-1 pr-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
             onKeyDown={(e) => {
               // 输入法组合中：Enter 属于候选确认，绝不提交。
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;
