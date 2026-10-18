@@ -9,6 +9,7 @@ import SplitDialog from "./SplitDialog";
 
 import { useI18n } from "@/composables";
 import { useToast } from "@/composables";
+import { useViewMode } from "@/contexts/viewmode";
 import { createLogger } from "@/lib/logger";
 import { CommandHistory } from "@/lib/command-history";
 import { cardsToText, countWords, saveChapter } from "@/services/chapter";
@@ -85,6 +86,7 @@ export default function ChapterEditor({
 }: ChapterEditorProps) {
   const { t } = useI18n();
   const toast = useToast();
+  const { mode } = useViewMode();
 
   const [cards, setCards] = useState<Card[]>(chapter.cards);
   const [editingIndex, setEditingIndex] = useState(-1);
@@ -182,6 +184,30 @@ export default function ChapterEditor({
   useEffect(() => {
     onWordsChange?.(words);
   }, [words, onWordsChange]);
+
+  /**
+   * 打字机模式：把活动卡片滚到视口舒适线。
+   *
+   * 只在"活动卡片变了"时滚一次，而不是每次渲染都滚——否则用户
+   * 手动往上翻看前文时会被立刻拽回来。
+   */
+  const listRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (mode !== "typewriter") return;
+    if (editingIndex < 0) return;
+    const el = listRef.current?.querySelector<HTMLElement>(
+      `[data-card-index="${editingIndex}"]`
+    );
+    el?.scrollIntoView({ block: "center", behavior: "smooth" });
+  }, [mode, editingIndex]);
+
+  /*
+   * 专注模式下压暗非当前卡片。
+   *
+   * 只在"正在编辑某张卡"时压暗：追加新段时没有活动卡片，
+   * 若此时也压暗，用户会以为整页坏了。
+   */
+  const dimOthers = mode === "focus" && editingIndex >= 0;
 
   /** 提交保存：防抖 800ms 后落盘。 */
   const scheduleSave = useCallback(
@@ -610,14 +636,17 @@ export default function ChapterEditor({
        */}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {cards.length ? (
-          <div className="article-body prose-article mx-auto flex flex-col pl-8">
+          <div
+            ref={listRef}
+            className="article-body prose-article mx-auto flex flex-col pl-8"
+          >
             {cards.map((card, index) => (
               <CardItem
                 key={card.id}
                 card={card}
                 index={index}
                 total={cards.length}
-                dimmed={false}
+                dimmed={dimOthers && editingIndex !== index}
                 isActive={editingIndex === index}
                 onClick={handleCardClick}
                 onMoveUp={moveUp}

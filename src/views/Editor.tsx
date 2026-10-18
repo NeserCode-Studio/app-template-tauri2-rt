@@ -6,6 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -32,6 +39,7 @@ import { useI18n } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useWorkspace } from "@/contexts/workspace";
+import { useViewMode, type ViewMode } from "@/contexts/viewmode";
 import {
   addNode as addOutlineNode,
   moveNode as moveOutlineNode,
@@ -78,6 +86,10 @@ export default function Editor() {
   /** 右栏页签：章节信息 / 素材库。 */
   const [sideTab, setSideTab] = useState<"chapter" | "codex" | "progress">("chapter");
   const [exportOpen, setExportOpen] = useState(false);
+  /** 视图模式（普通 / 专注 / 打字机 / 禅）。 */
+  const { mode: viewMode, setMode: setViewMode } = useViewMode();
+  /** 禅模式隐藏两侧栏，把整幅宽度让给正文。 */
+  const zen = viewMode === "zen";
 
   /* 作品切换后回到作品库，避免空编辑器。 */
   useEffect(() => {
@@ -274,6 +286,17 @@ export default function Editor() {
         <Separator orientation="vertical" className="h-4" />
         <span className="truncate text-sm font-medium">{work?.title ?? ""}</span>
         <div className="ml-auto flex items-center gap-2">
+          <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
+            <SelectTrigger className="h-7 w-28 text-xs" aria-label={t("Focus.mode")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="off">{t("Focus.off")}</SelectItem>
+              <SelectItem value="focus">{t("Focus.focus")}</SelectItem>
+              <SelectItem value="typewriter">{t("Focus.typewriter")}</SelectItem>
+              <SelectItem value="zen">{t("Focus.zen")}</SelectItem>
+            </SelectContent>
+          </Select>
           <Button size="sm" variant="ghost" onClick={() => setExportOpen(true)}>
             <Download className="icon-md" />
             {t("Export.action")}
@@ -282,6 +305,15 @@ export default function Editor() {
       </div>
 
       <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
+        {/*
+         * 禅模式下只留中栏。
+         *
+         * 用条件渲染而非把两侧宽度设为 0：react-resizable-panels 会把
+         * defaultSize 归一化到可见面板，留着两个宽度为 0 的面板会
+         * 让正文只拿到 1/3 而非满宽。
+         */}
+        {!zen ? (
+        <>
         {/* 左栏：结构树 */}
         <ResizablePanel defaultSize={18} minSize={12} maxSize={24}>
           <div className="h-full border-r">
@@ -295,6 +327,8 @@ export default function Editor() {
         </ResizablePanel>
 
         <ResizableHandle withHandle className="w-1" />
+        </>
+        ) : null}
 
         {/* 中栏：卡片区 */}
         <ResizablePanel defaultSize={58} minSize={40}>
@@ -329,8 +363,10 @@ export default function Editor() {
           </div>
         </ResizablePanel>
 
-        <ResizableHandle withHandle className="w-1" />
+        {!zen ? <ResizableHandle withHandle className="w-1" /> : null}
 
+        {!zen ? (
+        <>
         {/* 右栏：翻章 + 摘要 */}
         <ResizablePanel defaultSize={24} minSize={16} maxSize={30}>
           <div className="flex h-full min-h-0 flex-col gap-4 border-l p-4">
@@ -507,6 +543,8 @@ export default function Editor() {
             ) : null}
           </div>
         </ResizablePanel>
+        </>
+        ) : null}
       </ResizablePanelGroup>
 
       {/* 删除确认：删章会连正文一起清掉，必须二次确认。 */}

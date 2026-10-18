@@ -26,6 +26,7 @@ import { LibraryProvider } from "@/contexts/library.provider";
 import { PreferencesProvider } from "@/contexts/preferences.provider";
 import { OutlineProvider } from "@/contexts/outline.provider";
 import { CodexProvider } from "@/contexts/codex.provider";
+import { ViewModeProvider } from "@/contexts/viewmode.provider";
 
 const log = createLogger("App");
 
@@ -157,6 +158,7 @@ function App() {
 
   return (
     <PreferencesProvider>
+      <ViewModeProvider>
       <WorkspaceProvider>
         <LibraryProvider>
           <OutlineProvider>
@@ -204,6 +206,7 @@ function App() {
           </OutlineProvider>
         </LibraryProvider>
       </WorkspaceProvider>
+      </ViewModeProvider>
     </PreferencesProvider>
   );
 }

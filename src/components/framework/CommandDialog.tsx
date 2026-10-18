@@ -13,8 +13,9 @@ import {
 } from "@/components/ui/command";
 
 import { NavigatorContext } from "@/contexts/navigator";
-import { useI18n, useSuperCommand } from "@/composables";
+import { useI18n, useSuperCommand, type SuperCommandItem } from "@/composables";
 import { I18nContext } from "@/contexts/i18n";
+import { ViewModeContext, type ViewMode } from "@/contexts/viewmode";
 import { ThemeContext } from "@/contexts/theme";
 import { useSettingsDialog } from "@/contexts/settings";
 
@@ -38,11 +39,42 @@ export default function CommandMenu() {
   const setLang = i18nCtx?.setLang ?? (() => {});
   const { setThemeMode } = React.useContext(ThemeContext) ?? {};
   const setTheme = setThemeMode ?? (() => {});
+  const viewModeCtx = React.useContext(ViewModeContext);
 
   // cmdk 搜索值
   const [cmdkSearch, setCmdkSearch] = React.useState("");
 
-  const superCmd = useSuperCommand({ navigate: navigator, setLang, setTheme, openSettings });
+  /*
+   * 小说专属命令。
+   *
+   * 用 extraCommands 传入而非改 useSuperCommand 的内置表：内置命令表
+   * 是模板层（窗口 / 主题 / 语言）的公共设施，掺进业务命令会让模板
+   * 无法独立复用。extraCommands 正是为此预留的注入口。
+   */
+  const novelCommands = React.useMemo<SuperCommandItem[]>(() => {
+    if (!viewModeCtx) return [];
+    const setMode = viewModeCtx.setMode;
+    /* 四个模式各一条；message 即 id，够面板显示。 */
+    const mk = (id: string, mode: ViewMode, keywords: string[]): SuperCommandItem => ({
+      id,
+      keywords,
+      action: () => {
+        setMode(mode);
+        return { success: true, message: id };
+      },
+    });
+    return [
+      mk("view.focus", "focus", ["focus", "\u4e13\u6ce8", "\u805a\u7126", "\u6a21\u5f0f"]),
+      mk("view.typewriter", "typewriter", ["typewriter", "\u6253\u5b57\u673a", "\u6a21\u5f0f"]),
+      mk("view.zen", "zen", ["zen", "\u7985", "\u9690\u85cf", "\u6a21\u5f0f"]),
+      mk("view.normal", "off", ["normal", "\u666e\u901a", "\u9000\u51fa", "\u6a21\u5f0f"]),
+    ];
+  }, [viewModeCtx]);
+
+  const superCmd = useSuperCommand(
+    { navigate: navigator, setLang, setTheme, openSettings },
+    novelCommands
+  );
 
   // ── Super 模式判定 ────────────────────────────────────────
   const isSuperMode = cmdkSearch.startsWith(SUPER_PREFIX + " ");
