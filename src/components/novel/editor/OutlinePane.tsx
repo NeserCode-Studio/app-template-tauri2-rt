@@ -751,6 +751,15 @@ export default function OutlinePane({
                 {t("Editor.node.moveOut")}
               </p>
             ) : null}
+            {/*
+             * 卷内所有章排在前面，未入卷的章跟在后面，两者之间也要有线。
+             * 分割线画在这里而不是依赖上一版"每个卷之间画线"——那一版
+             * 只切开了卷与卷，卷与未入卷区之间反而是连着的。
+             * 无卷时（全是未入卷章）不需要线，顶端不该凭空多一道。
+             */}
+            {volumes.length && (chaptersByVolume.get(null) ?? []).length ? (
+              <div className="mx-2 mb-1.5 h-px bg-border/70" aria-hidden="true" />
+            ) : null}
             {renderChapterList(null)}
           </DropZone>
 
