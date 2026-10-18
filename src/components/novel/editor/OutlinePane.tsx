@@ -218,7 +218,7 @@ function SortableChapter({
     >
       <div
         className={[
-          "flex min-w-0 cursor-grab flex-col gap-0.5 rounded-md border border-transparent py-1.5 pr-6 pl-7 text-left transition-colors active:cursor-grabbing",
+          "flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-md border border-transparent py-1.5 pr-6 pl-7 text-left transition-colors",
           "hover:bg-accent hover:text-accent-foreground",
           selected
             ? "border-border bg-accent/60 text-accent-foreground"
@@ -272,7 +272,7 @@ function SortableChapter({
           {...listeners}
           aria-label={dragLabel}
           title={dragLabel}
-          className="absolute left-1 top-0 flex h-full w-4 cursor-grab items-center justify-center text-muted-foreground/30 opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+          className="absolute left-0 top-0 flex h-full w-6 cursor-grab items-center justify-center text-muted-foreground/30 opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
         >
           <GripVertical className="size-3" />
         </span>
