@@ -27,7 +27,7 @@ import { useI18n } from "@/composables";
 import { useOutline } from "@/contexts/outline";
 import type { OutlineNode } from "@/shared/schema";
 
-import NodeMetaEditor, { type NodeStatus } from "./NodeMetaEditor";
+import ChapterMetaDialog from "./ChapterMetaDialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 export interface OutlinePaneProps {
@@ -41,10 +41,14 @@ export interface OutlinePaneProps {
     targetParentId: string | null,
     targetIndex: number
   ) => Promise<void>;
-  /** 更新节点的章状态与摘要。 */
+  /** 更新节点属性（状态 / 摘要 / 情节小结）。 */
   onUpdateNode: (
     nodeId: string,
-    patch: { status?: "draft" | "revising" | "final"; synopsis?: string }
+    patch: {
+      status?: "draft" | "revising" | "final";
+      synopsis?: string;
+      plotSummary?: string;
+    }
   ) => Promise<void>;
 }
 
@@ -97,6 +101,14 @@ const collisionDetection: CollisionDetection = (args) => {
 };
 
 /**
+ * 拖拽阈值：10px。
+ *
+ * 5px 时一次点击的行也会被判定成拖拽，用户会以为"点一下就乱序"。
+ * 侧栏行窄，10px 仍是很小的位移，不影响手感。
+ */
+const DRAG_ACTIVATION = { distance: 10 };
+
+/**
  * 相对时间：侧栏要的是"多久之前"，不是绝对时刻。
  *
  * 绝对时间在长列表里既占宽又难扫读——用户真正想知道的是
@@ -120,21 +132,25 @@ function relativeTime(ts: number, now: number): string {
 /** 可拖拽的章节行。 */
 function SortableChapter({
   node,
+  index,
   selected,
   dragging,
   onSelect,
   onEditMeta,
   editMetaLabel,
+  dragLabel,
   metaLabel,
   wordsLabel,
   statusLabel,
 }: {
   node: OutlineNode;
+  index: number;
   selected: boolean;
   dragging: boolean;
   onSelect: () => void;
   onEditMeta: () => void;
   editMetaLabel: string;
+  dragLabel: string;
   metaLabel: string;
   wordsLabel: string;
   statusLabel: string;
@@ -152,7 +168,7 @@ function SortableChapter({
     >
       <div
         className={[
-          "flex min-w-0 cursor-grab flex-col gap-0.5 rounded-md border border-transparent py-1.5 pr-1.5 pl-5 text-left transition-colors active:cursor-grabbing",
+          "flex min-w-0 cursor-grab flex-col gap-0.5 rounded-md border border-transparent py-1.5 pr-6 pl-7 text-left transition-colors active:cursor-grabbing",
           "hover:bg-accent hover:text-accent-foreground",
           selected
             ? "border-border bg-accent/60 text-accent-foreground"
@@ -162,9 +178,12 @@ function SortableChapter({
         onClick={onSelect}
         title={node.title}
         {...attributes}
-        {...listeners}
       >
         <div className="flex items-center gap-1.5">
+          {/* 序号：只在卷内计数，方便对照「第几章」。 */}
+          <span className="shrink-0 text-[10px] text-muted-foreground/50 tabular-nums">
+            {String(index + 1).padStart(2, "0")}
+          </span>
           <span className="truncate text-sm font-medium">{node.title}</span>
           {/* 状态点：非草稿才标，否则整棵树都是点、看不出差别。 */}
           {node.status !== "draft" ? (
@@ -188,7 +207,22 @@ function SortableChapter({
         {metaLabel ? (
           <span className="text-[10px] text-muted-foreground/50">{metaLabel}</span>
         ) : null}
-        <GripVertical className="absolute left-1 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/30 opacity-0 transition-opacity group-hover:opacity-100" />
+        {/*
+         * 拖拽只挂在把手，不挂整行。
+         *
+         * 整行作为拖拽热区时，任何一次按下都会进入 PointerSensor 的
+         * 判定，与 WebView2 的原生文本选区互相干扰——拖到一半选区
+         * 抢走 pointermove，松手时 dnd-kit 认为手势已结束，顺序不变。
+         * 只挂把手后，行的其余部分回归纯粹的点击与选中。
+         */}
+        <span
+          {...listeners}
+          aria-label={dragLabel}
+          title={dragLabel}
+          className="absolute left-1 top-0 flex h-full w-4 cursor-grab items-center justify-center text-muted-foreground/30 opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+        >
+          <GripVertical className="size-3" />
+        </span>
         <button
           type="button"
           aria-label={editMetaLabel}
@@ -254,11 +288,8 @@ export default function OutlinePane({
   /** 记录"正在给哪个卷添加章"，null 表示添加到根。 */
   const [addingChapterIn, setAddingChapterIn] = useState<string | null | undefined>(undefined);
   const [chapterName, setChapterName] = useState("");
-  /** 正在编辑状态 / 摘要的节点。 */
-  const [editingMeta, setEditingMeta] = useState<string | null>(null);
-  const [metaDraft, setMetaDraft] = useState<{ status: NodeStatus; synopsis: string } | null>(
-    null
-  );
+  /** 章节详情对话框的目标节点。 */
+  const [metaTarget, setMetaTarget] = useState<OutlineNode | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
   /** 相对时间的基准：每分钟刷新一次即可，太频繁只会白白重渲染。 */
@@ -270,7 +301,7 @@ export default function OutlinePane({
   }, []);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+    useSensor(PointerSensor, { activationConstraint: DRAG_ACTIVATION })
   );
 
   async function commitVolume() {
@@ -363,22 +394,7 @@ export default function OutlinePane({
     void onMoveNode(nodeId, target.parentId, index);
   }
 
-  /* ---------- 状态 / 摘要 ---------- */
-
-  function openMeta(node: OutlineNode) {
-    setEditingMeta(node.id);
-    setMetaDraft({ status: node.status, synopsis: node.synopsis });
-  }
-
-  async function commitMeta() {
-    if (!editingMeta || !metaDraft) return;
-    await onUpdateNode(editingMeta, {
-      status: metaDraft.status,
-      synopsis: metaDraft.synopsis,
-    });
-    setEditingMeta(null);
-    setMetaDraft(null);
-  }
+  /* ---------- 章节详情 ---------- */
 
   function renderChapterList(parentId: string | null) {
     const list = chaptersByVolume.get(parentId) ?? [];
@@ -389,39 +405,17 @@ export default function OutlinePane({
         strategy={verticalListSortingStrategy}
       >
         <ul className="flex flex-col">
-          {list.map((node) =>
-            editingMeta === node.id && metaDraft ? (
-              <li key={node.id} className="px-2 py-1">
-                <NodeMetaEditor
-                  node={node}
-                  status={metaDraft.status}
-                  synopsis={metaDraft.synopsis}
-                  onChange={(patch) =>
-                    setMetaDraft((prev) =>
-                      prev
-                        ? {
-                            status: patch.status ?? prev.status,
-                            synopsis: patch.synopsis ?? prev.synopsis,
-                          }
-                        : prev
-                    )
-                  }
-                  onSubmit={() => void commitMeta()}
-                  onCancel={() => {
-                    setEditingMeta(null);
-                    setMetaDraft(null);
-                  }}
-                />
-              </li>
-            ) : (
+          {list.map((node, i) => (
               <SortableChapter
                 key={node.id}
                 node={node}
+                index={i}
                 selected={currentChapterId === node.id}
                 dragging={activeId === NODE_PREFIX + node.id}
                 onSelect={() => setCurrentChapterId(node.id)}
-                onEditMeta={() => openMeta(node)}
+                onEditMeta={() => setMetaTarget(node)}
                 editMetaLabel={t("Editor.node.editMeta")}
+                dragLabel={t("Editor.node.dragHint")}
                 statusLabel={t(`Editor.node.status.${node.status}`)}
                 wordsLabel={
                   chapterMetas[node.id]
@@ -434,8 +428,7 @@ export default function OutlinePane({
                     : ""
                 }
               />
-            )
-          )}
+          ))}
         </ul>
       </SortableContext>
     );
@@ -443,6 +436,22 @@ export default function OutlinePane({
 
   return (
     <div className="flex h-full flex-col">
+      <ChapterMetaDialog
+        open={metaTarget !== null}
+        node={metaTarget}
+        stats={
+          metaTarget && chapterMetas[metaTarget.id]
+            ? {
+                words: `${chapterMetas[metaTarget.id].words} ${t("Editor.chapter.words")}`,
+                updated: relativeTime(chapterMetas[metaTarget.id].updatedAt, now),
+              }
+            : undefined
+        }
+        onOpenChange={(o) => {
+          if (!o) setMetaTarget(null);
+        }}
+        onSave={onUpdateNode}
+      />
       {/* 标题栏 */}
       <div className="flex items-center justify-between gap-2 px-3 py-2">
         <h2 className="row-label">{t("Editor.side.outline")}</h2>

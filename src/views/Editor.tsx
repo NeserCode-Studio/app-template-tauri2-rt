@@ -1,10 +1,17 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Plus } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { Input } from "@/components/ui/input";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -189,7 +196,11 @@ export default function Editor() {
   const updateOutlineMeta = useCallback(
     async (
       nodeId: string,
-      patch: { status?: "draft" | "revising" | "final"; synopsis?: string }
+      patch: {
+        status?: "draft" | "revising" | "final";
+        synopsis?: string;
+        plotSummary?: string;
+      }
     ) => {
       if (!root || !currentWorkId) return;
       setOutline(await updateNode(root, currentWorkId, nodeId, patch));
@@ -358,6 +369,11 @@ export default function Editor() {
                 onWordsChange={setWords}
                 onSaved={setChapter}
                 onWordsCommitted={() => void commitWords()}
+                onRename={() => {
+                  setRenameDraft(chapter.title);
+                  setRenaming(true);
+                }}
+                onDelete={() => setPendingDelete(chapter.id)}
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3">
@@ -462,87 +478,6 @@ export default function Editor() {
               ) : null}
             </section>
 
-            {/*
-             * 当前章操作。
-             *
-             * 放右侧而非卡片悬浮菜单：这些是"章级"动作（改名、删除），
-             * 与单张卡片的编辑动作是两回事，混在一起会让轻操作和重操作
-             * 挤在同一个几像素的悬浮条里。
-             */}
-            {chapter ? (
-              <>
-                <Separator />
-                <section className="flex flex-col gap-2">
-                  <h2 className="row-label">{t("Editor.side.actions")}</h2>
-
-                  {renaming ? (
-                    /*
-                     * 重命名必须有明确的确认 / 取消。
-                     * 只靠 Enter 提交的话，用户没有"我改了主意"的出口——
-                     * Esc 只绑在输入框失焦前，鼠标点别处就直接提交了。
-                     */
-                    <div className="flex flex-col gap-1.5">
-                      <Input
-                        autoFocus
-                        value={renameDraft}
-                        className="h-7 text-sm"
-                        aria-label={t("Editor.chapter.renameTitle")}
-                        onChange={(e) => setRenameDraft(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.nativeEvent.isComposing) return;
-                          if (e.key === "Enter") void renameChapter();
-                          if (e.key === "Escape") setRenaming(false);
-                        }}
-                      />
-                      <div className="flex items-center gap-1.5">
-                        <Button
-                          size="sm"
-                          className="h-7 flex-1"
-                          disabled={!renameDraft.trim()}
-                          onClick={() => void renameChapter()}
-                        >
-                          {t("Editor.chapter.confirmRename")}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 flex-1"
-                          onClick={() => {
-                            setRenaming(false);
-                            setRenameDraft("");
-                          }}
-                        >
-                          {t("Editor.chapter.cancelRename")}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="w-full justify-start"
-                      onClick={() => {
-                        setRenameDraft(chapter.title);
-                        setRenaming(true);
-                      }}
-                    >
-                      <Pencil className="icon-md" />
-                      {t("Editor.chapter.rename")}
-                    </Button>
-                  )}
-
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="w-full justify-start text-destructive hover:text-destructive"
-                    onClick={() => setPendingDelete(chapter.id)}
-                  >
-                    <Trash2 className="icon-md" />
-                    {t("Editor.chapter.delete")}
-                  </Button>
-                </section>
-              </>
-            ) : null}
             </>
             ) : null}
 
@@ -556,6 +491,45 @@ export default function Editor() {
       </ResizablePanelGroup>
 
       {/* 删除确认：删章会连正文一起清掉，必须二次确认。 */}
+      {/*
+       * 重命名对话框：按钮在标题栏，表单也不该留在右栏——
+       * 原先右栏里的行内输入会被结构树上的选择变化吞掉焦点。
+       */}
+      <Dialog
+        open={renaming}
+        onOpenChange={(o) => {
+          if (!o) {
+            setRenaming(false);
+            setRenameDraft("");
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t("Editor.chapter.renameTitle")}</DialogTitle>
+          </DialogHeader>
+          <Input
+            autoFocus
+            value={renameDraft}
+            aria-label={t("Editor.chapter.renameTitle")}
+            onChange={(e) => setRenameDraft(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.nativeEvent.isComposing) return;
+              if (e.key === "Enter") void renameChapter();
+              if (e.key === "Escape") setRenaming(false);
+            }}
+          />
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setRenaming(false)}>
+              {t("Editor.chapter.cancelRename")}
+            </Button>
+            <Button disabled={!renameDraft.trim()} onClick={() => void renameChapter()}>
+              {t("Editor.chapter.confirmRename")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ExportDialog
         open={exportOpen}
         root={root}

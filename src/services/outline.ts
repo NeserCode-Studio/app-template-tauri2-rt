@@ -87,7 +87,12 @@ export async function updateNode(
   root: string,
   workId: string,
   nodeId: string,
-  patch: Partial<Pick<OutlineNode, "title" | "status" | "synopsis" | "collapsed" | "order" | "parentId">>
+  patch: Partial<
+    Pick<
+      OutlineNode,
+      "title" | "status" | "synopsis" | "plotSummary" | "collapsed" | "order" | "parentId"
+    >
+  >
 ): Promise<Outline> {
   const outline = await loadOutline(root, workId);
   const nodes = outline.nodes.map((n) =>

@@ -27,6 +27,13 @@ export const outlineNodeSchema = z.object({
   status: z.enum(["draft", "revising", "final"]).default("draft"),
   /** 一句话摘要，结构树内联显示。 */
   synopsis: z.string().default(""),
+  /**
+   * 情节小结：比 synopsis 长的自由文本，只在章节详情 Dialog 里编辑。
+   *
+   * synopsis 是"给结构树扫读用的一句"，情节小结是"给写作回忆用的段落"，
+ * 两者长度与用途都不同，塞进同一个字段会互相将就。
+   */
+  plotSummary: z.string().default(""),
   /** 是否折叠（仅 volume 有意义，但统一携带以便持久化）。 */
   collapsed: z.boolean().default(false),
   /** scene 可折叠，记录是否折叠。 */

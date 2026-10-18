@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Check, Loader2, Save, Undo2 } from "lucide-react";
+import { BookOpen, Check, Loader2, Pencil, Save, Trash2, Undo2 } from "lucide-react";
 import { useLocalStorageState } from "ahooks";
 
 import { Button } from "@/components/ui/button";
@@ -31,6 +31,14 @@ export interface ChapterEditorProps {
    * 传全量而非增量，避免重载 / 修数据后统计越漂越远。
    */
   onWordsCommitted?: (chapterWords: number) => void;
+  /**
+   * 章级操作入口：重命名与删除。
+   *
+   * 由父级（Editor）实现并传入，因此标题栏只负责呈现，
+   * 章文件与结构树的双写逻辑仍留在 Editor 一处。
+   */
+  onRename?: () => void;
+  onDelete?: () => void;
 }
 
 /** 防抖自动保存间隔（计划书 §6.3：800ms）。 */
@@ -83,6 +91,8 @@ export default function ChapterEditor({
   onWordsChange,
   onSaved,
   onWordsCommitted,
+  onRename,
+  onDelete,
 }: ChapterEditorProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -579,6 +589,35 @@ export default function ChapterEditor({
           <h2 className="truncate text-base font-semibold">
             {chapter.title || t("Editor.title.placeholder")}
           </h2>
+          {/*
+           * 章级操作放在标题栏而不是右栏：改名与删除作用于"当前这一章"，
+           * 标题栏就是它的位置指示器。放在右栏里，用户得先理解
+           * "右栏的按钮为什么改的是中间这章"。
+           */}
+          {onRename ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7 shrink-0"
+              aria-label={t("Editor.chapter.rename")}
+              title={t("Editor.chapter.rename")}
+              onClick={onRename}
+            >
+              <Pencil className="icon-sm" />
+            </Button>
+          ) : null}
+          {onDelete ? (
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7 shrink-0 text-destructive hover:text-destructive"
+              aria-label={t("Editor.chapter.delete")}
+              title={t("Editor.chapter.delete")}
+              onClick={onDelete}
+            >
+              <Trash2 className="icon-sm" />
+            </Button>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
           <span className="tabular-nums">

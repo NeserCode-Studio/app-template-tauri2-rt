@@ -131,29 +131,50 @@ export default function CardItem({
       className={[
         /*
          * 卡片本身不再吞点击：正文要保持可选中，才能右键复制、
-         * 拖选片段去搜索。编辑改由段首铅笔图标触发（见 onEdit）。
+         * 拖选片段去搜索。编辑改由段首的序号区触发（见 onEdit）。
+         *
+         * 序号与编辑图标合并成一个区域：两者都锚在同一行的同一侧，
+         * 分开放会让左侧留白变成两条互不相干的窄带，视觉上像错位。
          */
-        "group relative article-paragraph cursor-text rounded-sm py-0.5 pr-1 pl-6 transition-opacity",
+        "group relative article-paragraph cursor-text rounded-sm py-0.5 pr-1 pl-7 transition-opacity",
         dimmed ? "opacity-35" : "opacity-100",
         isActive ? "bg-accent/40" : "hover:bg-accent/20",
       ].join(" ")}
     >
-      {/* 段首铅笔：唯一的编辑入口。图标而非整卡可点，避免和选中文字打架。 */}
+      {/*
+       * 段首的序号 + 编辑入口合成一个区域。
+       *
+       * 静止时显示序号（纯提示，告诉用户这是第几张卡），
+       * 悬停或编辑中时原位换成铅笔。同一块 24px 宽的空间，
+       * 不会因为切换而让正文左右抖动。
+       */}
       <button
         type="button"
         aria-label={t("Editor.card.edit")}
         title={t("Editor.card.edit")}
         className={[
-          "absolute left-0 top-0.5 flex size-5 items-center justify-center rounded text-muted-foreground/40",
-          "opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100",
-          isActive ? "opacity-100" : "",
+          "absolute left-0 top-0 flex h-full w-6 items-center justify-center rounded text-muted-foreground/40",
+          "hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         ].join(" ")}
         onClick={(e) => {
           e.stopPropagation();
           onEdit(index);
         }}
       >
-        <Pencil className="icon-sm" />
+        <span
+          className={[
+            "text-[10px] tabular-nums transition-opacity",
+            isActive ? "opacity-0" : "opacity-100 group-hover:opacity-0",
+          ].join(" ")}
+        >
+          {index + 1}
+        </span>
+        <Pencil
+          className={[
+            "icon-sm absolute transition-opacity",
+            isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+          ].join(" ")}
+        />
       </button>
 
       <p className={isEmpty ? "is-empty min-h-[1lh] text-muted-foreground/40" : ""}>
@@ -241,10 +262,6 @@ export default function CardItem({
         </DropdownMenu>
       </div>
 
-      {/* 卡片序号：仅在悬停时淡入，帮助定位光标 */}
-      <span className="absolute -left-7 top-0 w-5 text-right text-xs text-muted-foreground/0 tabular-nums transition-colors group-hover:text-muted-foreground/40">
-        {index + 1}
-      </span>
     </div>
   );
 }
