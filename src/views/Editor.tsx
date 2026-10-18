@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ChevronLeft, ChevronRight, Download, Plus } from "lucide-react";
 import { useNavigate } from "react-router";
 
@@ -216,6 +216,11 @@ export default function Editor() {
       : null;
 
   const work = currentWorkId ? works[currentWorkId] : null;
+  /** 当前章在结构树里的节点：右栏读状态与小结用。 */
+  const currentChapterNode = useMemo(
+    () => chapters.find((c) => c.id === chapter?.id) ?? null,
+    [chapters, chapter?.id]
+  );
 
   /* ---------- 章节操作（右侧栏） ---------- */
 
@@ -445,6 +450,49 @@ export default function Editor() {
             </section>
 
             <Separator />
+
+            {/*
+             * 章节内容：状态、一句话摘要、情节小结。
+             *
+             * 这些属性在详情 Dialog 里编辑，右栏只做只读展示——
+             * 右栏是"这一章现在什么状况"的仪表盘，不该和左栏的
+             * 结构树争同一个编辑入口。
+             */}
+            {currentChapterNode ? (
+              <section className="flex flex-col gap-2">
+                <h2 className="row-label">{t("Editor.side.chapterInfo")}</h2>
+                <div className="flex items-center gap-1.5">
+                  <span
+                    className={[
+                      "size-1.5 shrink-0 rounded-full",
+                      currentChapterNode.status === "final"
+                        ? "bg-emerald-500"
+                        : currentChapterNode.status === "revising"
+                          ? "bg-amber-500"
+                          : "bg-muted-foreground/40",
+                    ].join(" ")}
+                  />
+                  <span className="text-xs text-muted-foreground">
+                    {t(`Editor.node.status.${currentChapterNode.status}`)}
+                  </span>
+                </div>
+                {currentChapterNode.synopsis ? (
+                  <p className="text-xs leading-relaxed text-muted-foreground">
+                    {currentChapterNode.synopsis}
+                  </p>
+                ) : null}
+                {currentChapterNode.plotSummary ? (
+                  <p className="max-h-40 overflow-y-auto text-xs leading-relaxed text-muted-foreground/80">
+                    {currentChapterNode.plotSummary}
+                  </p>
+                ) : null}
+                {!currentChapterNode.synopsis && !currentChapterNode.plotSummary ? (
+                  <p className="text-[11px] text-muted-foreground/60">
+                    {t("Editor.node.plotSummaryHint")}
+                  </p>
+                ) : null}
+              </section>
+            ) : null}
 
             <section className="flex flex-col gap-2">
               <div className="flex items-center gap-2">

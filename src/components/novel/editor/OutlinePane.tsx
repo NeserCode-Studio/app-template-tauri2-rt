@@ -26,9 +26,13 @@ import { Input } from "@/components/ui/input";
 import { useI18n } from "@/composables";
 import { useOutline } from "@/contexts/outline";
 import type { OutlineNode } from "@/shared/schema";
+import { createLogger } from "@/lib/logger";
+import { computeMoveIndex } from "@/lib/outline-move";
 
 import ChapterMetaDialog from "./ChapterMetaDialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
+
+const log = createLogger("OutlinePane");
 
 export interface OutlinePaneProps {
   /** 新建章节：创建后自动打开。 */
@@ -93,11 +97,23 @@ function parseDroppableId(id: string): DropRef | null {
  * 只有指针落在空白处（章节之间、卷的空白区）才用容器（`drop:`）。
  */
 const collisionDetection: CollisionDetection = (args) => {
-  const pointerHits = pointerWithin(args);
+  /*
+   * 命中范围要收窄到「可落点的 id」。
+   *
+   * 不收窄的话，正在被拖动的那一行自己也参与碰撞：指针移到 A 上方时，
+   * 若 A 自己比真正的目标更近，over 会一直是 A，解析出来就是
+   * "插到自己前面"——索引等于原位，落盘后顺序看起来毫无变化。
+   */
+  const hits = args.droppableContainers.filter((c) => {
+    const id = String(c.id);
+    if (id.startsWith(NODE_PREFIX)) return id !== args.active.id;
+    return id.startsWith(DROP_PREFIX);
+  });
+  const pointerHits = pointerWithin({ ...args, droppableContainers: hits });
   const nodeHits = pointerHits.filter((hit) => String(hit.id).startsWith(NODE_PREFIX));
   if (nodeHits.length) return nodeHits;
   if (pointerHits.length) return pointerHits;
-  return closestCenter(args);
+  return closestCenter({ ...args, droppableContainers: hits });
 };
 
 /**
@@ -155,7 +171,15 @@ function SortableChapter({
   wordsLabel: string;
   statusLabel: string;
 }) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
     id: NODE_PREFIX + node.id,
     data: { type: "chapter", nodeId: node.id },
   });
@@ -214,8 +238,14 @@ function SortableChapter({
          * 判定，与 WebView2 的原生文本选区互相干扰——拖到一半选区
          * 抢走 pointermove，松手时 dnd-kit 认为手势已结束，顺序不变。
          * 只挂把手后，行的其余部分回归纯粹的点击与选中。
+         *
+         * 关键：`listeners` 与 `setNodeRef` 不在同一元素上时，必须额外
+         * 用 `setActivatorNodeRef` 登记把手。缺了它，dnd-kit 会拿整行的
+         * 几何去测激活距离，拖拽过程能跑（预览会动），但 drop 阶段的
+         * 命中判断失效，onDragEnd 拿不到正确的 over，于是松手复原。
          */}
         <span
+          ref={setActivatorNodeRef}
           {...listeners}
           aria-label={dragLabel}
           title={dragLabel}
@@ -377,20 +407,14 @@ export default function OutlinePane({
       return;
     }
 
-    /*
-     * 同级换位的下标语义。
-     *
-     * 服务端的 targetIndex 是「取出自己之后插入的位置」，因此这里必须
-     * 先在**不含自己**的列表里数出目标的下标。原来直接用含自己的
-     * 列表下标，往下拖时会多算一位，结果永远是"原地不动"——
-     * 表现就是能拖起来但改不了顺序。
-     */
     const target = nodeById.get(ref.nodeId);
     if (!target) return;
-    const siblings = (chaptersByVolume.get(target.parentId) ?? []).filter(
-      (n) => n.id !== nodeId
-    );
-    const index = siblings.findIndex((n) => n.id === target.id);
+    const siblings = chaptersByVolume.get(target.parentId) ?? [];
+    const index = computeMoveIndex(siblings, nodeId, target.id);
+    if (index < 0) {
+      log.debug("outline drag: no-op move", { nodeId, targetId: target.id });
+      return;
+    }
     void onMoveNode(nodeId, target.parentId, index);
   }
 

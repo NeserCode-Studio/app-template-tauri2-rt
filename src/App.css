@@ -197,7 +197,7 @@
   }
   .app-body {
     @apply fixed bottom-0 flex h-[calc(100vh-2rem)] w-screen flex-col
-      items-center justify-center bg-neutral-50 select-none
+      items-center justify-center bg-neutral-50
       transition-colors duration-100 ease-in-out dark:bg-neutral-700;
   }
 
@@ -241,6 +241,16 @@
   }
   .article-paragraph.is-empty {
     text-indent: 0;
+  }
+
+  /*
+   * 卡片序号：正文衬线字体里塞两位阿拉伯数字会随字号一起变大，
+   * 在行首比正文还显眼，抢掉段落的视觉起点。这里单独用界面无衬线
+   * 字体并固定为较大号，让它像"编辑器的行号槽"而不是正文的标点。
+   */
+  .card-index {
+    @apply font-[family-name:var(--app-font-ui)] text-xs font-medium
+      tabular-nums text-muted-foreground/50;
   }
 
   /* ===== 标题栏操作按钮 =====

@@ -163,7 +163,7 @@ export default function CardItem({
       >
         <span
           className={[
-            "text-[10px] tabular-nums transition-opacity",
+            "card-index transition-opacity",
             isActive ? "opacity-0" : "opacity-100 group-hover:opacity-0",
           ].join(" ")}
         >
