@@ -26,10 +26,12 @@
 | **不丢稿的暂存段落** | 写新段落时点开旧卡片，草稿自动暂存并可随时取回；编辑旧段落后自动归位（按章存入 localStorage） |
 | **拼合有依据** | 段末无句读时拒绝拼合，避免把两段硬接成一句；拼合可一键撤回 |
 | **章即页** | 默认单章视野，上滑上一章、下滑下一章，右栏提供翻章按钮 |
-| **素材库** | 人物 / 地点 / 物品等类型化条目，写作时可侧边查阅与高亮提及 |
+| **素材库** | 人物 / 地点 / 物品等类型化条目，写作时右栏查阅；正文中提及自动高亮（可关） |
 | **全站搜索** | 一次搜索覆盖章标题、正文与素材条目，命中高亮 |
-| **进度统计** | 今日目标、连续写作天数与字数曲线 |
-| **专注 / 打字机 / Zen** | 多种不打断写作的模式 |
+| **进度统计** | 今日目标、连续写作天数与近 14 天曲线；作品字数以章文件全量重算 |
+| **专注 / 打字机 / Zen** | 三种视图模式，互斥切换并记忆选择 |
+| **导出** | 单章或全书导出为 txt，标题 / 缩进 / 换行风格可选，带实时预览 |
+| **回收站** | 删除的章先落到工作区 `.trash/`，可恢复（结构树一并补回） |
 
 技术底座：**Tauri 2** · **React 19** · **TypeScript** · **Tailwind CSS 4** · **shadcn/ui** · **Radix UI** · **Rust**
 
@@ -92,7 +94,7 @@ src/
 │   └── TrayMenu          # 托盘菜单
 │
 ├── composables/          # 业务 Hook（useTheme / useI18n / useToast / useSuperCommand）
-├── contexts/             # 全局 Context（workspace / library / outline / preferences）
+├── contexts/             # 全局 Context（workspace / library / outline / codex / viewmode / preferences）
 ├── lifecycle/            # 生命周期总线（阶段：mount / ready）
 ├── lib/                  # 工具与资源
 │   ├── i18n.resource.ts  # 中英文案表
@@ -100,13 +102,16 @@ src/
 │   ├── editor.actions.ts # 编辑命令
 │   ├── logger.ts         # 日志模块
 │   └── utils.ts          # cn()
-├── services/             # 业务服务（fs 桥 / 作品 / 结构树 / 章 / 统计）
+├── services/             # 业务服务（fs 桥 / 作品 / 结构树 / 章 / 素材 / 统计 / 回收站 / 导入 / 导出）
 └── shared/               # 共享 schema（zod，前端与磁盘契约）
 
 src-tauri/
 ├── tauri.conf.json       # 窗口与打包配置（productName: novels-yes）
 ├── capabilities/         # 权限白名单（dialog / fs）
-└── src/lib.rs            # 托盘与 Rust 命令（含 dialog / fs 插件）
+└── src/
+    ├── lib.rs            # 托盘与 Rust 命令注册
+    ├── fs_bridge.rs      # 工作区内读写（拒绝 .. 逃逸与软链）
+    └── export_bridge.rs  # 导出写工作区外 / 导入编码探测
 ```
 
 ---
@@ -157,7 +162,9 @@ mount（React 挂载完成） → ready（应用就绪）
 | 结构树 | `works/<id>/outline.json` | 卷 / 章节点，扁平数组 + `parentId` |
 | 章正文 | `works/<id>/chapters/<id>.json` | **唯一事实来源**，`cards` 数组 |
 | 章纯文本视图 | `works/<id>/texts/<id>.txt` | 由 `cards` 生成，供导出 / 外部编辑 |
+| 素材条目 | `works/<id>/codex/<type>/<id>.json` | 按类型分目录 |
 | 统计 | `works/<id>/stats.json` | 作品字数以章文件全量重算，缓存只作加速 |
+| 回收站 | `.trash/<itemId>.json` + 数据文件 | 只在工作区内，拷走工作区即跟着走 |
 
 两条容易踩的约束，改动相关代码前务必留意：
 
@@ -174,6 +181,17 @@ mount（React 挂载完成） → ready（应用就绪）
 - 落盘失败会弹 `Editor.save.failed`，此时不要依赖自动保存
 
 暂存的新段落只进 `localStorage`（键 `novels-yes:draft:<workId>:<chapterId>`），**不进工作区目录**：它是没写完的半成品，混进 `works/<id>/` 会污染用户导出的文本。按章隔离，切回来能接着写。
+
+#### 两条边界：工作区内 vs 工作区外
+
+Rust 侧刻意分成两个桥，作用域相反：
+
+| 桥 | 作用域 | 用途 |
+| --- | --- | --- |
+| `fs_bridge` | **仅工作区内** | 应用读写自身数据。拒绝 `..` 逃逸与符号链接。 |
+| `export_bridge` | 工作区外任意绝对路径 | 导出成品、导入既有文稿。目标由系统对话框给出，不做工作区校验。 |
+
+两者混用会造成实质漏洞——若导出复用 `fs_bridge`，用户就能借导出把文件写到工作区之外。
 
 ### 主题机制
 
