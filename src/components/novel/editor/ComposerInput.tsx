@@ -1,7 +1,8 @@
-import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useImperativeHandle, useRef, useState } from "react";
 import { CornerDownLeft, Trash2 } from "lucide-react";
 
 import { useI18n } from "@/composables";
+import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -63,10 +64,15 @@ export interface ComposerInputProps {
  * 关键约束：
  * 1. 输入内容不经过 React state。每次按键 setState 会让中文输入法的
  *    组合态频繁重渲染，导致候选窗口抖动甚至丢字。
- * 2. 回车固化卡片，但必须先排除输入法确认态：
+ * 2. 回车结束本段，但必须先排除输入法确认态：
  *    `isComposing === true` 或 `keyCode === 229` 时不提交，
  *    否则输入法确认候选词会被当成提交，吞掉一段字。
- * 3. Shift+Enter 保留为换行，不提交。
+ * 3. Shift+Enter 同样结束本段——段落不主动折行，
+ *    硬敲出来的 \n 进正文只是脏数据（导出多一空行、字数统计多一字符），
+ *    既然换行没有表达力，就不给它一个手势。
+ *
+ * 提交按钮常驻右下角：回车是给手在键盘上的人用的，
+ * 总要有一条不依赖键盘的路。
  */
 const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
   function ComposerInput(
@@ -77,6 +83,23 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
     /** 丢弃确认弹窗的开关：丢弃不可撤销，先问一句再动手。 */
     const [discardOpen, setDiscardOpen] = useState(false);
+    /**
+     * 只服务于提交按钮的可用状态。
+     * 正文本身不经过 state（中文输入法会抖），但按钮得知道"能不能提交"，
+     * 所以这里放一个布尔量而不是整段文本——重渲染成本一样，语义更窄。
+     */
+    const [hasText, setHasText] = useState(false);
+
+    /** 回车与按钮共用同一条提交路径，避免两处行为漂移。 */
+    const submit = useCallback(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      const text = el.value.trim();
+      if (!text) return;
+      onSubmit(text, editingIndex);
+      el.value = "";
+      setHasText(false);
+    }, [onSubmit, editingIndex]);
 
     useImperativeHandle(ref, () => ({
       focus(caret = "end") {
@@ -90,6 +113,7 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
         const el = textareaRef.current;
         if (!el) return;
         el.value = text;
+        setHasText(text.trim().length > 0);
         el.focus();
         if (caret === "start") el.setSelectionRange(0, 0);
         else el.setSelectionRange(text.length, text.length);
@@ -103,6 +127,7 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
       clear() {
         const el = textareaRef.current;
         if (el) el.value = "";
+        setHasText(false);
       },
       read() {
         return textareaRef.current?.value ?? "";
@@ -173,6 +198,7 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
              * 视觉上像是飘在中间。左边不补偿，文字仍与正文对齐。
              */
             className="prose-article [field-sizing:content] scrollbar-app -mr-6 max-h-[220px] min-h-[3lh] w-[calc(100%+1.5rem)] resize-none overflow-y-auto border-0 bg-transparent py-1 pr-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
+            onInput={(e) => setHasText(e.currentTarget.value.trim().length > 0)}
             onKeyDown={(e) => {
               // 输入法组合中：Enter 属于候选确认，绝不提交。
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;
@@ -183,6 +209,7 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
                 if (editingIndex >= 0 && onReturnToNew) {
                   onReturnToNew();
                   e.currentTarget.value = "";
+                  setHasText(false);
                 }
                 return;
               }
@@ -198,11 +225,7 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
               if (e.key !== "Enter") return;
 
               e.preventDefault();
-              const text = e.currentTarget.value.trim();
-              if (!text) return;
-              // editing 时父组件知道是第几张卡；新建时传 -1。
-              onSubmit(text, editingIndex);
-              e.currentTarget.value = "";
+              submit();
             }}
           />
 
@@ -223,12 +246,16 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
          *
          * 追加新段落时这一行没有任何信息，纯占高度，全部隐去。
          */}
-        {editingIndex >= 0 ? (
-          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground/60">
+        <div className="-mr-6 flex items-center justify-between gap-2 text-xs text-muted-foreground/60">
+          {editingIndex >= 0 ? (
             <span className="min-w-0 truncate font-semibold text-foreground">
               {t("Editor.input.editing")}
             </span>
-            {onReturnToNew ? (
+          ) : (
+            <span className="min-w-0" />
+          )}
+          <div className="flex shrink-0 items-center gap-1">
+            {editingIndex >= 0 && onReturnToNew ? (
             <button
               type="button"
               onClick={onReturnToNew}
@@ -238,8 +265,19 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
               {t("Editor.input.returnNew")}
             </button>
             ) : null}
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={!hasText}
+              onClick={submit}
+              className="h-7 gap-1.5 px-2 text-xs"
+            >
+              <CornerDownLeft className="icon-sm" />
+              {t("Editor.input.submit")}
+            </Button>
           </div>
-        ) : null}
+        </div>
       </div>
 
       <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
