@@ -41,6 +41,28 @@ export const trashItemSchema = z.object({
   parentId: z.string().uuid().nullable().default(null),
   order: z.number().int().default(0),
   deletedAt: z.number().int(),
+  /**
+   * 被一并删掉的子节点（卷 → 其下所有章）。
+   *
+   * 卷的删除是级联的：章文件一并进回收站，但结构树里那些章节点也会消失。
+   * 只恢复卷节点而不恢复章节点，正文就变成孤儿文件，恢复等于半吊子。
+   * 所以把子树节点原样记在这里，恢复时整棵挂回去。
+   */
+  subtree: z
+    .array(
+      z.object({
+        id: z.string().uuid(),
+        type: z.string(),
+        title: z.string(),
+        parentId: z.string().uuid().nullable(),
+        order: z.number().int(),
+        status: z.string().optional(),
+        synopsis: z.string().optional(),
+        createdAt: z.number().int(),
+        updatedAt: z.number().int(),
+      })
+    )
+    .default([]),
 });
 
 export type TrashItem = z.infer<typeof trashItemSchema>;
@@ -88,6 +110,8 @@ export async function moveToTrash(
     title: string;
     parentId?: string | null;
     order?: number;
+    /** 卷删除时记下整棵子树，供恢复时挂回结构树。 */
+    subtree?: TrashItem["subtree"];
   }
 ): Promise<TrashItem> {
   const fs2 = createFs(root);
@@ -99,6 +123,7 @@ export async function moveToTrash(
     title: input.title,
     parentId: input.parentId ?? null,
     order: input.order ?? 0,
+    subtree: input.subtree ?? [],
     deletedAt: Date.now(),
   });
 
@@ -203,7 +228,7 @@ async function reattachNode(root: string, item: TrashItem): Promise<void> {
     item.parentId !== null &&
     !raw.nodes.some((n) => (n as { id?: string }).id === item.parentId);
   const now = Date.now();
-  raw.nodes.push({
+  const node = {
     id: item.originId,
     type: item.kind,
     title: item.title,
@@ -214,7 +239,9 @@ async function reattachNode(root: string, item: TrashItem): Promise<void> {
     collapsed: false,
     createdAt: now,
     updatedAt: now,
-  });
+  };
+  /* 卷：连同记录下来的子树一起挂回，章节点才不会变成孤儿文件。 */
+  raw.nodes.push(node, ...item.subtree);
   await fs2.writeText(file, JSON.stringify(raw, null, 2));
   log.info("outline node restored", { id: item.originId, parentGone });
 }

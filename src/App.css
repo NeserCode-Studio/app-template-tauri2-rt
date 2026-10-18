@@ -16,24 +16,32 @@
   --app-line-width: 40em;
   --app-indent: 2em;
   --app-paragraph-gap: 0;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
+  /*
+   * 亮色主题走"纸感"配色：底色带一点暖黄，着重色（primary / accent）带绿。
+   *
+   * 原先全部色度为 0（纯黑白），控件只能靠明度差区分，shadow、button
+   * 与背景的对比明显弱于暗色主题——因为暗色有透明度层次可借。给底色与
+   * 着重色各自一点色度后，明度差之外多了冷暖对比，控件轮廓才立得住。
+   * 幅度刻意压得很低，避免变成"有色主题"，仍以中性纸面为主。
+   */
+  --background: oklch(0.988 0.008 95);
+  --foreground: oklch(0.168 0.012 105);
+  --card: oklch(0.995 0.005 95);
+  --card-foreground: oklch(0.168 0.012 105);
+  --popover: oklch(0.995 0.005 95);
+  --popover-foreground: oklch(0.168 0.012 105);
+  --primary: oklch(0.435 0.062 152);
+  --primary-foreground: oklch(0.985 0.006 95);
+  --secondary: oklch(0.962 0.014 95);
+  --secondary-foreground: oklch(0.28 0.02 105);
+  --muted: oklch(0.962 0.014 95);
+  --muted-foreground: oklch(0.545 0.016 100);
+  --accent: oklch(0.945 0.028 152);
+  --accent-foreground: oklch(0.3 0.04 152);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+  --border: oklch(0.895 0.012 100);
+  --input: oklch(0.895 0.012 100);
+  --ring: oklch(0.6 0.05 152);
 
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
@@ -41,14 +49,14 @@
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
 
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  --sidebar: oklch(0.98 0.01 95);
+  --sidebar-foreground: oklch(0.168 0.012 105);
+  --sidebar-primary: oklch(0.435 0.062 152);
+  --sidebar-primary-foreground: oklch(0.985 0.006 95);
+  --sidebar-accent: oklch(0.945 0.028 152);
+  --sidebar-accent-foreground: oklch(0.3 0.04 152);
+  --sidebar-border: oklch(0.895 0.012 100);
+  --sidebar-ring: oklch(0.6 0.05 152);
 }
 
 .dark {
@@ -135,6 +143,19 @@
   }
   button {
     @apply cursor-pointer;
+  }
+  /*
+   * 选中文本取绿：与亮色主题的着重色同族，深浅两档分别给两个主题。
+   * 用 color-mix 从 primary 派生，保证改 primary 时选区色自动跟随，
+   * 不必再单独维护一组变量。
+   */
+  ::selection {
+    background-color: color-mix(in oklab, var(--primary) 26%, transparent);
+    color: var(--foreground);
+  }
+  .dark ::selection {
+    background-color: color-mix(in oklab, #34d399 34%, transparent);
+    color: var(--foreground);
   }
 }
 

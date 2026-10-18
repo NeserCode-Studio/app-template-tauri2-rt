@@ -72,14 +72,98 @@ export async function loadChapter(root: string, workId: string, chapterId: strin
   }
 }
 
-/** 保存章：同时落盘 json 与 txt 视图（原子替换）。 */
-export async function saveChapter(root: string, workId: string, chapter: Chapter): Promise<void> {
+/**
+ * 保存章：同时落盘 json 与 txt 视图（原子替换）。
+ *
+ * 返回落盘后的完整章对象（含新压入的 history）——历史快照是保存动作的
+ * 副产物，调用方要拿回最新的 history 才能刷新版本列表界面。
+ */
+export async function saveChapter(
+  root: string,
+  workId: string,
+  chapter: Chapter
+): Promise<Chapter> {
   const fs2 = createFs(root);
-  const validated = chapterSchema.parse({ ...chapter, updatedAt: Date.now() });
+  const now = Date.now();
+  /*
+   * 快照策略：每次保存把**保存前**的正文压入 history，再写新正文。
+   * 这样任何一次保存都能退回去，包括"误删了一段"之后的下一次自动保存。
+   * 上限由 HISTORY_LIMIT 控制，防止长章反复保存把章文件撑到不可接受的大小。
+   */
+  const history = [...(chapter.history ?? [])];
+  const meaningful = chapter.cards.some((c) => c.text.trim());
+  if (meaningful && !sameCards(history[history.length - 1]?.cards, chapter.cards)) {
+    history.push({ at: now, savedAt: chapter.updatedAt, cards: chapter.cards });
+    if (history.length > HISTORY_LIMIT) history.splice(0, history.length - HISTORY_LIMIT);
+  }
+  const validated = chapterSchema.parse({ ...chapter, history, updatedAt: now });
   const jsonFile = chapterFile(workId, validated.id);
   await fs2.writeText(jsonFile, JSON.stringify(validated, null, 2));
   await fs2.writeText(chapterTextFile(workId, validated.id), cardsToText(validated.cards));
   log.debug("chapter saved", { id: validated.id, cards: validated.cards.length });
+  return validated;
+}
+
+/** 卡片数组是否逐字段相同（快照去重靠它，避免无改动的保存堆出一串空版本）。 */
+function sameCards(a: Card[] | undefined, b: Card[]): boolean {
+  if (!a) return false;
+  if (a.length !== b.length) return false;
+  return a.every((c, i) => c.id === b[i].id && c.text === b[i].text);
+}
+
+/**
+ * 历史快照上限。
+ *
+ * 每份快照是整章 cards 的完整拷贝。20 份对一部长篇的单章来说体积可接受，
+ * 再多会让每次保存都重写越来越大的 JSON，得不偿失——超出后丢最旧的。
+ */
+const HISTORY_LIMIT = 20;
+
+/** 可回滚的历史时间点：最新在前。 */
+export interface HistoryEntry {
+  index: number;
+  at: number;
+  savedAt: number;
+  words: number;
+  preview: string;
+}
+
+/** 列出可回滚的历史，供界面展示。 */
+export function listHistory(chapter: Chapter): HistoryEntry[] {
+  return [...(chapter.history ?? [])]
+    .map((h, i) => ({
+      index: i,
+      at: h.at,
+      savedAt: h.savedAt,
+      words: countWords(cardsToText(h.cards)),
+      preview: cardsToText(h.cards).slice(0, 40),
+    }))
+    .reverse();
+}
+
+/**
+ * 回滚到某个历史快照。
+ *
+ * 当前正文也会被压入 history 再切换，所以"回滚"本身同样可撤销——
+ * 误点了回滚还能再滚回来。
+ */
+export function rollbackTo(chapter: Chapter, index: number): Chapter {
+  const history = chapter.history ?? [];
+  const target = history[index];
+  if (!target) return chapter;
+  const nextHistory = [...history];
+  nextHistory.push({
+    at: Date.now(),
+    savedAt: chapter.updatedAt,
+    cards: chapter.cards,
+  });
+  if (nextHistory.length > HISTORY_LIMIT) nextHistory.splice(0, nextHistory.length - HISTORY_LIMIT);
+  return chapterSchema.parse({
+    ...chapter,
+    cards: target.cards,
+    history: nextHistory,
+    updatedAt: Date.now(),
+  });
 }
 
 /** 新建并保存空章。 */

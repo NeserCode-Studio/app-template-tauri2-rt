@@ -82,6 +82,7 @@ export default function Editor() {
   const { currentWorkId, works } = useLibrary();
   const {
     chapters,
+    volumes,
     currentChapterId,
     setCurrentChapterId,
     setOutline,
@@ -98,6 +99,8 @@ export default function Editor() {
   const [renameDraft, setRenameDraft] = useState("");
   /** 待确认删除的章节。 */
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  /** 待确认删除的卷 id（连同其下所有章进回收站）。 */
+  const [pendingVolumeDelete, setPendingVolumeDelete] = useState<string | null>(null);
   /** 右栏页签：章节信息 / 素材库。 */
   const [sideTab, setSideTab] = useState<"chapter" | "codex" | "progress">("chapter");
   const [exportOpen, setExportOpen] = useState(false);
@@ -280,6 +283,59 @@ export default function Editor() {
   }, [root, currentWorkId, chapter, chapters, setOutline, setCurrentChapterId]);
 
   /**
+   * 删除整卷：连同其下所有章一起进回收站。
+   *
+   * 「刚写一两章就想推翻重写」是这个操作的主要场景，所以它必须是可恢复的
+   * ——章正文、结构树节点都要完整带走。摘节点时删卷即可，removeNode 级联
+   * 会带走下面的章节点；但章文件要先入回收站，否则恢复时正文找不回来。
+   */
+  const deleteVolume = useCallback(
+    async (volumeId: string) => {
+      if (!root || !currentWorkId) return;
+      const volume = volumes.find((v) => v.id === volumeId);
+      if (!volume) return;
+      const kids = chapters.filter((c) => c.parentId === volumeId);
+
+      const paths = kids.flatMap((c) => [
+        chapterFile(currentWorkId, c.id),
+        chapterTextFile(currentWorkId, c.id),
+      ]);
+      await moveToTrash(root, {
+        kind: "volume",
+        originId: volumeId,
+        paths,
+        title: volume.title,
+        parentId: volume.parentId,
+        order: volume.order,
+        subtree: [volume, ...kids].map((n) => ({
+          id: n.id,
+          type: n.type,
+          title: n.title,
+          parentId: n.parentId,
+          order: n.order,
+          status: n.status,
+          synopsis: n.synopsis,
+          createdAt: n.createdAt,
+          updatedAt: n.updatedAt,
+        })),
+      });
+      /* removeNode 级联删除卷与其下所有章节点。 */
+      const next = await removeNode(root, currentWorkId, volumeId);
+      setOutline(next);
+      /* 正在编辑的章若随卷被删，切到别的章或回到空态。 */
+      if (chapter && kids.some((c) => c.id === chapter.id)) {
+        const fallback = next.nodes.find(
+          (n) => n.type === "chapter"
+        );
+        setCurrentChapterId(fallback?.id ?? null);
+        setChapter(null);
+      }
+      setPendingVolumeDelete(null);
+    },
+    [root, currentWorkId, volumes, chapters, chapter, setOutline, setCurrentChapterId]
+  );
+
+  /**
    * 章落盘后更新作品库字数。
    *
    * 作品总字数是全书各章之和，且作品库可能已经打开了别的章，
@@ -354,6 +410,7 @@ export default function Editor() {
               onCreateVolume={createVolume}
               onMoveNode={moveOutline}
               onUpdateNode={updateOutlineMeta}
+              onDeleteVolume={(id) => setPendingVolumeDelete(id)}
             />
           </div>
         </ResizablePanel>
@@ -614,6 +671,37 @@ export default function Editor() {
           <AlertDialogFooter>
             <AlertDialogCancel>{t("Editor.split.cancel")}</AlertDialogCancel>
             <AlertDialogAction onClick={() => void deleteCurrentChapter()}>
+              {t("Editor.chapter.confirmDelete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 卷删除：文案里带上章数，避免用户以为只删一个空卷。 */}
+      <AlertDialog
+        open={pendingVolumeDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingVolumeDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Editor.volume.delete")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Editor.volume.deleteConfirm").replace(
+                "{count}",
+                String(chapters.filter((c) => c.parentId === pendingVolumeDelete).length)
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Editor.split.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingVolumeDelete) void deleteVolume(pendingVolumeDelete);
+              }}
+            >
               {t("Editor.chapter.confirmDelete")}
             </AlertDialogAction>
           </AlertDialogFooter>

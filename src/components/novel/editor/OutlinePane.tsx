@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, ChevronRight, FileText, GripVertical, Plus, Settings2 } from "lucide-react";
+import { BookOpen, ChevronRight, FileText, GripVertical, Plus, Settings2, Trash2 } from "lucide-react";
 import {
   DndContext,
   DragOverlay,
@@ -58,6 +58,8 @@ export interface OutlinePaneProps {
       plotSummary?: string;
     }
   ) => Promise<void>;
+  /** 删除整卷（连同其下所有章进回收站）；父级负责确认与落盘。 */
+  onDeleteVolume: (volumeId: string) => void;
 }
 
 /**
@@ -331,6 +333,7 @@ export default function OutlinePane({
   onCreateVolume,
   onMoveNode,
   onUpdateNode,
+  onDeleteVolume,
 }: OutlinePaneProps) {
   const { t } = useI18n();
   const { chapters, volumes, chapterMetas, currentChapterId, setCurrentChapterId } = useOutline();
@@ -678,6 +681,16 @@ export default function OutlinePane({
                     aria-label={t("Editor.side.addChapter")}
                   >
                     <Plus className="icon-sm" />
+                  </button>
+                  {/* 删卷：与加章同排，悬停卷行时出现。 */}
+                  <button
+                    type="button"
+                    onClick={() => onDeleteVolume(volume.id)}
+                    className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+                    aria-label={t("Editor.volume.delete")}
+                    title={t("Editor.volume.delete")}
+                  >
+                    <Trash2 className="icon-sm" />
                   </button>
                 </div>
 

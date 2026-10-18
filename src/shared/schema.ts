@@ -67,6 +67,25 @@ export const chapterSchema = z.object({
   title: z.string(),
   status: z.enum(["draft", "revising", "final"]).default("draft"),
   cards: z.array(cardSchema),
+  /**
+   * 历史快照：每次保存前的上一版正文。
+   *
+   * 编辑器的撤销栈只活在内存里，退出应用即失效，误删一段话无法找回。
+   * 这里保留有限个版本（见 services/chapter 的 HISTORY_LIMIT），
+   * 支持回滚到任一历史时间点。存整份 cards 快照而非差量：
+   * 长章虽然占空间，但回滚逻辑简单且不会因差量累积而算错。
+   */
+  history: z
+    .array(
+      z.object({
+        /** 快照时间（毫秒）。 */
+        at: z.number().int(),
+        /** 触发这次快照的保存时间，用于界面显示"保存于…"。 */
+        savedAt: z.number().int(),
+        cards: z.array(cardSchema),
+      })
+    )
+    .default([]),
   /** 光标位置：卡片下标 + 卡内偏移，两者都持久化。 */
   cursor: z.object({ cardIndex: z.number().int(), offset: z.number().int() }).default({
     cardIndex: 0,

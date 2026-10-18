@@ -1,18 +1,19 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Check, Loader2, Pencil, Save, Trash2, Undo2 } from "lucide-react";
+import { BookOpen, Check, History, Loader2, Pencil, Save, Trash2, Undo2 } from "lucide-react";
 import { useLocalStorageState } from "ahooks";
 
 import { Button } from "@/components/ui/button";
 import CardItem from "./CardItem";
 import ComposerInput, { type ComposerHandle } from "./ComposerInput";
 import SplitDialog from "./SplitDialog";
+import HistoryDialog from "./HistoryDialog";
 
 import { useI18n } from "@/composables";
 import { useToast } from "@/composables";
 import { useViewMode } from "@/contexts/viewmode";
 import { createLogger } from "@/lib/logger";
 import { CommandHistory } from "@/lib/command-history";
-import { cardsToText, countWords, saveChapter } from "@/services/chapter";
+import { cardsToText, countWords, rollbackTo, saveChapter } from "@/services/chapter";
 import { cardSchema, type Card, type Chapter } from "@/shared/schema";
 
 const log = createLogger("ChapterEditor");
@@ -105,6 +106,15 @@ export default function ChapterEditor({
   const [editingIndex, setEditingIndex] = useState(-1);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [splitTarget, setSplitTarget] = useState<number | null>(null);
+  /** 历史版本对话框开关。 */
+  const [historyOpen, setHistoryOpen] = useState(false);
+  /**
+   * 章对象（带最新 history）的本地副本。
+   *
+   * 父级传下来的 chapter 只有在切章或重载时才更新，而每次保存都会新增一条
+   * 快照。历史面板要在保存后立刻反映出来，就得自己持有这份副本。
+   */
+  const [chapterWithHistory, setChapterWithHistory] = useState(chapter);
   /** 上一次合并，用于"撤回合并"按钮。 */
   const [lastMerge, setLastMerge] = useState<LastMerge | null>(null);
   /**
@@ -150,7 +160,14 @@ export default function ChapterEditor({
           cards: nextCards,
           cursor: { cardIndex: editingIndexRef.current, offset: 0 },
         };
-        await saveChapter(root, workId, next);
+        /*
+         * 保存会顺带压入一份历史快照，所以要用返回值而不是本地 next：
+         * 只有返回值才带最新的 history，并把它写回 chapterRef，
+         * 否则下一次保存会以缺失 history 的版本为基准，快照链断掉。
+         */
+        const saved = await saveChapter(root, workId, next);
+        chapterRef.current = saved;
+        setChapterWithHistory(saved);
         /*
          * 作品库的字数来自 stats.json。作品总字数是全书各章之和，
          * 由父级汇总后写入——单章字数不等于作品字数，这里只上报本章。
@@ -158,7 +175,7 @@ export default function ChapterEditor({
         onWordsCommitted?.(countWords(cardsToText(nextCards)));
         pendingCards.current = null;
         setSaveState("saved");
-        onSaved?.(next);
+        onSaved?.(saved);
         log.debug("chapter saved", { cards: nextCards.length });
       } catch (err) {
         log.error("save failed", err);
@@ -177,6 +194,7 @@ export default function ChapterEditor({
     setCards(initialCards);
     setEditingIndex(-1);
     setSaveState("saved");
+    setChapterWithHistory(chapter);
     pendingCards.current = null;
     /*
      * 草稿按章存在 localStorage 里，切章不动它——
@@ -191,6 +209,40 @@ export default function ChapterEditor({
     requestAnimationFrame(() => composerRef.current?.focus("end"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterId]);
+
+  /**
+   * 回滚到某个历史快照。
+   *
+   * 回滚本身也要落盘（否则下次保存会拿当前正文当"上一版"再存一份，
+   * 刚回滚掉的内容又留在了历史里）。历史栈清空重建，避免用户按 Ctrl+Z
+   * 回到回滚之前那个"已被回滚掉"的中间状态。
+   */
+  const rollback = useCallback(
+    async (index: number) => {
+      const base = chapterRef.current;
+      const restored = rollbackTo(base, index);
+      if (restored === base) return;
+      setSaveState("saving");
+      try {
+        const saved = await saveChapter(root, workId, restored);
+        chapterRef.current = saved;
+        setChapterWithHistory(saved);
+        setCards(saved.cards);
+        setEditingIndex(-1);
+        historyRef.current = new CommandHistory<Card[]>(saved.cards);
+        setSaveState("saved");
+        setHistoryOpen(false);
+        onWordsCommitted?.(countWords(cardsToText(saved.cards)));
+        onSaved?.(saved);
+        toast.success("Editor.history.restored");
+      } catch (err) {
+        log.error("rollback failed", err);
+        setSaveState("dirty");
+        toast.error("Editor.save.failed");
+      }
+    },
+    [root, workId, onSaved, onWordsCommitted, toast]
+  );
 
   /* 字数统计：仅在卡片数组变化时重算（中文输入组合期不会触发，因为内容不进 state）。 */
   const words = useMemo(() => countWords(cardsToText(cards)), [cards]);
@@ -584,6 +636,12 @@ export default function ChapterEditor({
         }}
         onConfirm={confirmSplit}
       />
+      <HistoryDialog
+        open={historyOpen}
+        chapter={chapterWithHistory}
+        onOpenChange={setHistoryOpen}
+        onRollback={(i) => void rollback(i)}
+      />
 
       {/* 章标题区 */}
       <header className="flex items-center justify-between gap-3 border-b px-6 py-3">
@@ -650,6 +708,17 @@ export default function ChapterEditor({
           >
             <Save className="icon-sm" />
             {t("Editor.save.manual")}
+          </Button>
+          {/* 历史版本：编辑器撤销栈退出即失效，这里是跨会话的唯一退路。 */}
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            aria-label={t("Editor.history.open")}
+            title={t("Editor.history.open")}
+            onClick={() => setHistoryOpen(true)}
+          >
+            <History className="icon-sm" />
           </Button>
           {/*
            * 撤回合并：合并是"破坏性"的（少了一张卡），
