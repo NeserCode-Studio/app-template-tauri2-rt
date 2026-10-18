@@ -346,6 +346,8 @@ export default function Editor() {
     await moveToTrash(root, {
       kind: "chapter",
       originId: chapter.id,
+      /* 恢复时要靠它找回收该章的作品，缺了就挂不回结构树。 */
+      workId: currentWorkId,
       paths: [
         chapterFile(currentWorkId, chapter.id),
         chapterTextFile(currentWorkId, chapter.id),
@@ -353,6 +355,20 @@ export default function Editor() {
       title: chapter.title,
       parentId: node?.parentId ?? null,
       order: node?.order ?? 0,
+      node: node
+        ? {
+            id: node.id,
+            type: node.type,
+            title: node.title,
+            parentId: node.parentId,
+            order: node.order,
+            status: node.status,
+            synopsis: node.synopsis,
+            plotSummary: node.plotSummary,
+            createdAt: node.createdAt,
+            updatedAt: node.updatedAt,
+          }
+        : null,
     });
     const next = await removeNode(root, currentWorkId, chapter.id);
     setOutline(next);
@@ -385,6 +401,7 @@ export default function Editor() {
       await moveToTrash(root, {
         kind: "volume",
         originId: volumeId,
+        workId: currentWorkId,
         paths,
         title: volume.title,
         parentId: volume.parentId,
@@ -397,6 +414,7 @@ export default function Editor() {
           order: n.order,
           status: n.status,
           synopsis: n.synopsis,
+          plotSummary: n.plotSummary,
           createdAt: n.createdAt,
           updatedAt: n.updatedAt,
         })),

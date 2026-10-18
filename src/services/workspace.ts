@@ -9,9 +9,22 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { createFs } from "./fs";
+import { joinRel } from "./fs";
 import { moveToTrash } from "./trash";
+import {
+  loadOutline,
+  reconcileChapterIds,
+  saveOutline,
+} from "./outline";
 import { workspaceFile, workMetaFile, workDir, WORKS_DIR } from "./paths";
-import { workspaceSchema, type Workspace, workSchema, type Work } from "@/shared/schema";
+import {
+  chapterSchema,
+  workspaceSchema,
+  type Outline,
+  type Workspace,
+  workSchema,
+  type Work,
+} from "@/shared/schema";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("WorkspaceService");
@@ -184,6 +197,10 @@ export interface ScanReport {
   missing: { id: string }[];
   /** 清单分区与 work.json 的 archived 标记不一致、已被改正的作品。 */
   flagsFixed: string[];
+  /** 结构树里有章节点、但磁盘上已无对应章文件（只报告，不擅自删节点）。 */
+  danglingChapters: { workId: string; count: number }[];
+  /** 磁盘上有章文件、结构树里却没有节点，已按文件时间重新挂回的章。 */
+  recoveredChapters: { workId: string; count: number }[];
 }
 
 /**
@@ -205,7 +222,13 @@ export interface ScanReport {
 export async function scanAndRepair(root: string): Promise<ScanReport> {
   const fs2 = createFs(root);
   const ws = await loadWorkspace(root);
-  const report: ScanReport = { orphans: [], missing: [], flagsFixed: [] };
+  const report: ScanReport = {
+    orphans: [],
+    missing: [],
+    flagsFixed: [],
+    danglingChapters: [],
+    recoveredChapters: [],
+  };
 
   const dirNames = (await fs2.exists(WORKS_DIR)) ? await fs2.readDir(WORKS_DIR) : [];
   /* works/ 下只有作品目录；混入文件时 loadWork 会失败，跳过即可。 */
@@ -251,12 +274,124 @@ export async function scanAndRepair(root: string): Promise<ScanReport> {
   /* 指向空目录的条目留着：可能是作品拷到别处了，静默摘除等于替用户删除。 */
   const next = workspaceSchema.parse({ ...ws, order });
   await saveWorkspace(root, next);
+
+  /*
+   * 清单对完，再逐部作品对结构树与章文件。
+   *
+   * 清单只管"有哪些作品"，管不到作品内部。卷与章的删除会摘掉结构树
+   * 节点却可能留住文件（回收站那条路径走失败时的残留），反过来文件被
+   * 外部删了节点还在，用户点进去就是一片空白。这两类同样需要扫描，
+   * 但要分给每部作品自己的目录去查。
+   */
+  await scanWorkOutlines(root, [...ws.order, ...ws.archived, ...report.orphans.map((o) => o.id)], report);
+
   log.info("workspace scan done", {
     orphans: report.orphans.length,
     missing: report.missing.length,
     flagsFixed: report.flagsFixed.length,
+    danglingChapters: report.danglingChapters.length,
+    recoveredChapters: report.recoveredChapters.length,
   });
   return report;
+}
+
+/**
+ * 逐部作品对账结构树与章文件。
+ *
+ * 先跑 reconcileChapterIds —— 它处理早期版本"节点与文件各自生成 id"
+ * 的历史遗留，把节点 id 纠正到与文件名一致。之后才做双向清点，
+ * 顺序不能反：id 没对齐时"节点在、文件不在"全是假象。
+ *
+ * 找回章节点时只补节点、不动章文件：正文是完整的，缺的只是一个入口。
+ * 挂到根层（游离章）而非硬塞进某卷——它在原属哪一卷无从考证，
+ * 放进随便一卷等于替用户编造了结构，放到根层用户自己拖一下就行。
+ */
+async function scanWorkOutlines(
+  root: string,
+  workIds: string[],
+  report: ScanReport
+): Promise<void> {
+  for (const workId of workIds) {
+    try {
+      const outline = await loadOutline(root, workId);
+      const aligned = await reconcileChapterIds(root, workId, outline);
+
+      const fs2 = createFs(root);
+      let files: string[] = [];
+      try {
+        files = await fs2.readDir(joinRel("works", workId, "chapters"));
+      } catch {
+        /* 没有章目录：新作品或全删光了。 */
+      }
+      const diskIds = new Set(
+        files.filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -".json".length))
+      );
+
+      const claimed = new Set(
+        aligned.nodes.filter((n) => n.type === "chapter" && diskIds.has(n.id)).map((n) => n.id)
+      );
+      const dangling = aligned.nodes.filter(
+        (n) => n.type === "chapter" && !diskIds.has(n.id)
+      );
+      if (dangling.length) {
+        /*
+         * 只报告不删：节点还在可能只是章文件被手工挪走，或 ids 尚未对齐。
+         * 删节点等于让这一章从作品里彻底消失，正文还躺在磁盘上没人认领，
+         * 比"有个空章节"糟得多。
+         */
+        report.danglingChapters.push({ workId, count: dangling.length });
+        continue;
+      }
+
+      const free = [...diskIds].filter((id) => !claimed.has(id));
+      if (!free.length) continue;
+      const restored = await adoptChapterFiles(root, workId, aligned, free);
+      if (restored) report.recoveredChapters.push({ workId, count: restored });
+    } catch (err) {
+      log.warn("scan: outline reconcile failed", { workId, err });
+    }
+  }
+}
+
+/** 为盘面上无人认领的章文件补建结构树节点（挂为游离章）。 */
+async function adoptChapterFiles(
+  root: string,
+  workId: string,
+  outline: Outline,
+  free: string[]
+): Promise<number> {
+  const fs2 = createFs(root);
+  const now = Date.now();
+  const nodes = [...outline.nodes];
+  let added = 0;
+  for (const id of free) {
+    try {
+      const raw = await fs2.readText(joinRel("works", workId, "chapters", id + ".json"));
+      const parsed = chapterSchema.safeParse(JSON.parse(raw));
+      /* 时间取自文件本身，恢复后的排序才和写作顺序一致。 */
+      const createdAt = parsed.success ? parsed.data.createdAt : now;
+      nodes.push({
+        id,
+        type: "chapter",
+        title: parsed.success ? parsed.data.title : "Chapter",
+        parentId: null,
+        order: nodes.length,
+        status: "draft",
+        synopsis: "",
+        plotSummary: "",
+        collapsed: false,
+        createdAt,
+        updatedAt: createdAt,
+      });
+      added++;
+    } catch (err) {
+      log.warn("scan: chapter file unreadable, skipped", { workId, id, err });
+    }
+  }
+  if (!added) return 0;
+  await saveOutline(root, workId, { nodes });
+  log.info("scan: chapter nodes adopted", { workId, count: added });
+  return added;
 }
 
 /**

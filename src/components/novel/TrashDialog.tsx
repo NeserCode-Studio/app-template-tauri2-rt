@@ -105,10 +105,16 @@ export default function TrashDialog({ open, root, onOpenChange, onRestored }: Tr
       if (report.missing.length) {
         countToast("Trash.scanMissing", report.missing.length, "error");
       }
+      const recovered = report.recoveredChapters.reduce((sum, w) => sum + w.count, 0);
+      if (recovered) countToast("Trash.scanRecovered", recovered, "success");
+      const dangling = report.danglingChapters.reduce((sum, w) => sum + w.count, 0);
+      if (dangling) countToast("Trash.scanDangling", dangling, "error");
       if (
         !report.orphans.length &&
         !report.flagsFixed.length &&
-        !report.missing.length
+        !report.missing.length &&
+        !recovered &&
+        !dangling
       ) {
         toast.success("Trash.scanClean");
       }
