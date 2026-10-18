@@ -4,7 +4,7 @@ import { useLocalStorageState } from "ahooks";
 import { OutlineContext, type OutlineContextValue } from "./outline";
 import { useWorkspace } from "./workspace";
 import { useLibrary } from "./library";
-import { loadOutline, saveOutline } from "@/services/outline";
+import { loadOutline, reconcileChapterIds, saveOutline } from "@/services/outline";
 import { createLogger } from "@/lib/logger";
 import type { OutlineNode } from "@/shared/schema";
 
@@ -32,6 +32,10 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
     }
     let alive = true;
     loadOutline(root, currentWorkId)
+      .then((loaded) =>
+        // 早期版本建的章，结构树 id 与章文件名不一致，这里顺带修好。
+        reconcileChapterIds(root, currentWorkId, loaded)
+      )
       .then((next) => {
         if (!alive) return;
         setOutline(next);

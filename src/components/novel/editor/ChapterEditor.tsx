@@ -55,8 +55,6 @@ export default function ChapterEditor({
   const [cards, setCards] = useState<Card[]>(chapter.cards);
   const [editingIndex, setEditingIndex] = useState(-1);
   const [saveState, setSaveState] = useState<SaveState>("saved");
-  /** 是否有尚未落盘的内容（手动保存按钮的可用状态）。 */
-  const [isDirty, setIsDirty] = useState(false);
   const [splitTarget, setSplitTarget] = useState<number | null>(null);
 
   const composerRef = useRef<ComposerHandle | null>(null);
@@ -78,13 +76,11 @@ export default function ChapterEditor({
         await saveChapter(root, workId, next);
         pendingCards.current = null;
         setSaveState("saved");
-        setIsDirty(false);
         onSaved?.(next);
         log.debug("chapter saved", { cards: nextCards.length });
       } catch (err) {
         log.error("save failed", err);
         setSaveState("dirty");
-        setIsDirty(true);
         toast.error("Editor.save.failed");
       }
     },
@@ -99,10 +95,14 @@ export default function ChapterEditor({
     setCards(initialCards);
     setEditingIndex(-1);
     setSaveState("saved");
-    setIsDirty(false);
     pendingCards.current = null;
     historyRef.current = new CommandHistory<Card[]>(initialCards);
     composerRef.current?.clear();
+    /*
+     * 切到已有章节后直接进入可写作状态：把焦点交给底部输入框，
+     * 用户不必先去点某张卡片才能落笔。
+     */
+    requestAnimationFrame(() => composerRef.current?.focus("end"));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterId]);
 
@@ -117,7 +117,6 @@ export default function ChapterEditor({
     (nextCards: Card[]) => {
       pendingCards.current = nextCards;
       setSaveState("dirty");
-      setIsDirty(true);
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => {
         saveTimer.current = null;
@@ -149,15 +148,18 @@ export default function ChapterEditor({
     [scheduleSave]
   );
 
-  /** 手动保存：立刻冲刷待写内容，不再等防抖。 */
+  /**
+   * 手动保存：按钮任何时候都可点，落什么由保存函数自己判断。
+   *
+   * 不做"是否有未保存内容"的前置判断——防抖窗口内点击、或上次保存失败后
+   * 重试，都必须能真正写一次盘。没有待写内容时以当前卡片为准。
+   */
   const saveNow = useCallback(() => {
     if (saveTimer.current !== null) {
       window.clearTimeout(saveTimer.current);
       saveTimer.current = null;
     }
-    const cards = pendingCards.current;
-    if (!cards) return;
-    void persistNow(cards);
+    void persistNow(pendingCards.current ?? cardsRef.current);
   }, [persistNow]);
 
   /* ---------- 卡片操作 ---------- */
@@ -383,7 +385,7 @@ export default function ChapterEditor({
             size="sm"
             variant="outline"
             className="h-7"
-            disabled={!isDirty || saveState === "saving"}
+            disabled={saveState === "saving"}
             onClick={saveNow}
           >
             <Save className="icon-sm" />
@@ -392,7 +394,13 @@ export default function ChapterEditor({
         </div>
       </header>
 
-      {/* 卡片区 */}
+      {/*
+       * 卡片区。
+       *
+       * `flex-1 min-h-0` + 自身滚动是关键：外层保持固定高度并把剩余空间
+       * 全给滚动区，底部输入框因此恒定贴底，不会被卡片高度顶走。
+       * 若这里少了 min-h-0，flex 子项会按内容撑开，输入框被推出可视区。
+       */}
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {cards.length ? (
           <div className="article-body prose-article mx-auto flex flex-col pl-8">

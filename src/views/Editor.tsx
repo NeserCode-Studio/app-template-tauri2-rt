@@ -100,12 +100,19 @@ export default function Editor() {
   const createChapter = useCallback(
     async (title: string, parentVolumeId: string | null) => {
       if (!root || !currentWorkId) return;
-      // 先建章文件，再登记进结构树，保证树里不会出现空条目。
+      /*
+       * 先建章文件拿到 id，再以同一个 id 登记进结构树。
+       *
+       * 结构树 id 决定打开哪一章（currentChapterId 来自 outline），章文件
+       * 路径是 chapters/<id>.json。两者必须是同一个 id，否则保存虽然成功，
+       * 打开时却按另一个 id 去找文件，读到的自然是空章。
+       */
       const created = await createChapterFile(root, currentWorkId, title);
       const next = await addOutlineNode(root, currentWorkId, {
         type: "chapter",
         title,
         parentId: parentVolumeId,
+        id: created.id,
       });
       setOutline(next);
       setChapter(created);
@@ -159,27 +166,31 @@ export default function Editor() {
 
         {/* 中栏：卡片区 */}
         <ResizablePanel defaultSize={58} minSize={40}>
-          {chapter ? (
-            <ChapterEditor
-              key={chapter.id}
-              chapter={chapter}
-              root={root}
-              workId={currentWorkId}
-              onWordsChange={setWords}
-              onSaved={setChapter}
-            />
-          ) : (
-            <div className="flex h-full flex-col items-center justify-center gap-3">
-              <p className="text-sm text-muted-foreground">{t("Editor.side.emptyWork")}</p>
-              <Button
-                size="sm"
-                onClick={() => setNewChapterFor(null)}
-              >
-                <Plus className="icon-md" />
-                {t("Editor.side.addChapter")}
-              </Button>
-            </div>
-          )}
+          {/*
+           * 必须包一层 h-full：ResizablePanel 本身是普通块级 div，
+           * ChapterEditor 的 flex-1 只有在父级是 flex 且有确定高度时才生效。
+           * 少这一层，卡片区会按内容高度撑开，底部输入框被顶到可视区之外。
+           */}
+          <div className="h-full">
+            {chapter ? (
+              <ChapterEditor
+                key={chapter.id}
+                chapter={chapter}
+                root={root}
+                workId={currentWorkId}
+                onWordsChange={setWords}
+                onSaved={setChapter}
+              />
+            ) : (
+              <div className="flex h-full flex-col items-center justify-center gap-3">
+                <p className="text-sm text-muted-foreground">{t("Editor.side.emptyWork")}</p>
+                <Button size="sm" onClick={() => setNewChapterFor(null)}>
+                  <Plus className="icon-md" />
+                  {t("Editor.side.addChapter")}
+                </Button>
+              </div>
+            )}
+          </div>
         </ResizablePanel>
 
         <ResizableHandle withHandle className="w-1" />
