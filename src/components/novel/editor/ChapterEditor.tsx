@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Check, Loader2 } from "lucide-react";
+import { BookOpen, Check, Loader2, Save } from "lucide-react";
 
+import { Button } from "@/components/ui/button";
 import CardItem from "./CardItem";
 import ComposerInput, { type ComposerHandle } from "./ComposerInput";
 import SplitDialog from "./SplitDialog";
@@ -54,11 +55,41 @@ export default function ChapterEditor({
   const [cards, setCards] = useState<Card[]>(chapter.cards);
   const [editingIndex, setEditingIndex] = useState(-1);
   const [saveState, setSaveState] = useState<SaveState>("saved");
+  /** 是否有尚未落盘的内容（手动保存按钮的可用状态）。 */
+  const [isDirty, setIsDirty] = useState(false);
   const [splitTarget, setSplitTarget] = useState<number | null>(null);
 
   const composerRef = useRef<ComposerHandle | null>(null);
   const historyRef = useRef<CommandHistory<Card[]> | null>(null);
   const saveTimer = useRef<number | null>(null);
+  /** 待保存的最新卡片数组，卸载时 flush 用。 */
+  const pendingCards = useRef<Card[] | null>(null);
+
+  /** 真正执行落盘。 */
+  const persistNow = useCallback(
+    async (nextCards: Card[]) => {
+      setSaveState("saving");
+      try {
+        const next: Chapter = {
+          ...chapterRef.current,
+          cards: nextCards,
+          cursor: { cardIndex: editingIndexRef.current, offset: 0 },
+        };
+        await saveChapter(root, workId, next);
+        pendingCards.current = null;
+        setSaveState("saved");
+        setIsDirty(false);
+        onSaved?.(next);
+        log.debug("chapter saved", { cards: nextCards.length });
+      } catch (err) {
+        log.error("save failed", err);
+        setSaveState("dirty");
+        setIsDirty(true);
+        toast.error("Editor.save.failed");
+      }
+    },
+    [root, workId, onSaved, toast]
+  );
 
   /* 切章时重置：卡片、编辑态、历史栈。依赖 chapter.id 而非 chapter，
      否则父级回传保存结果会触发重置，把本地编辑态冲掉。 */
@@ -68,6 +99,8 @@ export default function ChapterEditor({
     setCards(initialCards);
     setEditingIndex(-1);
     setSaveState("saved");
+    setIsDirty(false);
+    pendingCards.current = null;
     historyRef.current = new CommandHistory<Card[]>(initialCards);
     composerRef.current?.clear();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -82,31 +115,23 @@ export default function ChapterEditor({
   /** 提交保存：防抖 800ms 后落盘。 */
   const scheduleSave = useCallback(
     (nextCards: Card[]) => {
+      pendingCards.current = nextCards;
       setSaveState("dirty");
+      setIsDirty(true);
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
       saveTimer.current = window.setTimeout(() => {
-        void (async () => {
-          setSaveState("saving");
-          try {
-            const next: Chapter = {
-              ...chapter,
-              cards: nextCards,
-              cursor: { cardIndex: editingIndexRef.current, offset: 0 },
-            };
-            await saveChapter(root, workId, next);
-            setSaveState("saved");
-            onSaved?.(next);
-            log.debug("chapter autosaved", { words });
-          } catch (err) {
-            log.error("autosave failed", err);
-            setSaveState("dirty");
-            toast.error("Editor.status.dirty");
-          }
-        })();
+        saveTimer.current = null;
+        void persistNow(nextCards);
       }, AUTOSAVE_DELAY);
     },
-    [chapter, root, workId, onSaved, toast, words]
+    [persistNow]
   );
+
+  /** chapter 的 ref 副本，避免 persistNow 随每次保存重建。 */
+  const chapterRef = useRef(chapter);
+  useEffect(() => {
+    chapterRef.current = chapter;
+  }, [chapter]);
 
   /* editingIndex 的 ref 副本，供防抖回调读取最新值而不重建定时器。 */
   const editingIndexRef = useRef(-1);
@@ -123,6 +148,17 @@ export default function ChapterEditor({
     },
     [scheduleSave]
   );
+
+  /** 手动保存：立刻冲刷待写内容，不再等防抖。 */
+  const saveNow = useCallback(() => {
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const cards = pendingCards.current;
+    if (!cards) return;
+    void persistNow(cards);
+  }, [persistNow]);
 
   /* ---------- 卡片操作 ---------- */
 
@@ -286,13 +322,23 @@ export default function ChapterEditor({
     return () => window.removeEventListener("keydown", onKey);
   }, [undo, redo]);
 
-  /* 卸载时清掉待执行的保存定时器。 */
-  useEffect(
-    () => () => {
-      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-    },
-    []
-  );
+  /*
+   * 卸载时冲刷待保存内容。
+   *
+   * 这是数据可靠性的关键点：ChapterEditor 以 chapter.id 为 key，切换章节或
+   * 返回作品库都会立刻卸载本组件。仅 clearTimeout 会把防抖窗口内固化的
+   * 卡片直接丢掉——用户看到的是"已保存"，退出再进来却空章。
+ */
+  useEffect(() => {
+    return () => {
+      if (saveTimer.current !== null) {
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      const cards = pendingCards.current;
+      if (cards) void persistNow(cards);
+    };
+  }, [persistNow]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -333,6 +379,16 @@ export default function ChapterEditor({
               </>
             )}
           </span>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7"
+            disabled={!isDirty || saveState === "saving"}
+            onClick={saveNow}
+          >
+            <Save className="icon-sm" />
+            {t("Editor.save.manual")}
+          </Button>
         </div>
       </header>
 

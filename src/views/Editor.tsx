@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/resizable";
 
 import ChapterEditor from "@/components/novel/editor/ChapterEditor";
+import NewChapterDialog from "@/components/novel/editor/NewChapterDialog";
 import OutlinePane from "@/components/novel/editor/OutlinePane";
 
 import { useI18n } from "@/composables";
@@ -40,6 +41,8 @@ export default function Editor() {
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [words, setWords] = useState(0);
   const [loading, setLoading] = useState(false);
+  /** 新建章节对话框：打开时只做命名，命名后才真正建章。 */
+  const [newChapterFor, setNewChapterFor] = useState<string | null | undefined>(undefined);
 
   /* 作品切换后回到作品库，避免空编辑器。 */
   useEffect(() => {
@@ -126,6 +129,14 @@ export default function Editor() {
 
   return (
     <div className="flex h-full w-full flex-col">
+      <NewChapterDialog
+        open={newChapterFor !== undefined}
+        onOpenChange={(o) => {
+          if (!o) setNewChapterFor(undefined);
+        }}
+        onConfirm={(title) => createChapter(title, newChapterFor ?? null)}
+      />
+
       {/* 顶部作品条 */}
       <div className="flex items-center gap-3 border-b px-4 py-2">
         <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
@@ -162,7 +173,7 @@ export default function Editor() {
               <p className="text-sm text-muted-foreground">{t("Editor.side.emptyWork")}</p>
               <Button
                 size="sm"
-                onClick={() => void createChapter(t("Editor.chapter.new"), null)}
+                onClick={() => setNewChapterFor(null)}
               >
                 <Plus className="icon-md" />
                 {t("Editor.side.addChapter")}
@@ -213,7 +224,7 @@ export default function Editor() {
               </div>
 
               {!nextId ? (
-                <Button size="sm" onClick={() => void createChapter(t("Editor.chapter.new"), null)}>
+                <Button size="sm" onClick={() => setNewChapterFor(null)}>
                   <Plus className="icon-md" />
                   {t("Editor.chapter.new")}
                 </Button>

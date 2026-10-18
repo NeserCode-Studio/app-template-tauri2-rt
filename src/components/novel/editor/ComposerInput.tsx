@@ -87,14 +87,19 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
             }}
           />
 
-          {editingIndex >= 0 ? (
-            <span className="pointer-events-none absolute left-3 top-2 text-[10px] tracking-wide text-muted-foreground/60">
-              {t("Editor.input.editing")}
-            </span>
-          ) : null}
         </div>
 
-        <p className="text-xs text-muted-foreground/60">{t("Editor.input.hint")}</p>
+        <p className="text-xs text-muted-foreground/60">
+          {editingIndex >= 0 ? (
+            <>
+              <span className="font-semibold text-foreground">
+                {t("Editor.input.editing")}
+              </span>
+              <span className="mx-1">·</span>
+            </>
+          ) : null}
+          {t("Editor.input.hint")}
+        </p>
       </div>
     );
   }
