@@ -101,6 +101,14 @@ export type Chapter = z.infer<typeof chapterSchema>;
 export const workSchema = z.object({
   id: idSchema,
   title: z.string(),
+  /**
+   * 别名：正式标题之外的另一个称呼。
+   *
+   * 与 title 分开而不是覆盖 title，因为写作过程中常有"先用个代号"
+   * 的阶段（"旧稿"、"重写版"）。代号会被频繁替换，而 title 一旦
+   * 出现在导出稿的页眉上就不该随手变。
+   */
+  alias: z.string().default(""),
   type: z.string().default(""),
   /** 封面占位（暂无外部图片，记录一个本地相对路径或空）。 */
   cover: z.string().default(""),

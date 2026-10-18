@@ -23,10 +23,20 @@ export interface LibraryContextValue {
   create: (title: string, type: string) => Promise<Work | null>;
   /** 重命名作品。 */
   rename: (workId: string, title: string) => Promise<void>;
+  /** 设置作品别名（留空即清除）。 */
+  setAlias: (workId: string, alias: string) => Promise<void>;
   /** 归档作品。 */
   archive: (workId: string) => Promise<void>;
   /** 恢复已归档作品。 */
   unarchive: (workId: string) => Promise<void>;
+  /** 删除作品：整部目录移入回收站，清单同步摘除。 */
+  remove: (workId: string) => Promise<void>;
+  /** 从本地 txt 导入成新作品。 */
+  importFromFile: (path: string, titles: {
+    title: string;
+    volumeTitle: string;
+    chapterTitle: string;
+  }) => Promise<Work | null>;
 }
 
 export const LibraryContext = createContext<LibraryContextValue>({
@@ -39,8 +49,11 @@ export const LibraryContext = createContext<LibraryContextValue>({
   refresh: async () => {},
   create: async () => null,
   rename: async () => {},
+  setAlias: async () => {},
   archive: async () => {},
   unarchive: async () => {},
+  remove: async () => {},
+  importFromFile: async () => null,
 });
 
 export function useLibrary(): LibraryContextValue {

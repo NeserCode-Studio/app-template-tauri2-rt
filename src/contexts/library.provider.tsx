@@ -16,7 +16,9 @@ import {
   createWork,
   archiveWork,
   unarchiveWork,
+  deleteWork,
 } from "@/services/workspace";
+import { importTextAsWork } from "@/services/import";
 import type { Work, Workspace } from "@/shared/schema";
 import { WORKS_DIR } from "@/services/paths";
 import { createFs } from "@/services/fs";
@@ -114,6 +116,57 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     [root, works]
   );
 
+  /**
+   * 设置别名。alias 独立于 title：写作中常先起个代号，之后再定正式名，
+   * 代号会被频繁替换，而 title 会进导出稿的页眉，不该随手改。
+   */
+  const setAlias = useCallback(
+    async (workId: string, alias: string) => {
+      if (!root) return;
+      const current = works[workId];
+      if (!current) return;
+      const next: Work = { ...current, alias: alias.trim() };
+      await saveWork(root, next);
+      setWorks((prev) => ({ ...prev, [workId]: next }));
+    },
+    [root, works]
+  );
+
+  /** 删除作品：整部目录进回收站，清单里摘除。 */
+  const remove = useCallback(
+    async (workId: string) => {
+      if (!root) return;
+      const base = workspace ?? (await loadWorkspace(root));
+      const nextWs = await deleteWork(root, base, workId, works[workId]?.title ?? workId);
+      setWorkspace(nextWs);
+      setWorks((prev) => {
+        const next = { ...prev };
+        delete next[workId];
+        return next;
+      });
+      if (currentWorkId === workId) setCurrentWorkId(null);
+    },
+    [root, workspace, currentWorkId, works]
+  );
+
+  /**
+   * 从本地 txt 导入成新作品。
+   *
+   * 走 refresh 而非手工补 state：createWork 已把新 id 写进清单，
+   * 但 React 侧的 workspace 还是旧的，重读一次最省心，也顺带把
+   * 之前读失败被跳过的作品补回来。
+   */
+  const importFromFile = useCallback<LibraryContextValue["importFromFile"]>(
+    async (path, titles) => {
+      if (!root) return null;
+      const { work } = await importTextAsWork(root, path, titles);
+      await refresh();
+      setCurrentWorkId(work.id);
+      return work;
+    },
+    [root, refresh]
+  );
+
   const archive = useCallback(
     async (workId: string) => {
       if (!root) return;
@@ -158,10 +211,25 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       refresh,
       create,
       rename,
+      setAlias,
       archive,
       unarchive,
+      remove,
+      importFromFile,
     }),
-    [workspace, currentWorkId, works, refresh, create, rename, archive, unarchive]
+    [
+      workspace,
+      currentWorkId,
+      works,
+      refresh,
+      create,
+      rename,
+      setAlias,
+      archive,
+      unarchive,
+      remove,
+      importFromFile,
+    ]
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
