@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, ChevronRight, FileText, GripVertical, Plus, Settings2 } from "lucide-react";
 import {
   DndContext,
@@ -22,14 +22,14 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { useI18n } from "@/composables";
 import { useOutline } from "@/contexts/outline";
 import type { OutlineNode } from "@/shared/schema";
 import { createLogger } from "@/lib/logger";
-import { computeMoveIndex } from "@/lib/outline-move";
+import { computeIndexByPosition } from "@/lib/outline-move";
 
 import ChapterMetaDialog from "./ChapterMetaDialog";
+import CreateNodeDialog from "./CreateNodeDialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 const log = createLogger("OutlinePane");
@@ -153,6 +153,7 @@ function SortableChapter({
   dragging,
   onSelect,
   onEditMeta,
+  registerEl,
   editMetaLabel,
   dragLabel,
   metaLabel,
@@ -165,6 +166,8 @@ function SortableChapter({
   dragging: boolean;
   onSelect: () => void;
   onEditMeta: () => void;
+  /** 登记 DOM 节点：落点靠实时几何计算，必须能拿到元素。 */
+  registerEl: (el: HTMLElement | null) => void;
   editMetaLabel: string;
   dragLabel: string;
   metaLabel: string;
@@ -175,7 +178,6 @@ function SortableChapter({
     attributes,
     listeners,
     setNodeRef,
-    setActivatorNodeRef,
     transform,
     transition,
     isDragging,
@@ -186,7 +188,10 @@ function SortableChapter({
 
   return (
     <li
-      ref={setNodeRef}
+      ref={(el) => {
+        setNodeRef(el);
+        registerEl(el);
+      }}
       style={{ transform: CSS.Transform.toString(transform), transition }}
       className="group relative px-1"
     >
@@ -239,13 +244,10 @@ function SortableChapter({
          * 抢走 pointermove，松手时 dnd-kit 认为手势已结束，顺序不变。
          * 只挂把手后，行的其余部分回归纯粹的点击与选中。
          *
-         * 关键：`listeners` 与 `setNodeRef` 不在同一元素上时，必须额外
-         * 用 `setActivatorNodeRef` 登记把手。缺了它，dnd-kit 会拿整行的
-         * 几何去测激活距离，拖拽过程能跑（预览会动），但 drop 阶段的
-         * 命中判断失效，onDragEnd 拿不到正确的 over，于是松手复原。
+         * 这里只做手势激活，落点不再依赖 dnd-kit 的碰撞结果：
+         * 松手时直接读元素的几何位置算下标（见 handleDragEnd）。
          */}
         <span
-          ref={setActivatorNodeRef}
           {...listeners}
           aria-label={dragLabel}
           title={dragLabel}
@@ -257,7 +259,7 @@ function SortableChapter({
           type="button"
           aria-label={editMetaLabel}
           title={editMetaLabel}
-          className="absolute bottom-0.5 right-1 flex size-5 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          className="absolute right-1.5 bottom-1 flex size-5 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
             onEditMeta();
@@ -312,12 +314,11 @@ export default function OutlinePane({
   const { t } = useI18n();
   const { chapters, volumes, chapterMetas, currentChapterId, setCurrentChapterId } = useOutline();
 
-  const [addingVolume, setAddingVolume] = useState(false);
-  const [volumeName, setVolumeName] = useState("");
+  /** 新建卷对话框。 */
+  const [volumeDialog, setVolumeDialog] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  /** 记录"正在给哪个卷添加章"，null 表示添加到根。 */
-  const [addingChapterIn, setAddingChapterIn] = useState<string | null | undefined>(undefined);
-  const [chapterName, setChapterName] = useState("");
+  /** 新建章节对话框的目标父级，undefined 表示未打开。 */
+  const [chapterDialogIn, setChapterDialogIn] = useState<string | null | undefined>(undefined);
   /** 章节详情对话框的目标节点。 */
   const [metaTarget, setMetaTarget] = useState<OutlineNode | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -334,28 +335,6 @@ export default function OutlinePane({
     useSensor(PointerSensor, { activationConstraint: DRAG_ACTIVATION })
   );
 
-  async function commitVolume() {
-    const name = volumeName.trim();
-    if (!name) {
-      setAddingVolume(false);
-      return;
-    }
-    await onCreateVolume(name);
-    setVolumeName("");
-    setAddingVolume(false);
-  }
-
-  async function commitChapter(parentId: string | null) {
-    const title = chapterName.trim();
-    if (!title) {
-      setAddingChapterIn(undefined);
-      return;
-    }
-    await onCreateChapter(title, parentId);
-    setChapterName("");
-    setAddingChapterIn(undefined);
-  }
-
   /** 章节按 parentId 归到卷下；parentId 为 null 的归到根。 */
   const chaptersByVolume = useMemo(() => {
     const map = new Map<string | null, OutlineNode[]>();
@@ -369,6 +348,8 @@ export default function OutlinePane({
   }, [chapters]);
 
   const nodeById = useMemo(() => new Map(chapters.map((c) => [c.id, c])), [chapters]);
+  /** 章节点 DOM：位置法算插入下标时要读实时矩形。 */
+  const nodeEls = useRef(new Map<string, HTMLElement>());
 
   const activeNode = activeId ? nodeById.get(activeId.slice(NODE_PREFIX.length)) ?? null : null;
   /** 命中具体节点时抑制容器高亮，避免同时亮两处。 */
@@ -388,8 +369,11 @@ export default function OutlinePane({
   }
 
   /**
-   * `targetIndex` 语义是「把被拖节点从原位置取出后，插入到目标下标处」，
-   * 所以"落在某节点之前"就是目标节点在其同级列表里的下标。
+   * 落点不再依赖 dnd-kit 的 `over`。
+   *
+   * 碰撞检测在 WebView 里反复失准（预览会动、松手复原），所以改成
+   * 读松手瞬间的真实几何：取被拖元素的纵向中心，在同级里找第一个
+   * 中心在它下方的元素。判断依据与用户看到的预览完全一致。
    */
   function handleDragEnd(e: DragEndEvent) {
     const active = String(e.active.id);
@@ -399,23 +383,42 @@ export default function OutlinePane({
     if (!over) return;
 
     const nodeId = active.slice(NODE_PREFIX.length);
+    const source = nodeById.get(nodeId);
+    if (!source) return;
+
+    /*
+     * 父级归属仍取 `over`：跨卷升降级需要知道落在哪个容器里，
+     * 而容器体积大、位置判别可靠，不依赖精细碰撞。
+     */
     const ref = parseDroppableId(over);
-    if (!ref) return;
+    const targetParentId = ref?.kind === "into" ? ref.parentId : (ref ? nodeById.get(ref.nodeId)?.parentId ?? source.parentId : source.parentId);
 
-    if (ref.kind === "into") {
-      void onMoveNode(nodeId, ref.parentId, Number.MAX_SAFE_INTEGER);
+    const el = nodeEls.current.get(nodeId);
+    if (!el) {
+      log.warn("outline drag: node rect unavailable", { nodeId });
       return;
     }
-
-    const target = nodeById.get(ref.nodeId);
-    if (!target) return;
-    const siblings = chaptersByVolume.get(target.parentId) ?? [];
-    const index = computeMoveIndex(siblings, nodeId, target.id);
-    if (index < 0) {
-      log.debug("outline drag: no-op move", { nodeId, targetId: target.id });
-      return;
+    /* 松手这一刻才读：拖动全程 transform 都在变，早读的矩形已过期。 */
+    const live = el.getBoundingClientRect();
+    const centers: number[] = [];
+    for (const n of chaptersByVolume.get(targetParentId) ?? []) {
+      if (n.id === nodeId) continue;
+      const other = nodeEls.current.get(n.id);
+      if (!other) continue;
+      const rect = other.getBoundingClientRect();
+      centers.push(rect.top + rect.height / 2);
     }
-    void onMoveNode(nodeId, target.parentId, index);
+    const index = computeIndexByPosition(centers, live.top + live.height / 2);
+    const siblings = chaptersByVolume.get(targetParentId) ?? [];
+    const without = siblings.filter((n) => n.id !== nodeId);
+    /* 落回原位就不写盘，避免无意义的 outline 落盘与全树刷新。 */
+    if (index < 0 || index > without.length) return;
+    const before = siblings.map((n) => n.id).join(",");
+    const after = [...without.slice(0, index), { id: nodeId }, ...without.slice(index)]
+      .map((n) => n.id)
+      .join(",");
+    if (before === after) return;
+    void onMoveNode(nodeId, targetParentId, index);
   }
 
   /* ---------- 章节详情 ---------- */
@@ -438,6 +441,10 @@ export default function OutlinePane({
                 dragging={activeId === NODE_PREFIX + node.id}
                 onSelect={() => setCurrentChapterId(node.id)}
                 onEditMeta={() => setMetaTarget(node)}
+                registerEl={(el) => {
+                  if (el) nodeEls.current.set(node.id, el);
+                  else nodeEls.current.delete(node.id);
+                }}
                 editMetaLabel={t("Editor.node.editMeta")}
                 dragLabel={t("Editor.node.dragHint")}
                 statusLabel={t(`Editor.node.status.${node.status}`)}
@@ -460,6 +467,22 @@ export default function OutlinePane({
 
   return (
     <div className="flex h-full flex-col">
+      <CreateNodeDialog
+        open={volumeDialog}
+        title={t("Editor.side.addVolume")}
+        placeholder={t("Editor.side.volume")}
+        onOpenChange={setVolumeDialog}
+        onConfirm={onCreateVolume}
+      />
+      <CreateNodeDialog
+        open={chapterDialogIn !== undefined}
+        title={t("Editor.side.addChapter")}
+        placeholder={t("Editor.side.chapter")}
+        onOpenChange={(o) => {
+          if (!o) setChapterDialogIn(undefined);
+        }}
+        onConfirm={(name) => onCreateChapter(name, chapterDialogIn ?? null)}
+      />
       <ChapterMetaDialog
         open={metaTarget !== null}
         node={metaTarget}
@@ -484,10 +507,7 @@ export default function OutlinePane({
             size="icon"
             variant="ghost"
             className="size-7"
-            onClick={() => {
-              setChapterName("");
-              setAddingChapterIn(null);
-            }}
+            onClick={() => setChapterDialogIn(null)}
             aria-label={t("Editor.side.addChapter")}
             title={t("Editor.side.addChapter")}
           >
@@ -497,10 +517,7 @@ export default function OutlinePane({
             size="icon"
             variant="ghost"
             className="size-7"
-            onClick={() => {
-              setVolumeName("");
-              setAddingVolume(true);
-            }}
+            onClick={() => setVolumeDialog(true)}
             aria-label={t("Editor.side.addVolume")}
             title={t("Editor.side.addVolume")}
           >
@@ -520,23 +537,6 @@ export default function OutlinePane({
         {/* 树体 */}
         <ScrollArea className="min-h-0 flex-1">
         <div className="px-2 pb-3">
-          {/* 添加卷输入框 */}
-          {addingVolume ? (
-            <div className="mb-1 flex items-center gap-1 px-1">
-              <Input
-                autoFocus
-                value={volumeName}
-                placeholder={t("Editor.side.volume")}
-                className="h-7 text-sm"
-                onChange={(e) => setVolumeName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.nativeEvent.isComposing) void commitVolume();
-                  if (e.key === "Escape") setAddingVolume(false);
-                }}
-              />
-            </div>
-          ) : null}
-
           {/* 卷分组 */}
           {volumes.map((volume) => {
             const isCollapsed = collapsed[volume.id];
@@ -547,7 +547,12 @@ export default function OutlinePane({
                 dragging={Boolean(activeId) && overRef?.kind !== "before"}
                 className="mb-1"
               >
-                <div className="group flex items-center gap-1 rounded-md px-2 py-1 hover:bg-accent/40">
+                {/*
+                 * `w-full` 是关键：不加的话这一行的宽度由内容撑开，
+                 * 收起卷时下面的章卡片消失，行会跟着变窄，右侧的
+                 * 章节数与加号就整体向左跳。
+                 */}
+                <div className="group flex w-full items-center gap-1 rounded-md px-2 py-1 hover:bg-accent/40">
                   <button
                     type="button"
                     onClick={() =>
@@ -569,11 +574,8 @@ export default function OutlinePane({
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
-                      setChapterName("");
-                      setAddingChapterIn(volume.id);
-                    }}
-                    className="flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground"
+                    onClick={() => setChapterDialogIn(volume.id)}
+                    className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground"
                     aria-label={t("Editor.side.addChapter")}
                   >
                     <Plus className="icon-sm" />
@@ -582,22 +584,6 @@ export default function OutlinePane({
 
                 {!isCollapsed ? (
                   <>
-                    {addingChapterIn === volume.id ? (
-                      <div className="flex items-center gap-1 py-1 pl-6 pr-2">
-                        <Input
-                          autoFocus
-                          value={chapterName}
-                          placeholder={t("Editor.side.chapter")}
-                          className="h-7 text-sm"
-                          onChange={(e) => setChapterName(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter" && !e.nativeEvent.isComposing)
-                              void commitChapter(volume.id);
-                            if (e.key === "Escape") setAddingChapterIn(undefined);
-                          }}
-                        />
-                      </div>
-                    ) : null}
                     {renderChapterList(volume.id)}
                   </>
                 ) : null}
@@ -620,29 +606,10 @@ export default function OutlinePane({
                 {t("Editor.node.moveOut")}
               </p>
             ) : null}
-            {addingChapterIn === null ? (
-              <div className="flex items-center gap-1 py-1 pl-2 pr-2">
-                <Input
-                  autoFocus
-                  value={chapterName}
-                  placeholder={t("Editor.side.chapter")}
-                  className="h-7 text-sm"
-                  onChange={(e) => setChapterName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.nativeEvent.isComposing)
-                      void commitChapter(null);
-                    if (e.key === "Escape") setAddingChapterIn(undefined);
-                  }}
-                />
-              </div>
-            ) : null}
             {renderChapterList(null)}
           </DropZone>
 
-          {!volumes.length &&
-          !chapters.length &&
-          !addingVolume &&
-          addingChapterIn === undefined ? (
+          {!volumes.length && !chapters.length ? (
             <div className="px-2 py-6 text-center">
               <p className="text-xs text-muted-foreground">{t("Editor.side.emptyWork")}</p>
             </div>

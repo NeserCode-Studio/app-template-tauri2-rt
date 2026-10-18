@@ -13,6 +13,7 @@ import { useI18n } from "@/composables";
 import { useCodex } from "@/contexts/codex";
 import { usePreferences } from "@/contexts/preferences";
 import type { Card } from "@/shared/schema";
+import TextContextMenu from "./TextContextMenu";
 
 /**
  * 把正文按素材提及切成片段。
@@ -126,6 +127,15 @@ export default function CardItem({
   }, [entries, colorOf]);
 
   return (
+    <TextContextMenu
+      index={index}
+      total={total}
+      onMoveUp={onMoveUp}
+      onMoveDown={onMoveDown}
+      onSplit={onSplit}
+      onMergeDown={onMergeDown}
+      onDelete={onDelete}
+    >
     <div
       data-card-index={index}
       className={[
@@ -263,5 +273,6 @@ export default function CardItem({
       </div>
 
     </div>
+    </TextContextMenu>
   );
 }
