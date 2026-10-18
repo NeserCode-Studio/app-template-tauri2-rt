@@ -379,7 +379,13 @@ export default function OutlinePane({
       const r = el.getBoundingClientRect();
       centers.set(id, r.top + r.height / 2);
     }
-    const activeRect = e.active.rect.current.initial;
+    /*
+     * 这里刻意从 DOM 读而不是 `active.rect.current.initial`：dragStart 那一刻
+     * sortable 的 transform 还没落到 DOM，读到的就是真实起始位置；dnd-kit 的
+     * initial 在这个时机是 null，取不到就会让整份快照落空、落点恒为 0。
+     */
+    const activeEl = nodeEls.current.get(String(e.active.id).slice(NODE_PREFIX.length));
+    const activeRect = activeEl ? activeEl.getBoundingClientRect() : null;
     if (activeRect) layoutAtStart.current = { activeRect, centers };
     log.info("[outline-dnd] start", {
       active: String(e.active.id),

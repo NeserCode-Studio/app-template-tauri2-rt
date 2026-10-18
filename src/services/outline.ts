@@ -187,7 +187,12 @@ export async function moveNode(
       .filter((n) => n.id !== nodeId);
     const clamped = Math.max(0, Math.min(targetIndex, siblings.length));
     siblings.splice(clamped, 0, node);
-    const result = await persistOrder(root, workId, outline, siblings);
+    /*
+     * 必须过 persistSideOrders 重排 order：splice 只调整了数组次序，
+     * 节点自带的 order 仍是旧值，直接写盘等于什么都没改。
+     */
+    const [renumbered] = persistSideOrders([siblings]);
+    const result = await persistOrder(root, workId, outline, renumbered);
     log.info("[moveNode] same-parent done", {
       nodeId,
       result: result.nodes
