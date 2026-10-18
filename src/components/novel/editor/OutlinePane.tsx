@@ -521,7 +521,7 @@ export default function OutlinePane({
         items={list.map((n) => NODE_PREFIX + n.id)}
         strategy={verticalListSortingStrategy}
       >
-        <ul className="flex flex-col">
+        <ul className="flex flex-col gap-0.5">
           {list.map((node, i) => (
               <SortableChapter
                 key={node.id}
@@ -635,7 +635,7 @@ export default function OutlinePane({
       >
         {/* 树体 */}
         <ScrollArea className="min-h-0 flex-1">
-        <div className="px-2 pb-3">
+        <div className="w-full px-2 pb-3">
           {/* 卷分组 */}
           {volumes.map((volume) => {
             const isCollapsed = collapsed[volume.id];

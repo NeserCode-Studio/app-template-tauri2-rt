@@ -50,37 +50,45 @@ function MentionHover({
           {text}
         </mark>
       </HoverCardTrigger>
-      <HoverCardContent className="w-64 p-3" align="start">
-        <div className="flex items-center gap-1.5">
+      {/*
+       * 信息密度按"以后还会加字段"来设计：正文摘要限制两行、标签与按钮压到
+       * 一行，整体走紧凑排版，避免后续每加一个属性就把卡片撑高。
+       */}
+      <HoverCardContent className="w-64 space-y-1 p-2.5 text-xs" align="start">
+        <div className="flex items-baseline gap-1.5">
           <span
-            className="size-2 shrink-0 rounded-full"
+            className="size-1.5 shrink-0 translate-y-px rounded-full"
             style={{ backgroundColor: colorOf(entry.type) }}
           />
-          <span className="truncate text-sm font-medium">{entry.name}</span>
-          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60">
+          <span className="truncate text-[13px] font-medium leading-tight">{entry.name}</span>
+          <span className="ml-auto shrink-0 text-[10px] leading-tight text-muted-foreground/60">
             {t(`Codex.type.${entry.type}`)}
           </span>
         </div>
         {entry.aliases.length ? (
-          <p className="mt-0.5 truncate text-[11px] text-muted-foreground/70">
+          <p className="truncate pl-3 text-[11px] leading-tight text-muted-foreground/70">
             / {entry.aliases.join(" / ")}
           </p>
         ) : null}
         {entry.body ? (
-          <p className="mt-1.5 line-clamp-3 text-xs leading-relaxed text-muted-foreground">
+          <p className="line-clamp-2 pl-3 text-[11px] leading-snug text-muted-foreground">
             {entry.body}
           </p>
         ) : null}
         {entry.tags.length ? (
-          <p className="mt-1.5 text-[10px] text-muted-foreground/60">
-            {entry.tags.join(" · ")}
+          <p className="flex flex-wrap gap-1 pl-3 text-[10px] text-muted-foreground/60">
+            {entry.tags.map((tag) => (
+              <span key={tag} className="rounded-sm bg-accent/60 px-1 py-px">
+                {tag}
+              </span>
+            ))}
           </p>
         ) : null}
         {onOpenEntry ? (
           <Button
             variant="ghost"
             size="sm"
-            className="mt-2 h-6 w-full justify-start px-1 text-[11px]"
+            className="h-6 w-full justify-start px-1 text-[11px]"
             onClick={() => onOpenEntry(entryId)}
           >
             {t("Codex.library.title")}
