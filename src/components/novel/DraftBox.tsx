@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { FileText, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/composables";
 import { listDrafts, migrateLegacyDrafts, removeDraft } from "@/services/drafts";
 
@@ -58,7 +57,7 @@ export default function DraftBox({ onOpenChapter }: DraftBoxProps) {
   }
 
   return (
-    <ScrollArea className="h-full">
+    <div className="scrollbar-app h-full overflow-y-auto">
       <ul className="flex flex-col gap-1 px-2 pb-3" data-tick={tick}>
         {drafts.map((d) => (
           <li key={d.key} className="group rounded-md border px-2.5 py-2">
@@ -95,6 +94,6 @@ export default function DraftBox({ onOpenChapter }: DraftBoxProps) {
           </li>
         ))}
       </ul>
-    </ScrollArea>
+    </div>
   );
 }

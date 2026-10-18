@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 import WorkCard from "@/components/novel/WorkCard";
 import TrashDialog from "@/components/novel/TrashDialog";
@@ -156,7 +155,7 @@ export default function Library() {
   /* ---------- 未选择工作区：引导选择 ---------- */
   if (!isOpen || !root) {
     return (
-      <ScrollArea className="view-library h-full">
+      <div className="view-library scrollbar-app h-full overflow-y-auto">
       <div className="px-6 py-8">
         <header className="mx-auto w-full max-w-3xl">
           <div className="flex items-start gap-3">
@@ -196,13 +195,13 @@ export default function Library() {
           ) : null}
         </header>
       </div>
-      </ScrollArea>
+      </div>
     );
   }
 
   /* ---------- 已选择工作区：作品网格 ---------- */
   return (
-    <ScrollArea className="view-library h-full">
+    <div className="view-library scrollbar-app h-full overflow-y-auto">
     <div className="px-6 py-8">
       <header className="mx-auto flex w-full max-w-3xl flex-wrap items-end justify-between gap-4">
         <div>
@@ -391,6 +390,6 @@ export default function Library() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
-    </ScrollArea>
+    </div>
   );
 }

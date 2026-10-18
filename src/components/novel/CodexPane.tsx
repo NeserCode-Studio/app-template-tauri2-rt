@@ -3,7 +3,6 @@ import { ExternalLink, Plus, Search } from "lucide-react";
 import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -162,7 +161,7 @@ export default function CodexPane() {
           </Button>
         </div>
       ) : null}
-      <ScrollArea className="min-h-0 flex-1">
+      <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto">
         {filtered.length ? (
           <ul className="flex flex-col">
             {filtered.map((e: CodexEntry) => (
@@ -197,7 +196,7 @@ export default function CodexPane() {
             <p className="mt-1 text-[11px] text-muted-foreground/70">{t("Codex.emptyHint")}</p>
           </div>
         )}
-      </ScrollArea>
+      </div>
       {/* 选中条目摘要：够看清设定，不够编辑是有意的取舍 */}
       {current ? (
         <div className="flex shrink-0 flex-col gap-1 border-t pt-2">

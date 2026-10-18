@@ -36,7 +36,6 @@ import { computeIndexByPosition } from "@/lib/outline-move";
 
 import ChapterMetaDialog from "./ChapterMetaDialog";
 import CreateNodeDialog from "./CreateNodeDialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
 const log = createLogger("OutlinePane");
 
@@ -656,7 +655,7 @@ export default function OutlinePane({
         onDragCancel={handleDragCancel}
       >
         {/* 树体 */}
-        <ScrollArea className="min-h-0 flex-1">
+        <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto">
         <div className="w-full px-2 pb-3">
           {/* 卷分组 */}
           {volumes.map((volume) => {
@@ -745,7 +744,7 @@ export default function OutlinePane({
             </div>
           ) : null}
         </div>
-        </ScrollArea>
+        </div>
 
         {/* dropAnimation 置空：浮层默认会飞回落点，我们已落盘重排，无需这层回落动画。 */}
         <DragOverlay dropAnimation={null}>

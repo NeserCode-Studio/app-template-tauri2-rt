@@ -5,7 +5,6 @@ import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -182,7 +181,7 @@ export default function CodexLibrary() {
 
       <div className="flex min-h-0 flex-1">
         {/* 类型导航 */}
-        <ScrollArea className="w-44 shrink-0 border-r">
+        <div className="scrollbar-app w-44 shrink-0 overflow-y-auto border-r">
         <nav className="flex flex-col gap-0.5 p-2">
           <button
             type="button"
@@ -220,7 +219,7 @@ export default function CodexLibrary() {
             </button>
           ))}
         </nav>
-        </ScrollArea>
+        </div>
 
         {/* 条目列表 */}
         <div className="flex w-72 shrink-0 flex-col border-r">
@@ -272,7 +271,7 @@ export default function CodexLibrary() {
             </div>
           ) : null}
 
-          <ScrollArea className="min-h-0 flex-1">
+          <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto">
             {filtered.length ? (
               <ul className="flex flex-col">
                 {filtered.map((e) => (
@@ -304,11 +303,11 @@ export default function CodexLibrary() {
                 <p className="text-xs text-muted-foreground">{t("Codex.empty")}</p>
               </div>
             )}
-          </ScrollArea>
+          </div>
         </div>
 
         {/* 详情编辑 */}
-        <ScrollArea className="min-h-0 flex-1">
+        <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto">
         <div className="flex flex-col p-4">
           {draft ? (
             <div className="flex max-w-2xl flex-col gap-3">
@@ -519,7 +518,7 @@ export default function CodexLibrary() {
             </div>
           </div>
         </div>
-        </ScrollArea>
+        </div>
       </div>
 
       <AlertDialog

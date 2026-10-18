@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Check, History, Loader2, Pencil, Save, Trash2, Undo2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import CardItem from "./CardItem";
 import ComposerInput, { type ComposerHandle } from "./ComposerInput";
 import SplitDialog from "./SplitDialog";
@@ -827,9 +826,12 @@ export default function ChapterEditor({
        * `flex-1 min-h-0` + 自身滚动是关键：外层保持固定高度并把剩余空间
        * 全给滚动区，底部输入框因此恒定贴底，不会被卡片高度顶走。
        * 若这里少了 min-h-0，flex 子项会按内容撑开，输入框被推出可视区。
+       *
+       * 用原生滚动而非 ScrollArea：正文要跟随滚动条"读位置"，
+       * 自绘滚动容器会把滚动交给内部 viewport，联动（如跟随光标、滚动到底）
+       * 都得改成对内部元素操作，得不偿失。样式由 scrollbar-app 统一。
        */}
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="px-6 py-4">
+      <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto px-6 py-4">
         {cards.length ? (
           <div
             ref={listRef}
@@ -859,8 +861,7 @@ export default function ChapterEditor({
             <p className="text-xs text-muted-foreground/70">{t("Editor.empty.hint")}</p>
           </div>
         )}
-        </div>
-      </ScrollArea>
+      </div>
 
       {/*
        * 底部编辑区：分割线以下整块都是输入区。
