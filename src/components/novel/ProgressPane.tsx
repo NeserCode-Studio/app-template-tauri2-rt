@@ -283,19 +283,24 @@ export default function ProgressPane({ chapterWords }: { chapterWords: number })
               </span>
             </div>
           ) : null}
-          <div className="flex h-full items-end gap-0.5">
-          {curve.map((c) => (
-            <div key={c.key} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-              <div className="flex h-full w-full items-end">
+          {/*
+           * 柱区与标签行拆成两个独立行：这样基线可以直接画在柱区容器自身的
+           * 底边上，不需要靠绝对定位去猜标签占多高（猜错就会错位）。
+           */}
+          <div className="flex h-12 items-end gap-0.5 border-b border-border/60">
+            {curve.map((c) => (
+              <div key={c.key} className="flex h-full min-w-0 flex-1 items-end">
                 <div
                   className={[
                     "w-full rounded-sm transition-[height]",
                     c.key === todayKey() ? "bg-primary" : "bg-primary/40",
-                    /* 零字数的日子给一个 2% 的底条，否则整根柱子完全不可见，
-                       看起来像"那天没有这一格"而不是"那天没写"。 */
-                    c.words === 0 ? "min-h-[2px] bg-border" : "",
                   ].join(" ")}
                   style={{
+                    /* 零字数的日子留空即可——"那天没写"本就该是空的。
+                       之前给过一个 2% 的底条，但它和内联的 height: 0 冲突
+                       （min-height 优先），于是本该空着的格子全被画出 2px，
+                       十几根连在基线上像一段断续的坐标轴。
+                       柱区改为单独画一条基线，零日柱子自然与之齐平。 */
                     height: `${Math.max(
                       c.words === 0 ? 0 : 6,
                       Math.round((c.words / scaleMax) * 100)
@@ -304,11 +309,18 @@ export default function ProgressPane({ chapterWords }: { chapterWords: number })
                   title={`${c.day} · ${c.words} ${t("Editor.history.words")}`}
                 />
               </div>
-              <span className="w-full truncate text-center text-[9px] text-muted-foreground/70">
+            ))}
+          </div>
+          {/* 标签单独一行：与柱区同宽同列，稀疏标注。 */}
+          <div className="mt-1 flex gap-0.5">
+            {curve.map((c) => (
+              <div
+                key={c.key}
+                className="min-w-0 flex-1 truncate text-center text-[9px] text-muted-foreground/70"
+              >
                 {c.label ?? ""}
-              </span>
-            </div>
-          ))}
+              </div>
+            ))}
           </div>
         </div>
       </section>
