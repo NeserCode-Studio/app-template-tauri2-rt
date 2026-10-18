@@ -91,14 +91,29 @@ function ResizableHandle({
     <ResizablePrimitive.PanelResizeHandle
       data-slot="resizable-handle"
       onDragging={setDragging}
+      /*
+       * 命中区比视觉线宽：细到 1px 很难按住，拖拽手感直接崩掉。
+       * hitAreaMargins 把这 8px 扩展成不可见的热区，
+       * 而视觉上仍然只有 1px 的线——默认那 4px 的实心条
+       * 比面板自身的边框重两倍，夹在两个同样有边框的面板之间
+       * 看着像多了一根结构件。
+       */
+      hitAreaMargins={{ coarse: 8, fine: 8 }}
       className={cn(
-        "bg-border focus-visible:ring-ring relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:translate-x-0 data-[panel-group-direction=vertical]:after:-translate-y-1/2 [&[data-panel-group-direction=vertical]>div]:rotate-90",
+        "focus-visible:ring-ring group/resize relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:translate-x-0 data-[panel-group-direction=vertical]:after:-translate-y-1/2 [&[data-panel-group-direction=vertical]>div]:rotate-90",
+        // 视觉线：常态透明，hover/拖动才显形，平时与面板边框融在一起。
+        "before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-border before:opacity-0 before:transition-opacity data-[panel-group-direction=vertical]:before:inset-x-0 data-[panel-group-direction=vertical]:before:top-1/2 data-[panel-group-direction=vertical]:before:left-0 data-[panel-group-direction=vertical]:before:h-px data-[panel-group-direction=vertical]:before:w-full data-[panel-group-direction=vertical]:before:-translate-y-1/2 data-[panel-group-direction=vertical]:before:translate-x-0 hover:before:opacity-100 data-[resize-handle-state=drag]:before:opacity-100",
         className
       )}
       {...props}
     >
       {withHandle && (
-        <div className="bg-border z-10 flex h-4 w-3 items-center justify-center rounded-xs border">
+        /*
+         * 抓手只在悬停/拖动时出现。
+         * 常驻一个实心小方块会在安静的编辑界面里立一块视觉噪点，
+         * 而"这里可以拖"这个信息在鼠标靠近之前并不需要被看见。
+         */
+        <div className="bg-border z-10 flex h-4 w-3 items-center justify-center rounded-xs border opacity-0 transition-opacity group-hover/resize:opacity-100 data-[resize-handle-state=drag]/resize:opacity-100">
           <GripVerticalIcon className="size-2.5" />
         </div>
       )}
