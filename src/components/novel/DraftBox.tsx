@@ -1,9 +1,24 @@
 import { useEffect, useState } from "react";
 import { FileText, Trash2 } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/composables";
-import { listDrafts, migrateLegacyDrafts, removeDraft } from "@/services/drafts";
+import {
+  listDrafts,
+  migrateLegacyDrafts,
+  removeDraft,
+  type Draft,
+} from "@/services/drafts";
 
 /** 相对时间：草稿箱只关心"多久之前留的"。 */
 function relative(at: number, now: number): string {
@@ -32,6 +47,8 @@ export interface DraftBoxProps {
 export default function DraftBox({ onOpenChapter }: DraftBoxProps) {
   const { t } = useI18n();
   const [tick, setTick] = useState(0);
+  /** 待确认删除的草稿；null 表示没有打开确认弹窗。 */
+  const [pendingDelete, setPendingDelete] = useState<Draft | null>(null);
   const now = Date.now();
   const drafts = listDrafts();
 
@@ -80,10 +97,7 @@ export default function DraftBox({ onOpenChapter }: DraftBoxProps) {
                 className="size-6 shrink-0 text-muted-foreground opacity-0 hover:text-destructive group-hover:opacity-100"
                 aria-label={t("Editor.draft.discard")}
                 title={t("Editor.draft.discard")}
-                onClick={() => {
-                  removeDraft(d.workId, d.chapterId);
-                  window.dispatchEvent(new Event("novels-yes:drafts-changed"));
-                }}
+                onClick={() => setPendingDelete(d)}
               >
                 <Trash2 className="icon-sm" />
               </Button>
@@ -94,6 +108,39 @@ export default function DraftBox({ onOpenChapter }: DraftBoxProps) {
           </li>
         ))}
       </ul>
+
+      {/*
+       * 删除确认。草稿丢的就是"还没写完的那一段"，且草稿不落工作区、
+       * 删除后没有任何回收站可捞，因此误触的代价不可逆。
+       * removeDraft 内部已广播 drafts-changed，这里不再重复派发。
+       */}
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Editor.draft.discardTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Editor.draft.discardHint")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Library.dialog.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                if (pendingDelete) removeDraft(pendingDelete.workId, pendingDelete.chapterId);
+                setPendingDelete(null);
+              }}
+            >
+              {t("Editor.draft.discard")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

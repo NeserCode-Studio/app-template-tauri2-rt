@@ -78,6 +78,9 @@ export const I18nTexts = {
     "Editor.draft.empty": "No unfinished drafts.",
     "Editor.draft.open": "Go to this chapter",
     "Editor.draft.discard": "Discard draft",
+    "Editor.draft.discardTitle": "Discard this draft?",
+    "Editor.draft.discardHint":
+      "The unfinished paragraph will be deleted. Drafts are not kept in the recycle bin and cannot be recovered.",
     "Editor.chapter.movedUp": "Moved up",
     "Editor.chapter.movedDown": "Moved down",
     "Editor.empty": "This chapter has no cards yet",
@@ -440,6 +443,8 @@ export const I18nTexts = {
     "Editor.draft.empty": "没有未提交的草稿。",
     "Editor.draft.open": "跳到该章",
     "Editor.draft.discard": "丢弃草稿",
+    "Editor.draft.discardTitle": "丢弃该草稿？",
+    "Editor.draft.discardHint": "这段未提交的内容会被删除。草稿不进回收站，删除后无法恢复。",
     "Editor.chapter.movedUp": "已上移",
     "Editor.chapter.movedDown": "已下移",
     "Editor.empty": "本章还没有内容",
