@@ -34,6 +34,8 @@ export interface WritingPreferences {
   uiFont: UiFont;
   /** 界面字号（px）。 */
   uiFontSize: number;
+  /** 正文中高亮素材条目的提及。 */
+  highlightMentions: boolean;
 }
 
 export const DEFAULT_PREFERENCES: WritingPreferences = {
@@ -45,6 +47,7 @@ export const DEFAULT_PREFERENCES: WritingPreferences = {
   fontSize: 18,
   uiFont: "system-sans",
   uiFontSize: 14,
+  highlightMentions: true,
 };
 
 export interface PreferencesContextValue {

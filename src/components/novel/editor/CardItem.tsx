@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { ArrowDown, ArrowUp, Combine, MoreHorizontal, Scissors, Trash2 } from "lucide-react";
 
 import {
@@ -8,7 +9,54 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/composables";
+import { useCodex } from "@/contexts/codex";
+import { usePreferences } from "@/contexts/preferences";
 import type { Card } from "@/shared/schema";
+
+/**
+ * 把正文按素材提及切成片段。
+ *
+ * 必须按**最长优先**匹配：`张三丰` 里同时含 `张三` 与 `丰`（后者是别的条目名）
+ * 时，若先匹配短名就会把长名切成碎片。同时用 `Set` 一次判定所有边界，
+ * 避免对每个候选名都扫一遍整段——长章里这个开销是平方级的。
+ */
+function splitByMentions(
+  text: string,
+  names: Map<string, string>
+): { text: string; entryId: string | null }[] {
+  if (!names.size || !text) return [{ text, entryId: null }];
+
+  /* 长度降序，保证长名先占住区间。 */
+  const candidates = [...names.keys()].sort((a, b) => b.length - a.length);
+  const hits: { start: number; end: number; id: string }[] = [];
+
+  for (const name of candidates) {
+    if (!name) continue;
+    let from = 0;
+    for (;;) {
+      const at = text.indexOf(name, from);
+      if (at < 0) break;
+      const end = at + name.length;
+      /* 已被更长的匹配覆盖则跳过，不重复高亮。 */
+      if (!hits.some((h) => at < h.end && end > h.start)) {
+        hits.push({ start: at, end, id: names.get(name)! });
+      }
+      from = end;
+    }
+  }
+  if (!hits.length) return [{ text, entryId: null }];
+
+  hits.sort((a, b) => a.start - b.start);
+  const out: { text: string; entryId: string | null }[] = [];
+  let cursor = 0;
+  for (const h of hits) {
+    if (h.start > cursor) out.push({ text: text.slice(cursor, h.start), entryId: null });
+    out.push({ text: text.slice(h.start, h.end), entryId: h.id });
+    cursor = h.end;
+  }
+  if (cursor < text.length) out.push({ text: text.slice(cursor), entryId: null });
+  return out;
+}
 
 export interface CardItemProps {
   card: Card;
@@ -46,7 +94,27 @@ export default function CardItem({
   onDelete,
 }: CardItemProps) {
   const { t } = useI18n();
+  const { entries } = useCodex();
+  const { prefs } = usePreferences();
   const isEmpty = card.text.trim().length === 0;
+
+  /* 名称 → 条目 id。别名一并纳入：正文里常写的是别名而非本名。 */
+  const mentionMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of entries) {
+      map.set(e.name, e.id);
+      for (const alias of e.aliases) if (alias) map.set(alias, e.id);
+    }
+    return map;
+  }, [entries]);
+
+  const parts = useMemo(
+    () =>
+      prefs.highlightMentions
+        ? splitByMentions(card.text, mentionMap)
+        : [{ text: card.text, entryId: null }],
+    [card.text, mentionMap, prefs.highlightMentions]
+  );
 
   return (
     <div
@@ -67,7 +135,20 @@ export default function CardItem({
       ].join(" ")}
     >
       <p className={isEmpty ? "is-empty min-h-[1lh] text-muted-foreground/40" : ""}>
-        {card.text || " "}
+        {isEmpty
+          ? " "
+          : parts.map((part, i) =>
+              part.entryId ? (
+                <mark
+                  key={i}
+                  className="rounded-sm bg-primary/15 px-0.5 text-foreground"
+                >
+                  {part.text}
+                </mark>
+              ) : (
+                <span key={i}>{part.text}</span>
+              )
+            )}
       </p>
 
       {/* 操作菜单：悬停或聚焦时浮现，不干扰阅读 */}

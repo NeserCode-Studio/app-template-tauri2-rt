@@ -184,6 +184,14 @@ export default function WritingPrefs() {
             onCheckedChange={(v) => setPref("paragraphGap", v)}
           />
         </div>
+
+        <div className="flex items-center justify-between gap-4">
+          <Label>{t("Prefs.article.mentions")}</Label>
+          <Switch
+            checked={prefs.highlightMentions}
+            onCheckedChange={(v) => setPref("highlightMentions", v)}
+          />
+        </div>
       </section>
 
       {/* ---------- 预览 ---------- */}

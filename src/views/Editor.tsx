@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/resizable";
 
 import ChapterEditor from "@/components/novel/editor/ChapterEditor";
+import CodexPane from "@/components/novel/CodexPane";
 import NewChapterDialog from "@/components/novel/editor/NewChapterDialog";
 import OutlinePane from "@/components/novel/editor/OutlinePane";
 
@@ -71,6 +72,8 @@ export default function Editor() {
   const [renameDraft, setRenameDraft] = useState("");
   /** 待确认删除的章节。 */
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  /** 右栏页签：章节信息 / 素材库。 */
+  const [sideTab, setSideTab] = useState<"chapter" | "codex">("chapter");
 
   /* 作品切换后回到作品库，避免空编辑器。 */
   useEffect(() => {
@@ -303,7 +306,38 @@ export default function Editor() {
 
         {/* 右栏：翻章 + 摘要 */}
         <ResizablePanel defaultSize={24} minSize={16} maxSize={30}>
-          <div className="flex h-full flex-col gap-4 border-l p-4">
+          <div className="flex h-full min-h-0 flex-col gap-4 border-l p-4">
+            {/*
+             * 右栏两个页签：章节 / 素材。
+             *
+             * 两者都是"写作时的旁 consulted 资料"，同处一栏避免开第四栏。
+             * 页签比并列更好：素材是查阅型，章节是常驻型，并排会互相挤。
+             */}
+            <div className="flex shrink-0 items-center gap-1">
+              <Button
+                size="sm"
+                variant={sideTab === "chapter" ? "secondary" : "ghost"}
+                className="h-7 flex-1 text-xs"
+                onClick={() => setSideTab("chapter")}
+              >
+                {t("Editor.side.jump")}
+              </Button>
+              <Button
+                size="sm"
+                variant={sideTab === "codex" ? "secondary" : "ghost"}
+                className="h-7 flex-1 text-xs"
+                onClick={() => setSideTab("codex")}
+              >
+                {t("Editor.side.codex")}
+              </Button>
+            </div>
+
+            <div className="min-h-0 flex-1">
+              {sideTab === "codex" ? <CodexPane /> : null}
+            </div>
+
+            {sideTab === "chapter" ? (
+            <>
             <section className="flex flex-col gap-2">
               <h2 className="row-label">{t("Editor.side.jump")}</h2>
               <p className="text-sm text-muted-foreground">
@@ -428,6 +462,8 @@ export default function Editor() {
                   </Button>
                 </section>
               </>
+            ) : null}
+            </>
             ) : null}
 
             {loading ? (

@@ -25,6 +25,7 @@ import { WorkspaceProvider } from "@/contexts/workspace.provider";
 import { LibraryProvider } from "@/contexts/library.provider";
 import { PreferencesProvider } from "@/contexts/preferences.provider";
 import { OutlineProvider } from "@/contexts/outline.provider";
+import { CodexProvider } from "@/contexts/codex.provider";
 
 const log = createLogger("App");
 
@@ -159,6 +160,7 @@ function App() {
       <WorkspaceProvider>
         <LibraryProvider>
           <OutlineProvider>
+          <CodexProvider>
         <SettingsDialogContext.Provider value={settingsValue}>
         <I18nContext.Provider value={i18nValue}>
           <ThemeContext.Provider value={themeValue}>
@@ -198,6 +200,7 @@ function App() {
           </ThemeContext.Provider>
         </I18nContext.Provider>
         </SettingsDialogContext.Provider>
+          </CodexProvider>
           </OutlineProvider>
         </LibraryProvider>
       </WorkspaceProvider>
