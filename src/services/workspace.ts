@@ -73,6 +73,17 @@ export async function deleteWork(
     originId: workId,
     paths: [workDir(workId)],
     title,
+    /*
+     * 记下它在清单里的位置，恢复时才回得去原位。
+     *
+     * 必须在过滤之前算：过滤后下标就找不到了。同时记住它原来在
+     * order 还是 archived——两部含义完全不同，恢复错了分区，
+     * 用户归档的作品会重新出现在常规列表里。
+     */
+    manifestIndex: ws.order.includes(workId)
+      ? ws.order.indexOf(workId)
+      : ws.archived.indexOf(workId),
+    manifestSection: ws.order.includes(workId) ? "order" : "archived",
   });
   const next = workspaceSchema.parse({
     ...ws,

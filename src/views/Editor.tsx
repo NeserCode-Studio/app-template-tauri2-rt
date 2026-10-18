@@ -53,6 +53,7 @@ import ProgressPane from "@/components/novel/ProgressPane";
 import ExportDialog from "@/components/novel/ExportDialog";
 import NewChapterDialog from "@/components/novel/editor/NewChapterDialog";
 import OutlinePane from "@/components/novel/editor/OutlinePane";
+import SubtreePreview from "@/components/novel/SubtreePreview";
 
 import { useI18n } from "@/composables";
 import { useLibrary } from "@/contexts/library";
@@ -875,6 +876,23 @@ export default function Editor() {
                 String(chapters.filter((c) => c.parentId === pendingVolumeDelete).length)
               )}
             </AlertDialogDescription>
+
+            {/*
+             * 章标题预览：级联删除要能看清"到底连带了哪几章"。
+             *
+             * 与回收站里的恢复预览是同一个组件——两处要回答的是同一个问题，
+             * 分两套实现必然会长歪。只列标题不列正文，正文在编辑器里随时可看。
+             */}
+            {pendingVolumeDelete ? (
+              <div className="scrollbar-app mt-2 max-h-48 overflow-y-auto rounded-md border bg-muted/20 px-3 py-2">
+                <SubtreePreview
+                  volume={volumes.find((v) => v.id === pendingVolumeDelete) ?? null}
+                  chapters={chapters
+                    .filter((c) => c.parentId === pendingVolumeDelete)
+                    .sort((a, b) => a.order - b.order)}
+                />
+              </div>
+            ) : null}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>{t("Editor.split.cancel")}</AlertDialogCancel>

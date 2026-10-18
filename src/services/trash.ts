@@ -57,7 +57,24 @@ export const trashItemSchema = z.object({
   /** 同级排序信息，恢复时用。 */
   parentId: z.string().uuid().nullable().default(null),
   order: z.number().int().default(0),
-  deletedAt: z.number().int(),
+  /**
+   * 作品被删时它在清单里的下标（order 或 archived 中的位置）。
+   *
+   * 恢复要回到原位而不是追加到末尾——用户记得"它是第 3 部"，
+   * 追加到末尾等于替他重排了作品库。删除时记下下标，恢复时插回去。
+   * 越界（清单后来变短了）则退回末尾，不猜位置。
+   */
+  manifestIndex: z.number().int().nullable().default(null),
+  /** 作品被删时它属于哪个分区：常规列表还是归档。 */
+  manifestSection: z.enum(["order", "archived"]).nullable().default(null),
+  /**
+   * 作品被删时它在工作区清单里的下标，恢复时插回原位。
+   *
+   * 以前只记结构树的 order，作品恢复只能追加到末尾——删掉第 3 部作品
+   * 再恢复，它跑到列表最后，顺序得手工重排。下标记的是删除那一刻的位置，
+   * 恢复时若清单已被后续操作改变（中间又插了作品），按 clamp 到末尾处理。
+   */
+ deletedAt: z.number().int(),
   /**
    * 被一并删掉的子节点（卷 → 其下所有章）。
    *
@@ -161,6 +178,9 @@ export async function moveToTrash(
     node?: TrashItem["node"];
     parentId?: string | null;
     order?: number;
+    /** 作品删除时记录它在清单里的下标与分区，供恢复时回到原位。 */
+    manifestIndex?: number | null;
+    manifestSection?: "order" | "archived" | null;
     /** 卷删除时记下整棵子树，供恢复时挂回结构树。 */
     subtree?: TrashItem["subtree"];
   }
@@ -175,7 +195,9 @@ export async function moveToTrash(
     title: input.title,
     parentId: input.parentId ?? null,
     order: input.order ?? 0,
-    subtree: input.subtree ?? [],
+    manifestIndex: input.manifestIndex ?? null,
+    manifestSection: input.manifestSection ?? null,
+   subtree: input.subtree ?? [],
     node: input.node ?? null,
     deletedAt: Date.now(),
   });
@@ -329,16 +351,36 @@ async function reattachWork(root: string, item: TrashItem): Promise<void> {
       archived?: string[];
     };
     const order = raw.order ?? [];
-    if (order.includes(item.originId)) return;
-    raw.order = [...order, item.originId];
+    const archived = raw.archived ?? [];
+    if (order.includes(item.originId) || archived.includes(item.originId)) return;
+
+    /*
+     * 按删除时记下的分区与下标插回原位，而不是追加到末尾。
+     *
+     * 用户记得"它是第 3 部""它在归档里"，追加到末尾等于替他重排作品库。
+     * 下标越界时（删除后又删了别的作品，清单变短了）退回该区末尾——
+     * 位置猜不准，但分区不能错：把归档作品插进常规列表比位置偏一点更难发现。
+     */
+    const into = item.manifestSection === "archived" ? archived : order;
+    const at =
+      item.manifestIndex === null || item.manifestIndex > into.length
+        ? into.length
+        : item.manifestIndex;
+    into.splice(at, 0, item.originId);
+    if (item.manifestSection === "archived") {
+      raw.archived = into;
+    } else {
+      raw.order = into;
+    }
     await fs2.writeText(file, JSON.stringify(raw, null, 2));
     /*
      * 归档标记也要抹平：删除一部已归档作品时，清单里的 archived 会被摘掉，
      * 但 work.json 的 archived 仍是 true。恢复出来若带着这个标记，卡片会
      * 直接渲染成归档态、"继续写作"点不动——比没恢复更让人困惑。
-     * （deleteWork 也从清单里摘了 archived，所以恢复出来应当是常规作品。）
+     * 但恢复进 archived 分区的作品相反：它必须保持归档态，
+     * 否则会同时出现在常规列表和归档区里。所以这里按分区决定抹不抹。
      */
-    await clearWorkArchived(root, item.originId);
+    await setWorkArchivedFlag(root, item.originId, item.manifestSection === "archived");
     log.info("work re-registered in manifest", { id: item.originId });
   } catch (err) {
     /* 清单坏了就跳过：文件已经搬回去了，冷启动的目录兜底还能救回来。 */
@@ -346,15 +388,23 @@ async function reattachWork(root: string, item: TrashItem): Promise<void> {
   }
 }
 
-/** 抹掉作品自身的归档标记，使恢复出来的作品是常规态。 */
-async function clearWorkArchived(root: string, workId: string): Promise<void> {
+/**
+ * 把作品自身的归档标记对齐到它被恢复进的分区。
+ *
+ * 分区是权威，标记是派生值：两者不一致时卡片会在两个区都渲染一遍。
+ */
+async function setWorkArchivedFlag(
+  root: string,
+  workId: string,
+  archived: boolean
+): Promise<void> {
   try {
     const fs2 = createFs(root);
     const meta = workMetaFile(workId);
     if (!(await fs2.exists(meta))) return;
     const raw = JSON.parse(await fs2.readText(meta)) as { archived?: boolean };
-    if (raw.archived !== true) return;
-    await fs2.writeText(meta, JSON.stringify({ ...raw, archived: false }, null, 2));
+    if (raw.archived === archived) return;
+    await fs2.writeText(meta, JSON.stringify({ ...raw, archived }, null, 2));
   } catch (err) {
     log.warn("work archived flag not cleared on restore", { workId, err });
   }
@@ -408,8 +458,25 @@ async function reattachNode(root: string, item: TrashItem): Promise<void> {
     createdAt: item.node?.createdAt ?? now,
     updatedAt: item.node?.updatedAt ?? now,
   };
-  /* 卷：连同记录下来的子树一起挂回，章节点才不会变成孤儿文件。 */
-  raw.nodes.push(node, ...item.subtree);
+  /*
+   * 按 order 插回同级中间，而不是一律 push 到末尾。
+   *
+   * 结构树的 order 即显示顺序，push 会让"删掉首卷第二章再恢复"变成
+   * "它跑到了整棵树最后"。先找同级中第一个 order 大于它的节点，
+   * 插到那个位置之前；找不到（它是该级最大的）才追加。
+   *
+   * 卷：连同记录下来的子树一起挂回，章节点才不会变成孤儿文件。
+   */
+  const siblings = raw.nodes.filter(
+    (n) =>
+      (n as { id?: string }).id !== node.id &&
+      (n as { parentId?: string | null }).parentId === node.parentId
+  );
+  const before = siblings.find(
+    (n) => ((n as { order?: number }).order ?? 0) > node.order
+  );
+  const at = before ? raw.nodes.indexOf(before) : raw.nodes.length;
+  raw.nodes.splice(at, 0, node, ...item.subtree);
   await fs2.writeText(file, JSON.stringify(raw, null, 2));
   log.info("outline node restored", { id: item.originId, parentGone });
 }

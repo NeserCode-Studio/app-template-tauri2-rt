@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { RotateCcw, ScanSearch, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronUp, RotateCcw, ScanSearch, Trash2 } from "lucide-react";
 import { toast as sonnerToast } from "sonner";
 
 import {
@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { useI18n, useToast } from "@/composables";
 import { listTrash, purgeFromTrash, restoreFromTrash, type TrashItem } from "@/services/trash";
 import { scanAndRepair } from "@/services/workspace";
+import SubtreePreview from "@/components/novel/SubtreePreview";
 
 export interface TrashDialogProps {
   open: boolean;
@@ -41,6 +42,8 @@ export default function TrashDialog({ open, root, onOpenChange, onRestored }: Tr
   const [items, setItems] = useState<TrashItem[]>([]);
   const [pendingPurge, setPendingPurge] = useState<TrashItem | null>(null);
   const [scanning, setScanning] = useState(false);
+  /** 展开了章标题预览的回收项 id；同时只展开一条，避免列表被撑散。 */
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   /**
    * 带数量的扫描报告 toast。
@@ -67,6 +70,15 @@ export default function TrashDialog({ open, root, onOpenChange, onRestored }: Tr
     if (!open) return;
     void reload();
   }, [open, reload]);
+
+  /** 卷记录下的章（按 order 升序）；非卷记录返回空数组，不显示预览入口。 */
+  const volumeChapters = (item: TrashItem): TrashItem["subtree"] =>
+    item.subtree
+      .filter((n) => n.type === "chapter")
+      .sort((a, b) => a.order - b.order);
+
+  const togglePreview = (itemId: string) =>
+    setExpanded((prev) => (prev === itemId ? null : itemId));
 
   async function restore(item: TrashItem) {
     if (!root) return;
@@ -157,35 +169,67 @@ export default function TrashDialog({ open, root, onOpenChange, onRestored }: Tr
               {items.map((item) => (
                 <li
                   key={item.itemId}
-                  className="flex items-center gap-2 rounded-md border px-2 py-1.5"
+                  className="flex flex-col gap-1.5 rounded-md border px-2 py-1.5"
                 >
-                  <div className="flex min-w-0 flex-1 flex-col">
-                    <span className="truncate text-sm">{item.title}</span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {t(`Trash.kind.${item.kind}`)} ·{" "}
-                      {new Date(item.deletedAt).toLocaleString()}
-                    </span>
+                  <div className="flex items-center gap-2">
+                    <div className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-sm">{item.title}</span>
+                      <span className="text-[11px] text-muted-foreground">
+                        {t(`Trash.kind.${item.kind}`)} ·{" "}
+                        {new Date(item.deletedAt).toLocaleString()}
+                      </span>
+                    </div>
+                    {/*
+                      * 卷记录的章标题预览：恢复前要能看清"这卷里到底有哪几章"，
+                      * 否则只能凭卷名赌一把。与卷删除确认弹窗共用 SubtreePreview，
+                      * 两处回答的是同一个问题。
+                      */}
+                    {volumeChapters(item).length ? (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="size-7 shrink-0"
+                        aria-label={t("Trash.preview")}
+                        title={t("Trash.preview")}
+                        onClick={() => togglePreview(item.itemId)}
+                      >
+                        {expanded === item.itemId ? (
+                          <ChevronUp className="icon-sm" />
+                        ) : (
+                          <ChevronDown className="icon-sm" />
+                        )}
+                      </Button>
+                    ) : null}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-7"
+                      onClick={() => void restore(item)}
+                    >
+                      <RotateCcw className="icon-sm" />
+                      {t("Trash.restore")}
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="size-7 text-destructive hover:text-destructive"
+                      aria-label={t("Trash.purge")}
+                      title={t("Trash.purge")}
+                      onClick={() => setPendingPurge(item)}
+                    >
+                      <Trash2 className="icon-sm" />
+                    </Button>
                   </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7"
-                    onClick={() => void restore(item)}
-                  >
-                    <RotateCcw className="icon-sm" />
-                    {t("Trash.restore")}
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="size-7 text-destructive hover:text-destructive"
-                    aria-label={t("Trash.purge")}
-                    title={t("Trash.purge")}
-                    onClick={() => setPendingPurge(item)}
-                  >
-                    <Trash2 className="icon-sm" />
-                  </Button>
+                  {expanded === item.itemId ? (
+                    <div className="scrollbar-app max-h-40 overflow-y-auto rounded-md border bg-muted/20 px-3 py-2">
+                      <SubtreePreview
+                        volume={item.subtree.find((n) => n.type === "volume") ?? null}
+                        chapters={volumeChapters(item)}
+                      />
+                    </div>
+                  ) : null}
                 </li>
+
               ))}
             </ul>
             </ScrollArea>
