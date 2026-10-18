@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Check, History, Loader2, Pencil, Save, Trash2, Undo2 } from "lucide-react";
-import { useLocalStorageState } from "ahooks";
 
 import { Button } from "@/components/ui/button";
 import CardItem from "./CardItem";
@@ -14,6 +13,7 @@ import { useViewMode } from "@/contexts/viewmode";
 import { createLogger } from "@/lib/logger";
 import { CommandHistory } from "@/lib/command-history";
 import { cardsToText, countWords, rollbackTo, saveChapter } from "@/services/chapter";
+import { readDraft, writeDraft } from "@/services/drafts";
 import { cardSchema, type Card, type Chapter } from "@/shared/schema";
 
 const log = createLogger("ChapterEditor");
@@ -128,9 +128,14 @@ export default function ChapterEditor({
    * 混进 works/<id>/ 会污染用户导出的文本；崩了也只丢一次半成品。
    * 按章隔离，切回来还能接着写。
    */
-  const [draft, setDraftRaw] = useLocalStorageState<string | null>(
-    `novels-yes:draft:${workId}:${chapter.id}`,
-    { defaultValue: null }
+  /*
+   * 草稿改由 services/drafts 的集中 JSON 存储托管：
+   * 统一成一个键，才能在草稿箱里遍历全部半成品（见 F2）。
+   * 用 state 而非 useLocalStorageState，是为了自己控制读写时机——
+   * 切章时要按 chapterId 重新读，不能让 ahooks 沿用上一章的值。
+   */
+  const [draft, setDraftState] = useState<string | null>(() =>
+    readDraft(workId, chapter.id)
   );
   /** draft 的 ref 副本：回调里读最新值，不必把 draft 塞进依赖。 */
   const draftRef = useRef<string | null>(draft);
@@ -139,9 +144,15 @@ export default function ChapterEditor({
   const setDraft = useCallback(
     (value: string | null) => {
       draftRef.current = value;
-      setDraftRaw(value);
+      setDraftState(value);
+      writeDraft({
+        text: value ?? "",
+        workId,
+        chapterId: chapter.id,
+        chapterTitle: chapter.title,
+      });
     },
-    [setDraftRaw]
+    [workId, chapter.id, chapter.title]
   );
 
   const composerRef = useRef<ComposerHandle | null>(null);
@@ -196,6 +207,10 @@ export default function ChapterEditor({
     setSaveState("saved");
     setChapterWithHistory(chapter);
     pendingCards.current = null;
+    /* 切章时按新章重新取草稿，并同步 ref。 */
+    const nextDraft = readDraft(workId, chapterId);
+    draftRef.current = nextDraft;
+    setDraftState(nextDraft);
     /*
      * 草稿按章存在 localStorage 里，切章不动它——
      * 切回来时还要接着写。这也是 localStorage 相对组件 state 的唯一理由。

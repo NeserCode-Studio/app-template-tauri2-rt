@@ -137,6 +137,24 @@ export const statsSchema = z.object({
    * 键数随天数缓慢增长（每年 365 条，几 KB），无需清理。
    */
   daily: z.record(z.string(), z.number().int()).default({}),
+  /**
+   * 写作目标。
+   *
+   * 用户要能按自己的节奏设目标（日更 500 字、日更 2000 字等），
+   * 而不是被写死一个常量。0 表示不设目标——那时进度条不该出现，
+   * 否则一根永远 0% 的条只会让人以为哪里坏了。
+   */
+  dailyGoal: z.number().int().min(0).default(0),
+  /**
+   * 曲线展示口径。
+   *
+   * - `net`：当日净增字数（默认）。改写旧段落会让当日数字回落，
+   *   曲线呈锯齿，但反映真实推进量。
+   * - `total`：当日累计字数。曲线平滑，适合看"哪天写得少"。
+   * 用户可选，因为两种曲线回答的问题不同：前者答"我推进了多少"，
+   * 后者答"哪天偷懒了"。
+   */
+  curveMode: z.enum(["net", "total"]).default("net"),
   /** 每个作品的字数。 */
   workWords: z.record(idSchema, z.number().int()).default({}),
   /** 提及索引，为 v2 增强导出预留。 */

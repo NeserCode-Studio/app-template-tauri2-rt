@@ -37,6 +37,7 @@ import {
 
 import ChapterEditor from "@/components/novel/editor/ChapterEditor";
 import CodexPane from "@/components/novel/CodexPane";
+import DraftBox from "@/components/novel/DraftBox";
 import ProgressPane from "@/components/novel/ProgressPane";
 import ExportDialog from "@/components/novel/ExportDialog";
 import NewChapterDialog from "@/components/novel/editor/NewChapterDialog";
@@ -597,6 +598,16 @@ export default function Editor() {
 
             </>
             ) : null}
+
+            <Separator />
+
+            {/* 草稿箱：把散落的半成品显式列出来，用户才能决定留不留。 */}
+            <section className="flex min-h-0 flex-1 flex-col gap-2">
+              <h2 className="row-label">{t("Editor.draft.title")}</h2>
+              <div className="min-h-0 flex-1">
+                <DraftBox onOpenChapter={setCurrentChapterId} />
+              </div>
+            </section>
 
             {loading ? (
               <p className="text-xs text-muted-foreground">{t("Editor.status.saving")}</p>
