@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, Pencil, Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import {
 import ChapterEditor from "@/components/novel/editor/ChapterEditor";
 import CodexPane from "@/components/novel/CodexPane";
 import ProgressPane from "@/components/novel/ProgressPane";
+import ExportDialog from "@/components/novel/ExportDialog";
 import NewChapterDialog from "@/components/novel/editor/NewChapterDialog";
 import OutlinePane from "@/components/novel/editor/OutlinePane";
 
@@ -75,6 +76,7 @@ export default function Editor() {
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   /** 右栏页签：章节信息 / 素材库。 */
   const [sideTab, setSideTab] = useState<"chapter" | "codex" | "progress">("chapter");
+  const [exportOpen, setExportOpen] = useState(false);
 
   /* 作品切换后回到作品库，避免空编辑器。 */
   useEffect(() => {
@@ -253,6 +255,12 @@ export default function Editor() {
         </Button>
         <Separator orientation="vertical" className="h-4" />
         <span className="truncate text-sm font-medium">{work?.title ?? ""}</span>
+        <div className="ml-auto flex items-center gap-2">
+          <Button size="sm" variant="ghost" onClick={() => setExportOpen(true)}>
+            <Download className="icon-md" />
+            {t("Export.action")}
+          </Button>
+        </div>
       </div>
 
       <ResizablePanelGroup direction="horizontal" className="min-h-0 flex-1">
@@ -484,6 +492,14 @@ export default function Editor() {
       </ResizablePanelGroup>
 
       {/* 删除确认：删章会连正文一起清掉，必须二次确认。 */}
+      <ExportDialog
+        open={exportOpen}
+        root={root}
+        workId={currentWorkId}
+        chapter={chapter}
+        onOpenChange={setExportOpen}
+      />
+
       <AlertDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => {

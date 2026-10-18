@@ -1,4 +1,5 @@
 mod fs_bridge;
+mod export_bridge;
 
 use tauri::{
     Manager,
@@ -108,6 +109,7 @@ pub fn run() {
             fs_bridge::fs_rename,
             fs_bridge::fs_exists,
             fs_bridge::fs_stat,
+            export_bridge::fs_write_export,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
