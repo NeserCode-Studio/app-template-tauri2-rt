@@ -10,7 +10,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { createFs } from "./fs";
 import { moveToTrash } from "./trash";
-import { workspaceFile, workMetaFile, workDir } from "./paths";
+import { workspaceFile, workMetaFile, workDir, WORKS_DIR } from "./paths";
 import { workspaceSchema, type Workspace, workSchema, type Work } from "@/shared/schema";
 import { createLogger } from "@/lib/logger";
 
@@ -174,6 +174,89 @@ export async function unarchiveWork(root: string, ws: Workspace, workId: string)
   await saveWorkspace(root, next);
   await setWorkArchived(root, workId, false);
   return next;
+}
+
+/** 深度扫描的结果。 */
+export interface ScanReport {
+  /** 磁盘上存在、能读出 work.json，但清单里没有的作品。 */
+  orphans: { id: string; title: string; updatedAt: number }[];
+  /** 清单里登记了、但磁盘上目录已不存在（外因删除或换了工作区）。 */
+  missing: { id: string }[];
+  /** 清单分区与 work.json 的 archived 标记不一致、已被改正的作品。 */
+  flagsFixed: string[];
+}
+
+/**
+ * 深度扫描：拿磁盘目录与 novels-yes.json 对账，并就地修复。
+ *
+ * 失联是怎么发生的：早期版本的删除 / 归档只动清单或只动 work.json，
+ * 两侧一旦不同步这部作品就"两头不靠"。目录扫描的兜底只救得了显示，
+ * 救不了排序与归档分区，作品会一直漂在一个谁也没维护的位置上。
+ * （本轮修的两个 bug 正是这类不同步的现症。）
+ *
+ * 为什么需要扫描而不是自动修复：清单失联时无法判断"这部作品本该在
+ * order 还是 archived"，自动猜会把用户的归档作品弹回常规列表。
+ * 所以先只报告、把孤儿作品补进 order（常规态，最保守的一侧），
+ * 其余矛盾（孤儿作品的归档语义、指向空目录的条目）交给用户判断。
+ *
+ * 分区与标记的不一致则可以安全自动修：清单是唯一权威，改 work.json
+ * 只是让它跟上，而不是反过来推断意图。
+ */
+export async function scanAndRepair(root: string): Promise<ScanReport> {
+  const fs2 = createFs(root);
+  const ws = await loadWorkspace(root);
+  const report: ScanReport = { orphans: [], missing: [], flagsFixed: [] };
+
+  const dirNames = (await fs2.exists(WORKS_DIR)) ? await fs2.readDir(WORKS_DIR) : [];
+  /* works/ 下只有作品目录；混入文件时 loadWork 会失败，跳过即可。 */
+  const onDisk = new Set<string>();
+  for (const name of dirNames) {
+    try {
+      const work = await loadWork(root, name);
+      onDisk.add(name);
+      if (!ws.order.includes(name) && !ws.archived.includes(name)) {
+        report.orphans.push({ id: name, title: work.title, updatedAt: work.updatedAt });
+      }
+    } catch {
+      /* 非作品目录或元数据损坏，不认领。 */
+    }
+  }
+
+  for (const id of [...ws.order, ...ws.archived]) {
+    if (!onDisk.has(id)) report.missing.push({ id });
+  }
+
+  /* 孤儿补进常规列表末尾；顺序无从考证，追加是最不引入意外的做法。 */
+  const order = [...ws.order, ...report.orphans.map((o) => o.id)];
+
+  /*
+   * 归档标记对账：清单里在哪一分区，work.json 就该是什么值。
+   * 只改 work.json，不动分区——分区是意图，标记是派生值。
+   */
+  for (const [id, archived] of [
+    ...ws.order.map((id) => [id, false] as const),
+    ...ws.archived.map((id) => [id, true] as const),
+    ...report.orphans.map((o) => [o.id, false] as const),
+  ]) {
+    try {
+      const work = await loadWork(root, id);
+      if (work.archived === archived) continue;
+      await saveWork(root, { ...work, archived });
+      report.flagsFixed.push(id);
+    } catch {
+      /* 元数据不可读的条目跳过，不为它中断整次扫描。 */
+    }
+  }
+
+  /* 指向空目录的条目留着：可能是作品拷到别处了，静默摘除等于替用户删除。 */
+  const next = workspaceSchema.parse({ ...ws, order });
+  await saveWorkspace(root, next);
+  log.info("workspace scan done", {
+    orphans: report.orphans.length,
+    missing: report.missing.length,
+    flagsFixed: report.flagsFixed.length,
+  });
+  return report;
 }
 
 /**
