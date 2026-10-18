@@ -9,7 +9,6 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { createFs } from "./fs";
 import { workspaceFile, workMetaFile, workDir } from "./paths";
-import { moveToTrash } from "./trash";
 import { workspaceSchema, type Workspace, workSchema, type Work } from "@/shared/schema";
 import { createLogger } from "@/lib/logger";
 
@@ -121,34 +120,5 @@ export async function unarchiveWork(root: string, ws: Workspace, workId: string)
     archived: ws.archived.filter((id) => id !== workId),
   });
   await saveWorkspace(root, next);
-  return next;
-}
-
-/**
- * 删除作品：整部目录移入回收站，清单同步摘除。
- *
- * 走回收站而非直接删目录：一部作品可能是几百章正文，
- * "误点了删除"不该等同于永久丢失——卷与章的删除已经这样处理，
- * 作品是它们的父级，标准必须一致。
- */
-export async function deleteWork(
-  root: string,
-  ws: Workspace,
-  workId: string,
-  title: string
-): Promise<Workspace> {
-  await moveToTrash(root, {
-    kind: "work",
-    originId: workId,
-    paths: [workDir(workId)],
-    title,
-  });
-  const next = workspaceSchema.parse({
-    ...ws,
-    order: ws.order.filter((id) => id !== workId),
-    archived: ws.archived.filter((id) => id !== workId),
-  });
-  await saveWorkspace(root, next);
-  log.info("work moved to trash", { workId });
   return next;
 }

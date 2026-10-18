@@ -1,12 +1,4 @@
-import {
-  Archive,
-  ArchiveRestore,
-  BookOpen,
-  MoreHorizontal,
-  Pencil,
-  Tag,
-  Trash2,
-} from "lucide-react";
+import { Archive, ArchiveRestore, BookOpen, MoreHorizontal, Pencil } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -25,10 +17,8 @@ export interface WorkCardProps {
   isCurrent: boolean;
   onOpen: (workId: string) => void;
   onRename: (workId: string) => void;
-  onAlias: (workId: string) => void;
   onArchive: (workId: string) => void;
   onUnarchive: (workId: string) => void;
-  onDelete: (workId: string) => void;
 }
 
 /** 把毫秒时间戳格式化为本地日期 YYYY-MM-DD。 */
@@ -52,10 +42,8 @@ export default function WorkCard({
   isCurrent,
   onOpen,
   onRename,
-  onAlias,
   onArchive,
   onUnarchive,
-  onDelete,
 }: WorkCardProps) {
   const { t } = useI18n();
 
@@ -68,11 +56,6 @@ export default function WorkCard({
       >
         <div className="flex w-full items-center gap-2">
           <span className="truncate text-sm font-medium">{work.title}</span>
-          {work.alias ? (
-            <span className="shrink-0 truncate text-xs text-muted-foreground/70">
-              {work.alias}
-            </span>
-          ) : null}
           {work.archived ? (
             <span className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground">
               {t("Library.card.archivedBadge")}
@@ -127,10 +110,6 @@ export default function WorkCard({
               <Pencil className="icon-sm" />
               {t("Library.action.rename")}
             </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => onAlias(work.id)}>
-              <Tag className="icon-sm" />
-              {t("Library.action.alias")}
-            </DropdownMenuItem>
             {work.archived ? (
               <DropdownMenuItem onSelect={() => onUnarchive(work.id)}>
                 <ArchiveRestore className="icon-sm" />
@@ -142,17 +121,6 @@ export default function WorkCard({
                 {t("Library.action.archive")}
               </DropdownMenuItem>
             )}
-            {/*
-             * 删除放最后并用 destructive 着色：与归档相邻容易被误点，
-             * 而两者后果差一个量级——归档可一键恢复，删除要进回收站。
-             */}
-            <DropdownMenuItem
-              className="text-destructive focus:text-destructive"
-              onSelect={() => onDelete(work.id)}
-            >
-              <Trash2 className="icon-sm" />
-              {t("Library.action.delete")}
-            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

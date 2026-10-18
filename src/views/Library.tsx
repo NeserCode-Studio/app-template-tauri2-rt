@@ -1,15 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import {
-  BookMarked,
-  Database,
-  FileUp,
-  FolderOpen,
-  Plus,
-  Trash2,
-} from "lucide-react";
+import { BookMarked, Database, FolderOpen, Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
-/* 别名：避免与 useWorkspace() 的 open（打开工作区）混淆。 */
-import { open as openFileDialog } from "@tauri-apps/plugin-dialog";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -48,8 +39,6 @@ const log = createLogger("Library");
 type DialogMode =
   | { kind: "create" }
   | { kind: "rename"; workId: string }
-  | { kind: "alias"; workId: string }
-  | { kind: "import"; path: string; suggestedTitle: string }
   | null;
 
 export default function Library() {
@@ -63,22 +52,15 @@ export default function Library() {
     currentWorkId,
     create,
     rename,
-    setAlias,
     archive,
     unarchive,
-    remove,
-    importFromFile,
     setCurrentWorkId,
   } = useLibrary();
 
   const [dialog, setDialog] = useState<DialogMode>(null);
   const [name, setName] = useState("");
   const [type, setType] = useState("");
-  /** 导入时的卷名 / 章节名：外部 txt 是扁平文本，骨架名让用户自己定。 */
-  const [volumeName, setVolumeName] = useState("");
-  const [chapterName, setChapterName] = useState("");
   const [pendingArchive, setPendingArchive] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [wordCounts, setWordCounts] = useState<Record<string, number>>({});
   const [trashOpen, setTrashOpen] = useState(false);
 
@@ -135,41 +117,20 @@ export default function Library() {
   async function submitDialog() {
     if (!dialog) return;
     const title = name.trim();
+    if (!title) return;
     try {
       if (dialog.kind === "create") {
-        if (!title) return;
         const created = await create(title, type.trim());
         if (!created) {
           toast.error("Library.toast.failed");
           return;
         }
         toast.success("Library.toast.created");
-      } else if (dialog.kind === "rename") {
-        if (!title) return;
+      } else {
         await rename(dialog.workId, title);
         toast.success("Library.toast.renamed");
-      } else if (dialog.kind === "alias") {
-        /* 别名允许清空：这就是"去掉这个代号"的意思。 */
-        await setAlias(dialog.workId, name);
-        toast.success("Library.toast.aliased");
-      } else if (dialog.kind === "import") {
-        if (!title) return;
-        const created = await importFromFile(dialog.path, {
-          title,
-          volumeTitle: volumeName.trim() || t("Library.dialog.importVolumeDefault"),
-          chapterTitle: chapterName.trim() || t("Library.dialog.importChapterDefault"),
-        });
-        if (!created) {
-          toast.error("Library.toast.failed");
-          return;
-        }
-        toast.success("Library.toast.imported");
-        await loadWordCounts();
-        void navigate("/editor");
       }
       setDialog(null);
-      setVolumeName("");
-      setChapterName("");
     } catch (err) {
       log.error("dialog submit failed", err);
       toast.error("Library.toast.failed");
@@ -189,50 +150,6 @@ export default function Library() {
     setName(w?.title ?? "");
     setType(w?.type ?? "");
     setDialog({ kind: "rename", workId });
-  }
-
-  /** 打开别名对话框。 */
-  function openAlias(workId: string) {
-    setName(works[workId]?.alias ?? "");
-    setType("");
-    setDialog({ kind: "alias", workId });
-  }
-
-  /**
-   * 选一个本地 txt 导入成新作品。
-   *
-   * 先让用户挑文件、再问作品名与骨架名，而不是选完直接落盘：
-   * 文件名只当默认值，真正要写进 work.json 的是用户确认过的标题。
-   */
-  async function openLocalFile() {
-    try {
-      const selected = await openFileDialog({
-        directory: false,
-        multiple: false,
-        title: t("Library.action.openFile"),
-        filters: [{ name: "Text", extensions: ["txt", "md", "text"] }],
-      });
-      if (Array.isArray(selected)) {
-        if (!selected[0]) return;
-        return openImportFor(selected[0]);
-      }
-      if (selected) return openImportFor(selected);
-      return undefined;
-    } catch (err) {
-      log.error("file picker failed", err);
-      toast.error("Library.toast.failed");
-      return undefined;
-    }
-  }
-
-  function openImportFor(path: string) {
-    const base = path.split(/[\\/]/).pop() ?? path;
-    /* 去掉扩展名，别把 "第三卷.txt" 整个当标题。 */
-    const suggested = base.replace(/\.[^.]+$/, "") || t("Library.dialog.namePlaceholder");
-    setName(suggested);
-    setVolumeName("");
-    setChapterName("");
-    setDialog({ kind: "import", path, suggestedTitle: suggested });
   }
 
   /* ---------- 未选择工作区：引导选择 ---------- */
@@ -313,17 +230,6 @@ export default function Library() {
             <Trash2 className="icon-md" />
             {t("Trash.title")}
           </Button>
-          {/*
-           * 导入本地文稿。
-           *
-           * 与"新建作品"并列而不是藏进作品卡菜单：这是作品库里
-           * 唯一一个能凭空增加内容的入口，用户手上已有稿子时
-           * 第一反应就是找它，埋进二级菜单等于没有。
-           */}
-          <Button variant="outline" size="sm" onClick={() => void openLocalFile()}>
-            <FileUp className="icon-md" />
-            {t("Library.action.openFile")}
-          </Button>
           <Button size="sm" onClick={openCreate}>
             <Plus className="icon-md" />
             {t("Library.action.new")}
@@ -345,9 +251,7 @@ export default function Library() {
                   void navigate("/editor");
                 }}
                 onRename={openRename}
-                onAlias={openAlias}
                 onArchive={setPendingArchive}
-                onDelete={setPendingDelete}
                 onUnarchive={(id) => {
                   void unarchive(id)
                     .then(() => toast.success("Library.toast.unarchived"))
@@ -380,9 +284,7 @@ export default function Library() {
                 isCurrent={false}
                 onOpen={() => undefined}
                 onRename={openRename}
-                onAlias={openAlias}
                 onArchive={setPendingArchive}
-                onDelete={setPendingDelete}
                 onUnarchive={(id) => {
                   void unarchive(id)
                     .then(() => toast.success("Library.toast.unarchived"))
@@ -406,11 +308,7 @@ export default function Library() {
             <DialogTitle>
               {dialog?.kind === "rename"
                 ? t("Library.dialog.renameTitle")
-                : dialog?.kind === "alias"
-                  ? t("Library.dialog.aliasTitle")
-                  : dialog?.kind === "import"
-                    ? t("Library.dialog.importTitle")
-                    : t("Library.dialog.newTitle")}
+                : t("Library.dialog.newTitle")}
             </DialogTitle>
           </DialogHeader>
 
@@ -442,29 +340,6 @@ export default function Library() {
                 />
               </div>
             ) : null}
-
-            {dialog?.kind === "import" ? (
-              <>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="import-volume">{t("Library.dialog.importVolume")}</Label>
-                  <Input
-                    id="import-volume"
-                    value={volumeName}
-                    placeholder={t("Library.dialog.importVolumeDefault")}
-                    onChange={(e) => setVolumeName(e.target.value)}
-                  />
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label htmlFor="import-chapter">{t("Library.dialog.importChapter")}</Label>
-                  <Input
-                    id="import-chapter"
-                    value={chapterName}
-                    placeholder={t("Library.dialog.importChapterDefault")}
-                    onChange={(e) => setChapterName(e.target.value)}
-                  />
-                </div>
-              </>
-            ) : null}
           </div>
 
           <DialogFooter>
@@ -472,11 +347,7 @@ export default function Library() {
               {t("Library.dialog.cancel")}
             </Button>
             <Button onClick={() => void submitDialog()} disabled={!name.trim()}>
-              {dialog?.kind === "create"
-                ? t("Library.dialog.create")
-                : dialog?.kind === "import"
-                  ? t("Library.dialog.importButton")
-                  : t("Library.dialog.save")}
+              {dialog?.kind === "rename" ? t("Library.dialog.save") : t("Library.dialog.create")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -514,36 +385,6 @@ export default function Library() {
               }}
             >
               {t("Library.action.archive")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <AlertDialog
-        open={pendingDelete !== null}
-        onOpenChange={(openState) => {
-          if (!openState) setPendingDelete(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("Library.action.confirmDelete")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("Library.action.deleteDesc")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("Library.dialog.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={() => {
-                if (!pendingDelete) return;
-                const id = pendingDelete;
-                setPendingDelete(null);
-                void remove(id)
-                  .then(() => toast.success("Library.toast.deleted"))
-                  .catch(() => toast.error("Library.toast.failed"));
-              }}
-            >
-              {t("Library.action.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
