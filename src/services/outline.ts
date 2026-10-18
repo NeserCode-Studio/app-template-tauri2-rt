@@ -165,7 +165,7 @@ export async function moveNode(
   }
 
   const sourceParentId = node.parentId;
-  log.info("[moveNode] enter", {
+  log.debug("[moveNode] enter", {
     nodeId,
     sourceParentId,
     targetParentId,
@@ -193,7 +193,7 @@ export async function moveNode(
      */
     const [renumbered] = persistSideOrders([siblings]);
     const result = await persistOrder(root, workId, outline, renumbered);
-    log.info("[moveNode] same-parent done", {
+    log.debug("[moveNode] same-parent done", {
       nodeId,
       result: result.nodes
         .filter((n) => n.parentId === sourceParentId)
@@ -237,7 +237,7 @@ async function persistOrder(
     nodes: outline.nodes.map((n) => patches.get(n.id) ?? n),
   };
   await saveOutline(root, workId, next);
-  log.info("[persistOrder] written", {
+  log.debug("[persistOrder] written", {
     workId,
     touched: patches.size,
     ids: [...patches.keys()].map((id) => id.slice(0, 4)),

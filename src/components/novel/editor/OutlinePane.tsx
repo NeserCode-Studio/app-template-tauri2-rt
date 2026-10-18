@@ -387,7 +387,7 @@ export default function OutlinePane({
     const activeEl = nodeEls.current.get(String(e.active.id).slice(NODE_PREFIX.length));
     const activeRect = activeEl ? activeEl.getBoundingClientRect() : null;
     if (activeRect) layoutAtStart.current = { activeRect, centers };
-    log.info("[outline-dnd] start", {
+    log.debug("[outline-dnd] start", {
       active: String(e.active.id),
       registered: nodeEls.current.size,
     });
@@ -413,7 +413,7 @@ export default function OutlinePane({
   function handleDragEnd(e: DragEndEvent) {
     const active = String(e.active.id);
     const over = e.over ? String(e.over.id) : null;
-    log.info("[outline-dnd] end", { active, over });
+    log.debug("[outline-dnd] end", { active, over });
     setActiveId(null);
     setOverId(null);
     if (!over) {
@@ -453,13 +453,11 @@ export default function OutlinePane({
       return;
     }
     const centers: number[] = [];
-    const centersLog: { id: string; title: string; center: number }[] = [];
     for (const n of chaptersByVolume.get(targetParentId) ?? []) {
       if (n.id === nodeId) continue;
       const center = snap?.centers.get(n.id);
       if (center === undefined) continue;
       centers.push(center);
-      centersLog.push({ id: n.id.slice(0, 4), title: n.title, center: Math.round(center) });
     }
     const base = snap
       ? snap.activeRect.top + snap.activeRect.height / 2
@@ -468,14 +466,13 @@ export default function OutlinePane({
     const index = computeIndexByPosition(centers, draggedCenter);
     const siblings = chaptersByVolume.get(targetParentId) ?? [];
     const without = siblings.filter((n) => n.id !== nodeId);
-    log.info("[outline-dnd] computed", {
+    log.debug("[outline-dnd] computed", {
       nodeId,
       targetParentId,
       deltaY: Math.round(e.delta.y),
       draggedCenter: Math.round(draggedCenter),
-      centers: centersLog,
+      centers: centers.map((c) => Math.round(c)),
       index,
-      before: siblings.map((n) => `${n.title}(${n.id.slice(0, 4)})`),
     });
     /* 落回原位就不写盘，避免无意义的 outline 落盘与全树刷新。 */
     if (index < 0 || index > without.length) {
@@ -490,7 +487,7 @@ export default function OutlinePane({
       log.warn("[outline-dnd] abort: order unchanged", { index });
       return;
     }
-    log.info("[outline-dnd] committing move", { nodeId, targetParentId, index });
+    log.debug("[outline-dnd] committing move", { nodeId, targetParentId, index });
     void onMoveNode(nodeId, targetParentId, index);
     layoutAtStart.current = null;
   }
