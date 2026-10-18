@@ -166,6 +166,14 @@ export type Stats = z.infer<typeof statsSchema>;
 /** 工作区清单：作品顺序与归档状态。 */
 export const workspaceSchema = z.object({
   version: z.number().int().default(1),
+  /**
+   * 工作区别名。
+   *
+   * 目录名常是随手起的（"wirting"、"新建文件夹"），而用户心里
+   * 这个库有个正式称呼。改名要动磁盘路径、波及所有作品目录，
+   * 所以名字与路径分开：路径是地址，alias 是这个地址的显示名。
+   */
+  alias: z.string().default(""),
   /** 作品 id 顺序。 */
   order: z.array(idSchema),
   /** 归档作品 id（不参与常规显示，但保留可恢复）。 */

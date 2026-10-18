@@ -47,6 +47,7 @@
     "core:resources:allow-close",
     "dialog:default",
     "dialog:allow-open",
+    "opener:allow-reveal-item-in-dir",
     "fs:default",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",

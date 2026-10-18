@@ -7,6 +7,7 @@
  */
 
 import { open } from "@tauri-apps/plugin-dialog";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { createFs } from "./fs";
 import { workspaceFile, workMetaFile, workDir } from "./paths";
 import { workspaceSchema, type Workspace, workSchema, type Work } from "@/shared/schema";
@@ -16,7 +17,7 @@ const log = createLogger("WorkspaceService");
 
 /** 默认工作区清单。 */
 export function emptyWorkspace(): Workspace {
-  return { version: 1, order: [], archived: [] };
+  return { version: 1, alias: "", order: [], archived: [] };
 }
 
 /** 弹出目录选择框，返回用户选定的绝对路径或 null。 */
@@ -28,6 +29,16 @@ export async function pickWorkspaceDir(): Promise<string | null> {
   });
   if (Array.isArray(selected)) return selected[0] ?? null;
   return selected;
+}
+
+/**
+ * 在系统文件管理器里打开工作区目录。
+ *
+ * 用 `revealItemInDir` 而不是 openUrl：前者会把资源管理器定位到该目录，
+ * 后者按 URL 语义处理，本地路径在各平台行为不一致。
+ */
+export async function revealWorkspaceDir(root: string): Promise<void> {
+  await revealItemInDir(root);
 }
 
 /** 读取工作区清单；若文件不存在或解析失败则回退到空清单并写入。 */

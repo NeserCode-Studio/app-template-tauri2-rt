@@ -20,6 +20,8 @@ export interface WorkspaceContextValue {
   close: () => void;
   /** 弹出目录选择框并打开；用户取消返回 null。 */
   pick: () => Promise<string | null>;
+  /** 在系统文件管理器中打开工作区目录。 */
+  reveal: () => Promise<void>;
 }
 
 export const WorkspaceContext = createContext<WorkspaceContextValue>({
@@ -29,6 +31,7 @@ export const WorkspaceContext = createContext<WorkspaceContextValue>({
   open: () => {},
   close: () => {},
   pick: async () => null,
+  reveal: async () => {},
 });
 
 export function useWorkspace(): WorkspaceContextValue {

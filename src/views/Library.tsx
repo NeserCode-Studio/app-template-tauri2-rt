@@ -1,5 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookMarked, Database, FolderOpen, Plus, Trash2 } from "lucide-react";
+import {
+  BookMarked,
+  Database,
+  Folder,
+  FolderOpen,
+  Plus,
+  Settings2,
+  Trash2,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -45,7 +53,7 @@ export default function Library() {
   const { t } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
-  const { root, recent, isOpen, pick, open } = useWorkspace();
+  const { root, recent, isOpen, pick, open, reveal } = useWorkspace();
   const {
     workspace,
     works,
@@ -54,6 +62,7 @@ export default function Library() {
     rename,
     archive,
     unarchive,
+    setWorkspaceAlias,
     setCurrentWorkId,
   } = useLibrary();
 
@@ -61,6 +70,8 @@ export default function Library() {
   const [name, setName] = useState("");
   const [type, setType] = useState("");
   const [pendingArchive, setPendingArchive] = useState<string | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [aliasName, setAliasName] = useState("");
   const [wordCounts, setWordCounts] = useState<Record<string, number>>({});
   const [trashOpen, setTrashOpen] = useState(false);
 
@@ -205,30 +216,44 @@ export default function Library() {
     <div className="px-6 py-8">
       <header className="mx-auto flex w-full max-w-3xl flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-xl font-semibold">{t("Library.title")}</h1>
+          {/*
+           * 标题优先用工作区别名。目录名常是随手起的（"wirting"、
+           * "新建文件夹"），而用户心里这个库有个正式称呼；别名留空时
+           * 退回通用标题，不拿路径当标题——一整条盘符路径当 H1 太吵。
+           */}
+          <h1 className="text-xl font-semibold">
+            {workspace?.alias?.trim() || t("Library.title")}
+          </h1>
           <p className="mt-1 text-sm text-muted-foreground">
             <button
               type="button"
-              onClick={() => void pick()}
-              className="underline-offset-2 hover:underline"
+              onClick={() => void reveal()}
+              title={t("Library.workspace.openDir")}
+              className="flex items-center gap-1 underline-offset-2 hover:underline"
             >
+              <Folder className="icon-sm shrink-0" />
               {root}
             </button>
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={() => void pick()}>
-            <FolderOpen className="icon-md" />
-            {t("Library.workspace.change")}
+          {/*
+           * 操作区只留三个：设置、素材库、新建作品。
+           *
+           * "更换工作区"收进设置——它是低频动作，且换工作区意味着
+           * 离开当前上下文（当前作品、草稿都在里面），不该和"新建作品"
+           * 并列成同级按钮，那会让人误以为随时可以无损切换。
+           * "回收站"也并入设置：删除是低频动作，而回收站本身是一个
+           * 需要浏览的地方，不适合挤在标题栏当按钮。
+           */}
+          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+            <Settings2 className="icon-md" />
+            {t("Library.action.workspaceSettings")}
           </Button>
           {/* 素材库属于工作区，不是某一部作品，所以入口在作品库这一层。 */}
           <Button variant="outline" size="sm" onClick={() => navigate("/codex")}>
             <Database className="icon-md" />
             {t("Codex.library.title")}
-          </Button>
-          <Button variant="ghost" size="sm" onClick={() => setTrashOpen(true)}>
-            <Trash2 className="icon-md" />
-            {t("Trash.title")}
           </Button>
           <Button size="sm" onClick={openCreate}>
             <Plus className="icon-md" />
@@ -360,6 +385,78 @@ export default function Library() {
         onOpenChange={setTrashOpen}
         onRestored={() => void loadWordCounts()}
       />
+
+      {/*
+       * 工作区设置。
+       *
+       * 收纳三件低频但必要的事：给库起个显示名、换个存放目录、
+       * 打开回收站。原先它们与"新建作品"并排在标题栏，
+       * 其中"更换工作区"会离开当前上下文，和主路径同级不合适。
+       */}
+      <Dialog
+        open={settingsOpen}
+        onOpenChange={(openState) => {
+          setSettingsOpen(openState);
+          /* 每次打开时重置，避免显示上次没提交完的输入。 */
+          if (openState) setAliasName(workspace?.alias ?? "");
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("Library.workspace.settings")}</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-2">
+              <Label htmlFor="workspace-alias">{t("Library.workspace.aliasLabel")}</Label>
+              <Input
+                id="workspace-alias"
+                value={aliasName}
+                placeholder={t("Library.workspace.aliasPlaceholder")}
+                onChange={(e) => setAliasName(e.target.value)}
+              />
+            </div>
+
+            <div className="flex flex-col gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSettingsOpen(false);
+                  void pick();
+                }}
+              >
+                <FolderOpen className="icon-md" />
+                {t("Library.workspace.change")}
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setSettingsOpen(false);
+                  setTrashOpen(true);
+                }}
+              >
+                <Trash2 className="icon-md" />
+                {t("Trash.title")}
+              </Button>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setSettingsOpen(false)}>
+              {t("Library.dialog.cancel")}
+            </Button>
+            <Button
+              onClick={() => {
+                void setWorkspaceAlias(aliasName)
+                  .catch(() => toast.error("Library.toast.failed"));
+                setSettingsOpen(false);
+              }}
+            >
+              {t("Library.dialog.save")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <AlertDialog
         open={pendingArchive !== null}

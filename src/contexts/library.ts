@@ -19,6 +19,8 @@ export interface LibraryContextValue {
   setCurrentWorkId: (id: string | null) => void;
   /** 从磁盘重新装载清单与作品元数据。 */
   refresh: () => Promise<void>;
+  /** 设置工作区别名（留空即清除）。 */
+  setWorkspaceAlias: (alias: string) => Promise<void>;
   /** 新建作品并设为当前作品。 */
   create: (title: string, type: string) => Promise<Work | null>;
   /** 重命名作品。 */
@@ -37,6 +39,7 @@ export const LibraryContext = createContext<LibraryContextValue>({
   setWorks: () => {},
   setCurrentWorkId: () => {},
   refresh: async () => {},
+  setWorkspaceAlias: async () => {},
   create: async () => null,
   rename: async () => {},
   archive: async () => {},

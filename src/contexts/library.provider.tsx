@@ -13,11 +13,13 @@ import {
   loadWorkspace,
   loadWork,
   saveWork,
+  saveWorkspace,
   createWork,
   archiveWork,
   unarchiveWork,
 } from "@/services/workspace";
 import type { Work, Workspace } from "@/shared/schema";
+import { workspaceSchema } from "@/shared/schema";
 import { WORKS_DIR } from "@/services/paths";
 import { createFs } from "@/services/fs";
 
@@ -86,6 +88,23 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     setWorkspace(ws);
     setWorks(list);
   }, [root]);
+
+  /**
+   * 设置工作区别名。
+   *
+   * 别名只写进 novels-yes.json，不动磁盘上的目录名：改目录名会波及
+   * 该路径下的全部文件，而用户想改的往往只是显示名。
+   */
+  const setWorkspaceAlias = useCallback(
+    async (alias: string) => {
+      if (!root) return;
+      const base = workspace ?? (await loadWorkspace(root));
+      const next = workspaceSchema.parse({ ...base, alias: alias.trim() });
+      await saveWorkspace(root, next);
+      setWorkspace(next);
+    },
+    [root, workspace]
+  );
 
   const create = useCallback(
     async (title: string, type: string): Promise<Work | null> => {
@@ -156,12 +175,23 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       setWorks,
       setCurrentWorkId,
       refresh,
+      setWorkspaceAlias,
       create,
       rename,
       archive,
       unarchive,
     }),
-    [workspace, currentWorkId, works, refresh, create, rename, archive, unarchive]
+    [
+      workspace,
+      currentWorkId,
+      works,
+      refresh,
+      setWorkspaceAlias,
+      create,
+      rename,
+      archive,
+      unarchive,
+    ]
   );
 
   return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
