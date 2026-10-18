@@ -211,17 +211,17 @@ export default function ChapterEditor({
     const nextDraft = readDraft(workId, chapterId);
     draftRef.current = nextDraft;
     setDraftState(nextDraft);
-    /*
-     * 草稿按章存在 localStorage 里，切章不动它——
-     * 切回来时还要接着写。这也是 localStorage 相对组件 state 的唯一理由。
-     */
     historyRef.current = new CommandHistory<Card[]>(initialCards);
-    composerRef.current?.clear();
     /*
-     * 切到已有章节后直接进入可写作状态：把焦点交给底部输入框，
-     * 用户不必先去点某张卡片才能落笔。
+     * 把这一章自己的草稿灌回输入框。切回来要能接着写，
+     * 这是草稿存 localStorage（而非组件 state）的唯一理由。
+     * 顺带进入可写作状态：不必先去点某张卡片才能落笔。
      */
-    requestAnimationFrame(() => composerRef.current?.focus("end"));
+    requestAnimationFrame(() => {
+      composerRef.current?.clear();
+      if (nextDraft) composerRef.current?.load(nextDraft, "end", true);
+      composerRef.current?.focus("end");
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterId]);
 
@@ -630,6 +630,12 @@ export default function ChapterEditor({
    * 卡片直接丢掉——用户看到的是"已保存"，退出再进来却空章。
  */
   useEffect(() => {
+    /*
+     * 卸载时的数据可能已经被 React 拆掉（ref 置空、DOM 卸载）。
+     * 因此这里先把输入框的值读出来存进闭包，cleanup 里再用——
+     * 直接在 cleanup 里读 composerRef.current，可能拿到 null 而静默丢稿。
+     */
+    const composer = composerRef.current;
     return () => {
       if (saveTimer.current !== null) {
         window.clearTimeout(saveTimer.current);
@@ -637,7 +643,26 @@ export default function ChapterEditor({
       }
       const cards = pendingCards.current;
       if (cards) void persistNow(cards);
+      /*
+       * 输入框里的半成品同样要在这里存成草稿。
+       *
+       * 父级用 `key={chapter.id}` 渲染本组件，所以**切章走的是卸载，
+       * 不是 chapterId effect**——之前只在 effect 里补草稿的话根本不会触发。
+       * 卸载是"任何原因离开这一章"的唯一汇合点：切章、回作品库、关窗口，
+       * 三条路径都在这里收口。
+       */
+      const typed = composer?.read().trim() ?? "";
+      if (typed) {
+        writeDraft({
+          text: typed,
+          workId,
+          chapterId,
+          chapterTitle: chapter.title,
+        });
+      }
     };
+    // chapterId / workId / chapter.title 在卸载时读取，均为本章的稳定值。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [persistNow]);
 
   return (
