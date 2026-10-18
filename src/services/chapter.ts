@@ -143,4 +143,48 @@ export async function countWorkWords(root: string, workId: string): Promise<numb
   return total;
 }
 
+/**
+ * 批量读取章的轻量元信息：标题、更新时间、字数。
+ *
+ * 结构树里只有节点的 updatedAt（结构操作时更新），不反映正文何时写过；
+ * 侧栏卡片要显示"最近更新时间"和字数，只能从章文件取。这里一次性读完，
+ * 换来的是列表渲染时零 IO。
+ */
+export async function loadChapterMetas(
+  root: string,
+  workId: string
+): Promise<Record<string, ChapterMeta>> {
+  const fs2 = createFs(root);
+  const out: Record<string, ChapterMeta> = {};
+  let files: string[];
+  try {
+    files = await fs2.readDir(joinRel("works", workId, "chapters"));
+  } catch {
+    return out;
+  }
+  for (const name of files) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      const parsed = chapterSchema.safeParse(
+        JSON.parse(await fs2.readText(joinRel("works", workId, "chapters", name)))
+      );
+      if (!parsed.success) continue;
+      out[parsed.data.id] = {
+        title: parsed.data.title,
+        updatedAt: parsed.data.updatedAt,
+        words: chapterWords(parsed.data),
+      };
+    } catch (err) {
+      log.warn("chapter meta: unreadable", name, err);
+    }
+  }
+  return out;
+}
+
+export interface ChapterMeta {
+  title: string;
+  updatedAt: number;
+  words: number;
+}
+
 /** 仅取 id 的小工具（避免上面把参数名写错）。 */

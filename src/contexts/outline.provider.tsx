@@ -5,8 +5,10 @@ import { OutlineContext, type OutlineContextValue } from "./outline";
 import { useWorkspace } from "./workspace";
 import { useLibrary } from "./library";
 import { loadOutline, reconcileChapterIds, saveOutline } from "@/services/outline";
+import { loadChapterMetas } from "@/services/chapter";
 import { createLogger } from "@/lib/logger";
 import type { OutlineNode } from "@/shared/schema";
+import type { ChapterMeta } from "@/services/chapter";
 
 const log = createLogger("OutlineProvider");
 
@@ -18,6 +20,7 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
 
   const [outline, setOutline] = useState<{ nodes: OutlineNode[] }>({ nodes: [] });
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
+  const [chapterMetas, setChapterMetas] = useState<Record<string, ChapterMeta>>({});
   const [lastByWork, setLastByWork] = useLocalStorageState<Record<string, string>>(
     LAST_CHAPTER_KEY,
     { defaultValue: {} }
@@ -63,6 +66,15 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
     setOutline(await loadOutline(root, currentWorkId));
   }, [root, currentWorkId]);
 
+  /** 章元信息（字数 / 正文更新时间）：切作品时读一次，保存后再刷新。 */
+  const reloadChapterMetas = useCallback(async () => {
+    if (!root || !currentWorkId) {
+      setChapterMetas({});
+      return;
+    }
+    setChapterMetas(await loadChapterMetas(root, currentWorkId));
+  }, [root, currentWorkId]);
+
   /** 便捷方法：把变更后的树写盘（Context 只暴露命令，不暴露 setOutline 直接落盘）。 */
   const persist = useCallback(
     async (next: { nodes: OutlineNode[] }) => {
@@ -88,17 +100,37 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
     [outline]
   );
 
+  const metasKey = useMemo(
+    () => chapters.map((c) => c.id).join(","),
+    [chapters]
+  );
+  useEffect(() => {
+    void reloadChapterMetas();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [root, currentWorkId, metasKey]);
+
   const value = useMemo<OutlineContextValue>(
     () => ({
       outline,
       currentChapterId,
       chapters,
       volumes,
+      chapterMetas,
       setOutline: persist,
       setCurrentChapterId,
       reload,
+      reloadChapterMetas,
     }),
-    [outline, currentChapterId, chapters, volumes, persist, reload]
+    [
+      outline,
+      currentChapterId,
+      chapters,
+      volumes,
+      chapterMetas,
+      persist,
+      reload,
+      reloadChapterMetas,
+    ]
   );
 
   return <OutlineContext.Provider value={value}>{children}</OutlineContext.Provider>;

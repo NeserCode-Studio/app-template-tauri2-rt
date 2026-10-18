@@ -44,18 +44,20 @@ export default function WritingPrefs() {
   ];
 
   return (
-    <div className="flex flex-col gap-8">
-      {/* ---------- 界面外观 ---------- */}
-      <section className="flex flex-col gap-4">
-        <h3 className="row-label">{t("Prefs.ui.section")}</h3>
-
-        <div className="flex items-center justify-between gap-4">
-          <Label>{t("Prefs.ui.font")}</Label>
+    /*
+     * 排版偏好在自然顺序上就是「先字体、再尺寸、最后行为」，
+     * 因此按这三组分块，而不是按"界面 / 正文"切成两个对半的大节。
+     * 每块内部用 SettingItems 的行式布局，滑块的实时数值贴在同一行
+     * 的右侧——原先数值独占一行、控件却散在下面，读起来像三段互不相干的表单。
+     */
+    <div className="flex flex-col gap-6">
+      <PrefsGroup title={t("Prefs.ui.section")}>
+        <PrefsRow label={t("Prefs.ui.font")}>
           <Select
             value={prefs.uiFont}
             onValueChange={(v) => setPref("uiFont", v as UiFont)}
           >
-            <SelectTrigger className="w-48" dir={isZh ? "rtl" : "ltr"}>
+            <SelectTrigger className="w-44" dir={isZh ? "rtl" : "ltr"}>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -66,15 +68,9 @@ export default function WritingPrefs() {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </PrefsRow>
 
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-4">
-            <Label>{t("Prefs.ui.fontSize")}</Label>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {prefs.uiFontSize}px
-            </span>
-          </div>
+        <PrefsRow label={t("Prefs.ui.fontSize")} value={`${prefs.uiFontSize}px`}>
           <Slider
             value={[prefs.uiFontSize]}
             min={12}
@@ -82,20 +78,16 @@ export default function WritingPrefs() {
             step={1}
             onValueChange={([v]) => setPref("uiFontSize", v)}
           />
-        </div>
-      </section>
+        </PrefsRow>
+      </PrefsGroup>
 
-      {/* ---------- 正文排版 ---------- */}
-      <section className="flex flex-col gap-4">
-        <h3 className="row-label">{t("Prefs.article.section")}</h3>
-
-        <div className="flex items-center justify-between gap-4">
-          <Label>{t("Prefs.article.font")}</Label>
+      <PrefsGroup title={t("Prefs.article.section")}>
+        <PrefsRow label={t("Prefs.article.font")}>
           <Select
             value={prefs.articleFont}
             onValueChange={(v) => setPref("articleFont", v as ArticleFont)}
           >
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -106,15 +98,9 @@ export default function WritingPrefs() {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </PrefsRow>
 
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-4">
-            <Label>{t("Prefs.article.fontSize")}</Label>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {prefs.fontSize}px
-            </span>
-          </div>
+        <PrefsRow label={t("Prefs.article.fontSize")} value={`${prefs.fontSize}px`}>
           <Slider
             value={[prefs.fontSize]}
             min={14}
@@ -122,15 +108,12 @@ export default function WritingPrefs() {
             step={1}
             onValueChange={([v]) => setPref("fontSize", v)}
           />
-        </div>
+        </PrefsRow>
 
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-4">
-            <Label>{t("Prefs.article.lineHeight")}</Label>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {prefs.lineHeight.toFixed(1)}
-            </span>
-          </div>
+        <PrefsRow
+          label={t("Prefs.article.lineHeight")}
+          value={prefs.lineHeight.toFixed(1)}
+        >
           <Slider
             value={[prefs.lineHeight]}
             min={1.6}
@@ -138,15 +121,9 @@ export default function WritingPrefs() {
             step={0.1}
             onValueChange={([v]) => setPref("lineHeight", v)}
           />
-        </div>
+        </PrefsRow>
 
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center justify-between gap-4">
-            <Label>{t("Prefs.article.lineWidth")}</Label>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {prefs.lineWidth}
-            </span>
-          </div>
+        <PrefsRow label={t("Prefs.article.lineWidth")} value={`${prefs.lineWidth}`}>
           <Slider
             value={[prefs.lineWidth]}
             min={30}
@@ -154,17 +131,14 @@ export default function WritingPrefs() {
             step={1}
             onValueChange={([v]) => setPref("lineWidth", v)}
           />
-        </div>
+        </PrefsRow>
 
-        <div className="flex items-center justify-between gap-4">
-          <Label>{t("Prefs.article.indent")}</Label>
+        <PrefsRow label={t("Prefs.article.indent")}>
           <Select
             value={String(prefs.indentSpaces)}
-            onValueChange={(v) =>
-              setPref("indentSpaces", Number(v) as 0 | 2 | 4)
-            }
+            onValueChange={(v) => setPref("indentSpaces", Number(v) as 0 | 2 | 4)}
           >
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-44">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -175,28 +149,26 @@ export default function WritingPrefs() {
               ))}
             </SelectContent>
           </Select>
-        </div>
+        </PrefsRow>
 
-        <div className="flex items-center justify-between gap-4">
-          <Label>{t("Prefs.article.gap")}</Label>
+        <PrefsRow label={t("Prefs.article.gap")}>
           <Switch
             checked={prefs.paragraphGap}
             onCheckedChange={(v) => setPref("paragraphGap", v)}
           />
-        </div>
+        </PrefsRow>
 
-        <div className="flex items-center justify-between gap-4">
-          <Label>{t("Prefs.article.mentions")}</Label>
+        <PrefsRow label={t("Prefs.article.mentions")}>
           <Switch
             checked={prefs.highlightMentions}
             onCheckedChange={(v) => setPref("highlightMentions", v)}
           />
-        </div>
-      </section>
+        </PrefsRow>
+      </PrefsGroup>
 
       {/* ---------- 预览 ---------- */}
       <section className="flex flex-col gap-2">
-        <h3 className="row-label">{t("Prefs.article.section")}</h3>
+        <h3 className="row-label">{t("Prefs.article.preview")}</h3>
         <div className="article-body prose-article rounded-md border bg-muted/20 p-4">
           <p className="article-paragraph">
             他推开门，风雪扑面而来。远处的灯笼在长街尽头摇晃，像一点将灭未灭的火。
@@ -206,6 +178,46 @@ export default function WritingPrefs() {
           </p>
         </div>
       </section>
+    </div>
+  );
+}
+
+/** 一组相关偏好：标题 + 细分隔线的行列表。 */
+function PrefsGroup({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-1">
+      <h3 className="row-label mb-1">{title}</h3>
+      <div className="flex flex-col divide-y divide-border/60 rounded-md border border-border/70">
+        {children}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * 一行偏好：左侧标题，右侧控件；`value` 时把实时数值贴在标题后。
+ *
+ * 滑块默认占满整行会和上面的下拉框（定宽）左右不齐，
+ * 因此这里让两者共用同一个右侧栏宽度，扫读时是一条竖线。
+ */
+function PrefsRow({
+  label,
+  value,
+  children,
+}: {
+  label: string;
+  value?: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex min-h-11 items-center gap-4 px-3 py-2">
+      <div className="flex min-w-0 flex-1 items-baseline gap-2">
+        <Label className="text-sm">{label}</Label>
+        {value ? (
+          <span className="text-xs text-muted-foreground tabular-nums">{value}</span>
+        ) : null}
+      </div>
+      <div className="flex w-44 shrink-0 items-center justify-end">{children}</div>
     </div>
   );
 }

@@ -36,6 +36,8 @@ export interface WritingPreferences {
   uiFontSize: number;
   /** 正文中高亮素材条目的提及。 */
   highlightMentions: boolean;
+  /** 搜索是否独占 Ctrl+Shift+F（开关在命令面板里）。 */
+  searchHotkeyEnabled: boolean;
 }
 
 export const DEFAULT_PREFERENCES: WritingPreferences = {
@@ -48,6 +50,7 @@ export const DEFAULT_PREFERENCES: WritingPreferences = {
   uiFont: "system-sans",
   uiFontSize: 14,
   highlightMentions: true,
+  searchHotkeyEnabled: true,
 };
 
 export interface PreferencesContextValue {

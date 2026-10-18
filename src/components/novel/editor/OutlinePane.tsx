@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { BookOpen, ChevronRight, FileText, GripVertical, Plus, Settings2 } from "lucide-react";
 import {
   DndContext,
@@ -26,6 +26,7 @@ import { useOutline } from "@/contexts/outline";
 import type { OutlineNode } from "@/shared/schema";
 
 import NodeMetaEditor, { type NodeStatus } from "./NodeMetaEditor";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export interface OutlinePaneProps {
   /** 新建章节：创建后自动打开。 */
@@ -75,6 +76,27 @@ function parseDroppableId(id: string): DropRef | null {
   return null;
 }
 
+/**
+ * 相对时间：侧栏要的是"多久之前"，不是绝对时刻。
+ *
+ * 绝对时间在长列表里既占宽又难扫读——用户真正想知道的是
+ * "这章是刚写的还是三天前的"。
+ */
+function relativeTime(ts: number, now: number): string {
+  if (!ts) return "";
+  const sec = Math.max(0, Math.round((now - ts) / 1000));
+  if (sec < 60) return "刚刚";
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} 分钟前`;
+  const hour = Math.round(min / 60);
+  if (hour < 24) return `${hour} 小时前`;
+  const day = Math.round(hour / 24);
+  if (day < 30) return `${day} 天前`;
+  const month = Math.round(day / 30);
+  if (month < 12) return `${month} 个月前`;
+  return `${Math.round(month / 12)} 年前`;
+}
+
 /** 可拖拽的章节行。 */
 function SortableChapter({
   node,
@@ -83,6 +105,9 @@ function SortableChapter({
   onSelect,
   onEditMeta,
   editMetaLabel,
+  metaLabel,
+  wordsLabel,
+  statusLabel,
 }: {
   node: OutlineNode;
   selected: boolean;
@@ -90,6 +115,9 @@ function SortableChapter({
   onSelect: () => void;
   onEditMeta: () => void;
   editMetaLabel: string;
+  metaLabel: string;
+  wordsLabel: string;
+  statusLabel: string;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: NODE_PREFIX + node.id,
@@ -100,13 +128,15 @@ function SortableChapter({
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="group flex items-center"
+      className="group relative px-1"
     >
       <div
         className={[
-          "flex min-w-0 flex-1 cursor-grab items-center gap-2 rounded-md py-1.5 pr-1 pl-2 text-left text-sm transition-colors active:cursor-grabbing",
+          "flex min-w-0 cursor-grab flex-col gap-0.5 rounded-md border border-transparent py-1.5 pr-1.5 pl-5 text-left transition-colors active:cursor-grabbing",
           "hover:bg-accent hover:text-accent-foreground",
-          selected ? "bg-accent/60 font-medium text-accent-foreground" : "text-muted-foreground",
+          selected
+            ? "border-border bg-accent/60 text-accent-foreground"
+            : "text-muted-foreground",
           isDragging || dragging ? "opacity-40" : "",
         ].join(" ")}
         onClick={onSelect}
@@ -114,28 +144,36 @@ function SortableChapter({
         {...attributes}
         {...listeners}
       >
-        <GripVertical className="icon-sm shrink-0 text-muted-foreground/40" />
-        <FileText className="icon-sm shrink-0" />
-        <span className="truncate">{node.title}</span>
-        {/* 状态点：非草稿才标，否则整棵树都是点、看不出差别。 */}
-        {node.status !== "draft" ? (
-          <span
-            className={[
-              "size-1.5 shrink-0 rounded-full",
-              node.status === "final" ? "bg-emerald-500" : "bg-amber-500",
-            ].join(" ")}
-          />
-        ) : null}
+        <div className="flex items-center gap-1.5">
+          <span className="truncate text-sm font-medium">{node.title}</span>
+          {/* 状态点：非草稿才标，否则整棵树都是点、看不出差别。 */}
+          {node.status !== "draft" ? (
+            <span
+              className={[
+                "size-1.5 shrink-0 rounded-full",
+                node.status === "final" ? "bg-emerald-500" : "bg-amber-500",
+              ].join(" ")}
+              title={statusLabel}
+            />
+          ) : null}
+          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60 tabular-nums">
+            {wordsLabel}
+          </span>
+        </div>
         {node.synopsis ? (
-          <span className="ml-auto max-w-[40%] truncate text-xs text-muted-foreground/60">
+          <span className="line-clamp-1 text-[11px] text-muted-foreground/70">
             {node.synopsis}
           </span>
         ) : null}
+        {metaLabel ? (
+          <span className="text-[10px] text-muted-foreground/50">{metaLabel}</span>
+        ) : null}
+        <GripVertical className="absolute left-1 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground/30 opacity-0 transition-opacity group-hover:opacity-100" />
         <button
           type="button"
           aria-label={editMetaLabel}
           title={editMetaLabel}
-          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          className="absolute right-1 top-1 flex size-5 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
             onEditMeta();
@@ -188,7 +226,7 @@ export default function OutlinePane({
   onUpdateNode,
 }: OutlinePaneProps) {
   const { t } = useI18n();
-  const { chapters, volumes, currentChapterId, setCurrentChapterId } = useOutline();
+  const { chapters, volumes, chapterMetas, currentChapterId, setCurrentChapterId } = useOutline();
 
   const [addingVolume, setAddingVolume] = useState(false);
   const [volumeName, setVolumeName] = useState("");
@@ -203,6 +241,13 @@ export default function OutlinePane({
   );
   const [activeId, setActiveId] = useState<string | null>(null);
   const [overId, setOverId] = useState<string | null>(null);
+  /** 相对时间的基准：每分钟刷新一次即可，太频繁只会白白重渲染。 */
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -272,8 +317,8 @@ export default function OutlinePane({
     setOverId(null);
     if (!over) return;
 
-    const ref = parseDroppableId(over);
     const nodeId = active.slice(NODE_PREFIX.length);
+    const ref = parseDroppableId(over);
     if (!ref) return;
 
     if (ref.kind === "into") {
@@ -281,9 +326,19 @@ export default function OutlinePane({
       return;
     }
 
+    /*
+     * 同级换位的下标语义。
+     *
+     * 服务端的 targetIndex 是「取出自己之后插入的位置」，因此这里必须
+     * 先在**不含自己**的列表里数出目标的下标。原来直接用含自己的
+     * 列表下标，往下拖时会多算一位，结果永远是"原地不动"——
+     * 表现就是能拖起来但改不了顺序。
+     */
     const target = nodeById.get(ref.nodeId);
     if (!target) return;
-    const siblings = chaptersByVolume.get(target.parentId) ?? [];
+    const siblings = (chaptersByVolume.get(target.parentId) ?? []).filter(
+      (n) => n.id !== nodeId
+    );
     const index = siblings.findIndex((n) => n.id === target.id);
     void onMoveNode(nodeId, target.parentId, index);
   }
@@ -347,6 +402,17 @@ export default function OutlinePane({
                 onSelect={() => setCurrentChapterId(node.id)}
                 onEditMeta={() => openMeta(node)}
                 editMetaLabel={t("Editor.node.editMeta")}
+                statusLabel={t(`Editor.node.status.${node.status}`)}
+                wordsLabel={
+                  chapterMetas[node.id]
+                    ? `${chapterMetas[node.id].words} ${t("Editor.chapter.words")}`
+                    : ""
+                }
+                metaLabel={
+                  chapterMetas[node.id]
+                    ? relativeTime(chapterMetas[node.id].updatedAt, now)
+                    : ""
+                }
               />
             )
           )}
@@ -399,7 +465,8 @@ export default function OutlinePane({
         onDragCancel={handleDragCancel}
       >
         {/* 树体 */}
-        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        <ScrollArea className="min-h-0 flex-1">
+        <div className="px-2 pb-3">
           {/* 添加卷输入框 */}
           {addingVolume ? (
             <div className="mb-1 flex items-center gap-1 px-1">
@@ -528,6 +595,7 @@ export default function OutlinePane({
             </div>
           ) : null}
         </div>
+        </ScrollArea>
 
         <DragOverlay>
           {activeNode ? (

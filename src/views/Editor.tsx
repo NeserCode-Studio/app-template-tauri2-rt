@@ -71,7 +71,13 @@ export default function Editor() {
   const navigate = useNavigate();
   const { root } = useWorkspace();
   const { currentWorkId, works } = useLibrary();
-  const { chapters, currentChapterId, setCurrentChapterId, setOutline } = useOutline();
+  const {
+    chapters,
+    currentChapterId,
+    setCurrentChapterId,
+    setOutline,
+    reloadChapterMetas,
+  } = useOutline();
 
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [words, setWords] = useState(0);
@@ -261,8 +267,10 @@ export default function Editor() {
       const total = await countWorkWords(root, currentWorkId);
       /* delta 由服务内部按上一版作品字数求差，调用点不参与。 */
       await recordWorkWords(root, currentWorkId, total);
+      /* 侧栏卡片上的字数与"多久之前"跟着正文走。 */
+      await reloadChapterMetas();
     },
-    [root, currentWorkId]
+    [root, currentWorkId, reloadChapterMetas]
   );
 
   if (!currentWorkId || !root) return null;

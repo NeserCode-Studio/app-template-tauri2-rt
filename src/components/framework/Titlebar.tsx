@@ -109,6 +109,14 @@ export default function Titlebar() {
               {t("Titlebar.menu.edit.find")}
               <MenubarShortcut>Ctrl+K</MenubarShortcut>
             </MenubarItem>
+            <MenubarItem
+              onSelect={() =>
+                window.dispatchEvent(new CustomEvent("app:open-search"))
+              }
+            >
+              {t("Search.title")}
+              <MenubarShortcut>Ctrl+Shift+F</MenubarShortcut>
+            </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
 

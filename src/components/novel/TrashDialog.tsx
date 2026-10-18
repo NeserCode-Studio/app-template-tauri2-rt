@@ -18,6 +18,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 import { useI18n, useToast } from "@/composables";
 import { listTrash, purgeFromTrash, restoreFromTrash, type TrashItem } from "@/services/trash";
@@ -68,7 +69,8 @@ export default function TrashDialog({ open, root, onOpenChange, onRestored }: Tr
           </DialogHeader>
 
           {items.length ? (
-            <ul className="flex max-h-96 flex-col gap-1 overflow-y-auto">
+            <ScrollArea className="max-h-96">
+            <ul className="flex flex-col gap-1">
               {items.map((item) => (
                 <li
                   key={item.itemId}
@@ -103,6 +105,7 @@ export default function TrashDialog({ open, root, onOpenChange, onRestored }: Tr
                 </li>
               ))}
             </ul>
+            </ScrollArea>
           ) : (
             <p className="py-6 text-center text-sm text-muted-foreground">{t("Trash.empty")}</p>
           )}
