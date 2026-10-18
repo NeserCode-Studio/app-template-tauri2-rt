@@ -207,10 +207,19 @@ export default function ChapterEditor({
     setSaveState("saved");
     setChapterWithHistory(chapter);
     pendingCards.current = null;
-    /* 切章时按新章重新取草稿，并同步 ref。 */
+    /*
+     * 切章时按新章重新取草稿并灌回输入框。
+     *
+     * 取回后只清 state、不清 ref：这份文字现在已经在输入框里了，
+     * 若 draft state 仍非空，编辑器上方还会再渲染一张"暂存草稿"卡片，
+     * 同一段内容在界面上出现两次。约定是「草稿归位到输入框 = 不再显示暂存卡」。
+     *
+     * draftRef 仍保留该文本：紧接着点开旧卡片时，handleCardClick 要靠它
+     * 把这段扣下来再载入卡片原文。清掉 ref 就会在点卡片时丢掉它。
+     */
     const nextDraft = readDraft(workId, chapterId);
     draftRef.current = nextDraft;
-    setDraftState(nextDraft);
+    setDraftState(null);
     historyRef.current = new CommandHistory<Card[]>(initialCards);
     /*
      * 把这一章自己的草稿灌回输入框。切回来要能接着写，
