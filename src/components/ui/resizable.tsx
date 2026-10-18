@@ -101,8 +101,16 @@ function ResizableHandle({
       hitAreaMargins={{ coarse: 8, fine: 8 }}
       className={cn(
         "focus-visible:ring-ring group/resize relative flex w-px items-center justify-center after:absolute after:inset-y-0 after:left-1/2 after:w-1 after:-translate-x-1/2 focus-visible:ring-1 focus-visible:ring-offset-1 focus-visible:outline-hidden data-[panel-group-direction=vertical]:h-px data-[panel-group-direction=vertical]:w-full data-[panel-group-direction=vertical]:after:left-0 data-[panel-group-direction=vertical]:after:h-1 data-[panel-group-direction=vertical]:after:w-full data-[panel-group-direction=vertical]:after:translate-x-0 data-[panel-group-direction=vertical]:after:-translate-y-1/2 [&[data-panel-group-direction=vertical]>div]:rotate-90",
-        // 视觉线：常态透明，hover/拖动才显形，平时与面板边框融在一起。
-        "before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-border before:opacity-0 before:transition-opacity data-[panel-group-direction=vertical]:before:inset-x-0 data-[panel-group-direction=vertical]:before:top-1/2 data-[panel-group-direction=vertical]:before:left-0 data-[panel-group-direction=vertical]:before:h-px data-[panel-group-direction=vertical]:before:w-full data-[panel-group-direction=vertical]:before:-translate-y-1/2 data-[panel-group-direction=vertical]:before:translate-x-0 hover:before:opacity-100 data-[resize-handle-state=drag]:before:opacity-100",
+        /*
+         * 视觉线。
+         *
+         * 两侧面板不再各自画 border（否则会露出两条线，中间还夹着
+         * handle 宽度形成的空隙），所以这条线是界面上唯一的分隔。
+         * 它必须常驻可见，不能像之前那样"hover 才显形"——
+         * 否则面板之间就没有边界了。
+         * 常态半透明与面板边框同权重，hover/拖动时提亮，提示可拖。
+         */
+        "before:absolute before:inset-y-0 before:left-1/2 before:w-px before:-translate-x-1/2 before:bg-border before:opacity-70 before:transition-opacity data-[panel-group-direction=vertical]:before:inset-x-0 data-[panel-group-direction=vertical]:before:top-1/2 data-[panel-group-direction=vertical]:before:left-0 data-[panel-group-direction=vertical]:before:h-px data-[panel-group-direction=vertical]:before:w-full data-[panel-group-direction=vertical]:before:-translate-y-1/2 data-[panel-group-direction=vertical]:before:translate-x-0 hover:before:opacity-100 data-[resize-handle-state=drag]:before:opacity-100",
         className
       )}
       {...props}

@@ -520,7 +520,11 @@ export default function Editor() {
           onCollapse={() => setOutlineCollapsed(true)}
           onExpand={() => setOutlineCollapsed(false)}
         >
-          <div className="h-full border-r">
+          {/*
+           * 面板自身不再画边框：ResizableHandle 就是那道分隔线。
+           * 两者都画会露出两条线，中间还夹着 handle 的宽度形成空隙。
+           */}
+          <div className="h-full">
             <OutlinePane
               onCreateChapter={createChapter}
               onCreateVolume={createVolume}
@@ -531,7 +535,7 @@ export default function Editor() {
           </div>
         </ResizablePanel>
 
-        <ResizableHandle withHandle className="w-1" />
+        <ResizableHandle withHandle />
         </>
         ) : null}
 
@@ -577,7 +581,7 @@ export default function Editor() {
           </div>
         </ResizablePanel>
 
-        {!zen ? <ResizableHandle withHandle className="w-1" /> : null}
+        {!zen ? <ResizableHandle withHandle /> : null}
 
         {!zen ? (
         <>
@@ -592,7 +596,8 @@ export default function Editor() {
           onCollapse={() => setSideCollapsed(true)}
           onExpand={() => setSideCollapsed(false)}
         >
-          <div className="flex h-full min-h-0 flex-col gap-4 border-l p-4">
+          {/* 同左栏：分隔线由 ResizableHandle 负责，这里不再重复画。 */}
+          <div className="flex h-full min-h-0 flex-col gap-4 p-4">
             {/*
              * 右栏两个页签：章节 / 素材。
              *
