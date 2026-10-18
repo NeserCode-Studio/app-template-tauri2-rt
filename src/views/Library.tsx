@@ -142,7 +142,7 @@ export default function Library() {
   /* ---------- 未选择工作区：引导选择 ---------- */
   if (!isOpen || !root) {
     return (
-      <div className="view-library px-6 py-8">
+      <div className="view-library h-full overflow-y-auto px-6 py-8">
         <header className="mx-auto w-full max-w-3xl">
           <div className="flex items-start gap-3">
             <BookMarked className="icon-md mt-1 shrink-0 text-muted-foreground" />
@@ -186,8 +186,8 @@ export default function Library() {
 
   /* ---------- 已选择工作区：作品网格 ---------- */
   return (
-    <div className="view-library px-6 py-8">
-      <header className="mx-auto flex w-full max-w-6xl flex-wrap items-end justify-between gap-4">
+    <div className="view-library h-full overflow-y-auto px-6 py-8">
+      <header className="mx-auto flex w-full max-w-3xl flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-xl font-semibold">{t("Library.title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
@@ -213,8 +213,8 @@ export default function Library() {
       </header>
 
       {active.length ? (
-        <section className="mx-auto mt-8 w-full max-w-6xl">
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+        <section className="mx-auto mt-8 w-full max-w-3xl">
+          <div className="flex flex-col gap-2">
             {active.map((work) => (
               <WorkCard
                 key={work.id}
@@ -237,7 +237,7 @@ export default function Library() {
           </div>
         </section>
       ) : (
-        <section className="mx-auto mt-16 flex w-full max-w-6xl flex-col items-center gap-3 text-center">
+        <section className="mx-auto mt-16 flex w-full max-w-3xl flex-col items-center gap-3 text-center">
           <BookMarked className="h-10 w-10 text-muted-foreground/40" />
           <p className="text-sm text-muted-foreground">{t("Library.empty.noWorksHint")}</p>
           <Button size="sm" onClick={openCreate}>
@@ -248,9 +248,9 @@ export default function Library() {
       )}
 
       {archived.length ? (
-        <section className="mx-auto mt-12 w-full max-w-6xl">
+        <section className="mx-auto mt-12 w-full max-w-3xl">
           <h2 className="row-label mb-3">{t("Library.empty.archived")}</h2>
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-4">
+          <div className="flex flex-col gap-2">
             {archived.map((work) => (
               <WorkCard
                 key={work.id}

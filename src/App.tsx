@@ -7,7 +7,6 @@ import { Routes, Route, useNavigate } from "react-router";
 
 import { useTheme, useI18nLogic } from "@/composables";
 import { lazy, Suspense, useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useLocalStorageState } from "ahooks";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -170,14 +169,22 @@ function App() {
                   <CommandDialog />
 
                   <div id="container" className="app-body">
-                    <ScrollArea className="h-[calc(100vh-2rem)] w-full">
-                      <Suspense fallback={null}>
-                        <Routes>
-                          <Route path="/" index element={<Library />} />
-                          <Route path="/editor" element={<Editor />} />
-                        </Routes>
-                      </Suspense>
-                    </ScrollArea>
+                    <Suspense fallback={null}>
+                      <Routes>
+                        <Route path="/" index element={<Library />} />
+                        <Route
+                          path="/editor"
+                          element={
+                            // 编辑器自带三栏可拖拽布局，需要确定高度，
+                            // 不能套在 ScrollArea 里（radix 滚动视口会让
+                            // react-resizable-panels 读到 0 高度而崩溃）。
+                            <div className="h-[calc(100vh-2rem)] w-full">
+                              <Editor />
+                            </div>
+                          }
+                        />
+                      </Routes>
+                    </Suspense>
                   </div>
                 </main>
                 <SettingsDialog

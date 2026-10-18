@@ -1,20 +1,12 @@
-import { BookOpen, MoreHorizontal, Archive, ArchiveRestore, Pencil } from "lucide-react";
+import { Archive, ArchiveRestore, BookOpen, MoreHorizontal, Pencil } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/composables";
 import type { Work } from "@/shared/schema";
 
@@ -29,10 +21,20 @@ export interface WorkCardProps {
   onUnarchive: (workId: string) => void;
 }
 
+/** 把毫秒时间戳格式化为本地日期 YYYY-MM-DD。 */
+function formatDate(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+    d.getDate()
+  ).padStart(2, "0")}`;
+}
+
 /**
- * 单张作品卡片：封面位、标题、类型标签、总字数、继续写作按钮。
+ * 单张作品卡片。
  *
- * 封面暂用首字母占位（计划书 M1 的"封面占位"），后续可接本地图片。
+ * 本地纯文本写作工具不产出封面，因此不设封面位：
+ * 纵向空间全部让给文字信息，卡片横向压缩为列表式，
+ * 一屏能看到更多作品，而不是每部作品占掉一整屏。
  */
 export default function WorkCard({
   work,
@@ -46,53 +48,61 @@ export default function WorkCard({
   const { t } = useI18n();
 
   return (
-    <Card className="group flex flex-col overflow-hidden transition-colors hover:border-foreground/20">
+    <div className="group flex items-center gap-2 rounded-md border px-3 py-2 transition-colors hover:border-foreground/20 hover:bg-accent/30">
       <button
         type="button"
         onClick={() => onOpen(work.id)}
-        className="flex flex-col text-left"
+        className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
       >
-        {/* 封面占位：用标题首字符 */}
-        <div className="flex aspect-[3/4] w-full items-center justify-center bg-muted/40 text-4xl font-semibold text-muted-foreground/50">
-          {work.title.trim().charAt(0) || "?"}
+        <div className="flex w-full items-center gap-2">
+          <span className="truncate text-sm font-medium">{work.title}</span>
+          {work.archived ? (
+            <span className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground">
+              {t("Library.card.archivedBadge")}
+            </span>
+          ) : null}
+          {isCurrent ? (
+            <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+          ) : null}
         </div>
 
-        <CardHeader className="gap-1 px-4 py-3">
-          <CardTitle className="flex items-center gap-2 text-base leading-tight">
-            <span className="truncate">{work.title}</span>
-            {work.archived ? (
-              <Badge variant="secondary" className="shrink-0 text-xs">
-                {t("Library.card.archivedBadge")}
-              </Badge>
-            ) : null}
-          </CardTitle>
+        <div className="flex w-full items-center gap-1.5 text-xs text-muted-foreground">
+          <span className="shrink-0 tabular-nums">
+            {words} {t("Library.card.words")}
+          </span>
           {work.type ? (
-            <p className="truncate text-xs text-muted-foreground">{work.type}</p>
+            <>
+              <span aria-hidden>·</span>
+              <span className="truncate">{work.type}</span>
+            </>
           ) : null}
-        </CardHeader>
+          <span className="ml-auto shrink-0 tabular-nums opacity-70">
+            {formatDate(work.updatedAt)}
+          </span>
+        </div>
       </button>
 
-      <CardContent className="px-4 pb-2">
-        <p className="text-xs text-muted-foreground">
-          {words} {t("Library.card.words")}
-        </p>
-      </CardContent>
-
-      <CardFooter className="mt-auto gap-2 px-4 pb-3">
+      <div className="flex shrink-0 items-center gap-1">
         <Button
           size="sm"
-          className="flex-1"
+          variant="secondary"
+          className="h-7"
           onClick={() => onOpen(work.id)}
           disabled={work.archived}
         >
-          <BookOpen className="icon-md" />
-          {t("Library.action.continue")}
+          <BookOpen className="icon-sm" />
+          <span className="hidden sm:inline">{t("Library.action.continue")}</span>
         </Button>
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="icon" variant="ghost" aria-label={t("Titlebar.menu.turnto")}>
-              <MoreHorizontal className="icon-md" />
+            <Button
+              size="icon"
+              variant="ghost"
+              className="size-7"
+              aria-label={t("Titlebar.menu.turnto")}
+            >
+              <MoreHorizontal className="icon-sm" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
@@ -113,11 +123,7 @@ export default function WorkCard({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
-      </CardFooter>
-
-      {isCurrent ? (
-        <div className="h-0.5 w-full bg-primary" aria-hidden />
-      ) : null}
-    </Card>
+      </div>
+    </div>
   );
 }
