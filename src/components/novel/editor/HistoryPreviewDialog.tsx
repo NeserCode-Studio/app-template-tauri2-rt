@@ -19,7 +19,6 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/composables";
 import { historyText } from "@/services/chapter";
 import type { Chapter } from "@/shared/schema";
@@ -81,17 +80,18 @@ export default function HistoryPreviewDialog({
         </DialogHeader>
 
         {/*
-         * 预览框必须自己把内容关住。
+         * 预览框用原生滚动，不用 ScrollArea。
          *
-         * DialogContent 已是 flex 列 + max-h，但 ScrollArea 的 Root 只是
-         * position:relative —— Radix 把 overflow 交给 viewport，Root 本身
-         * 不裁剪，于是内层 40em 的行宽溢出后直接画到 DialogFooter 之上，
-         * 看上去就是"内容盖住关闭按钮"。补两处：overflow-hidden 让 Root
-         * 裁掉溢出，min-h-0 让 flex 子项能真正收缩（flex 默认
-         * min-height:auto，不给 0 就不肯让出空间）。
+         * ScrollArea 的 Root 不裁剪（overflow 都在内层 viewport），长文的
+         * 40em 行宽会直接画到 DialogFooter 上去；而补了 overflow-hidden 之后
+         * Radix 又不再让根节点滚动，于是内容卡住滚不动——两条路都不对。
+         *
+         * 原生 overflow-y-auto 一行就同时解决高度上限与裁剪，也符合本项目
+         * 的既定做法：ScrollArea 只留给模板容器，普通滚动一律原生 + scrollbar-app。
+         * min-h-0 必需，否则 flex 子项的默认 min-height:auto 不肯收缩到 max-h 以内。
          */}
         {paragraphs.length ? (
-          <ScrollArea className="min-h-0 flex-1 overflow-hidden rounded-md border">
+          <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto rounded-md border">
             {/* 段落序号帮助对照：回滚后要能按位置核对改对了没有。 */}
             <div className="prose-article mx-auto flex max-w-[var(--app-line-width)] flex-col gap-2 px-6 py-4">
               {paragraphs.map((p, i) => (
@@ -103,7 +103,7 @@ export default function HistoryPreviewDialog({
                 </p>
               ))}
             </div>
-          </ScrollArea>
+          </div>
         ) : (
           <p className="py-10 text-center text-sm text-muted-foreground">
             {t("Editor.chapter.new")}
