@@ -1,5 +1,15 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Plus,
+} from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -33,6 +43,7 @@ import {
   ResizableHandle,
   ResizablePanel,
   ResizablePanelGroup,
+  type ImperativePanelHandle,
 } from "@/components/ui/resizable";
 
 import ChapterEditor from "@/components/novel/editor/ChapterEditor";
@@ -109,6 +120,53 @@ export default function Editor() {
   const { mode: viewMode, setMode: setViewMode } = useViewMode();
   /** 禅模式隐藏两侧栏，把整幅宽度让给正文。 */
   const zen = viewMode === "zen";
+
+  /*
+   * 左右栏的收起/展开。
+   *
+   * 控件放在顶栏而不是面板内部：面板一旦收起就没法点到里面的按钮，
+   * 用户会困在收起的布局里。顶栏常驻，两侧各一个开关。
+   *
+   * 用 ref 调 ImperativePanelHandle 的 collapse/expand，而不是把宽度设成 0——
+   * 后者会让 react-resizable-panels 把空间重新分给别的面板，出现跳动。
+   */
+  const outlinePanelRef = useRef<ImperativePanelHandle | null>(null);
+  const sidePanelRef = useRef<ImperativePanelHandle | null>(null);
+  const [outlineCollapsed, setOutlineCollapsed] = useState(false);
+  const [sideCollapsed, setSideCollapsed] = useState(false);
+
+  const toggleOutline = useCallback(() => {
+    const panel = outlinePanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) {
+      panel.expand(12);
+      setOutlineCollapsed(false);
+    } else {
+      panel.collapse();
+      setOutlineCollapsed(true);
+    }
+  }, []);
+
+  const toggleSide = useCallback(() => {
+    const panel = sidePanelRef.current;
+    if (!panel) return;
+    if (panel.isCollapsed()) {
+      panel.expand(16);
+      setSideCollapsed(false);
+    } else {
+      panel.collapse();
+      setSideCollapsed(true);
+    }
+  }, []);
+
+  /* 禅模式会移除两侧面板，切回来时要恢复控件显示的"已收起"状态。 */
+  useEffect(() => {
+    if (!zen) return;
+    outlinePanelRef.current?.expand();
+    sidePanelRef.current?.expand();
+    setOutlineCollapsed(false);
+    setSideCollapsed(false);
+  }, [zen]);
 
   /* 作品切换后回到作品库，避免空编辑器。 */
   useEffect(() => {
@@ -372,6 +430,30 @@ export default function Editor() {
           <ArrowLeft className="icon-md" />
           {t("Command.turnto.home")}
         </Button>
+        {!zen ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-7"
+            onClick={toggleOutline}
+            aria-label={
+              outlineCollapsed
+                ? t("Editor.side.expandOutline")
+                : t("Editor.side.collapseOutline")
+            }
+            title={
+              outlineCollapsed
+                ? t("Editor.side.expandOutline")
+                : t("Editor.side.collapseOutline")
+            }
+          >
+            {outlineCollapsed ? (
+              <PanelLeftOpen className="icon-md" />
+            ) : (
+              <PanelLeftClose className="icon-md" />
+            )}
+          </Button>
+        ) : null}
         <Separator orientation="vertical" className="h-4" />
         <span className="truncate text-sm font-medium">{work?.title ?? ""}</span>
         <div className="ml-auto flex items-center gap-2">
@@ -390,6 +472,30 @@ export default function Editor() {
             <Download className="icon-md" />
             {t("Export.action")}
           </Button>
+          {!zen ? (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              onClick={toggleSide}
+              aria-label={
+                sideCollapsed
+                  ? t("Editor.side.expandSide")
+                  : t("Editor.side.collapseSide")
+              }
+              title={
+                sideCollapsed
+                  ? t("Editor.side.expandSide")
+                  : t("Editor.side.collapseSide")
+              }
+            >
+              {sideCollapsed ? (
+                <PanelRightOpen className="icon-md" />
+              ) : (
+                <PanelRightClose className="icon-md" />
+              )}
+            </Button>
+          ) : null}
         </div>
       </div>
 
@@ -404,7 +510,16 @@ export default function Editor() {
         {!zen ? (
         <>
         {/* 左栏：结构树 */}
-        <ResizablePanel defaultSize={18} minSize={12} maxSize={24}>
+        <ResizablePanel
+          ref={outlinePanelRef}
+          collapsible
+          collapsedSize={0}
+          defaultSize={18}
+          minSize={12}
+          maxSize={24}
+          onCollapse={() => setOutlineCollapsed(true)}
+          onExpand={() => setOutlineCollapsed(false)}
+        >
           <div className="h-full border-r">
             <OutlinePane
               onCreateChapter={createChapter}
@@ -467,7 +582,16 @@ export default function Editor() {
         {!zen ? (
         <>
         {/* 右栏：翻章 + 摘要 */}
-        <ResizablePanel defaultSize={24} minSize={16} maxSize={30}>
+        <ResizablePanel
+          ref={sidePanelRef}
+          collapsible
+          collapsedSize={0}
+          defaultSize={24}
+          minSize={16}
+          maxSize={30}
+          onCollapse={() => setSideCollapsed(true)}
+          onExpand={() => setSideCollapsed(false)}
+        >
           <div className="flex h-full min-h-0 flex-col gap-4 border-l p-4">
             {/*
              * 右栏两个页签：章节 / 素材。

@@ -1,7 +1,17 @@
-import { forwardRef, useImperativeHandle, useRef } from "react";
-import { CornerDownLeft, X } from "lucide-react";
+import { forwardRef, useImperativeHandle, useRef, useState } from "react";
+import { CornerDownLeft, Trash2 } from "lucide-react";
 
 import { useI18n } from "@/composables";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export interface ComposerHandle {
   /** 把焦点移入输入框，可指定光标位置。 */
@@ -65,6 +75,8 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
   ) {
     const { t } = useI18n();
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+    /** 丢弃确认弹窗的开关：丢弃不可撤销，先问一句再动手。 */
+    const [discardOpen, setDiscardOpen] = useState(false);
 
     useImperativeHandle(ref, () => ({
       focus(caret = "end") {
@@ -98,6 +110,7 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
     }), []);
 
     return (
+      <>
       <div className="flex flex-col gap-1.5 px-6 pb-3 pt-2">
         {/* 编辑区顶界：整条满宽，明确划出"正文"与"正在写"两个区域。 */}
         <div className="-mx-6 mb-1 h-px w-[calc(100%+3rem)] bg-border" />
@@ -128,12 +141,12 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
               {onDiscardDraft ? (
                 <button
                   type="button"
-                  onClick={onDiscardDraft}
+                  onClick={() => setDiscardOpen(true)}
                   aria-label={t("Editor.input.discardDraft")}
                   title={t("Editor.input.discardDraft")}
-                  className="flex size-5 items-center justify-center rounded text-muted-foreground/50 transition-colors hover:bg-accent hover:text-accent-foreground"
+                  className="flex size-5 items-center justify-center rounded text-muted-foreground/50 transition-colors hover:bg-destructive/10 hover:text-destructive"
                 >
-                  <X className="icon-sm" />
+                  <Trash2 className="icon-sm" />
                 </button>
               ) : null}
             </div>
@@ -155,7 +168,7 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
              * min-h 给空稿一个落脚点；max-h 封顶后由 overflow-y-auto 内部滚动，
              * 免得长草稿把正文区整个顶出视口。
              */
-            className="prose-article [field-sizing:content] scrollbar-app mx-1 max-h-[220px] min-h-[3lh] w-[calc(100%-0.5rem)] resize-none overflow-y-auto border-0 bg-transparent px-0 py-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
+            className="prose-article [field-sizing:content] scrollbar-app max-h-[220px] min-h-[3lh] w-full resize-none overflow-y-auto border-0 bg-transparent py-1 pr-3 pl-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
             onKeyDown={(e) => {
               // 输入法组合中：Enter 属于候选确认，绝不提交。
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;
@@ -212,6 +225,30 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
           ) : null}
         </div>
       </div>
+
+      <AlertDialog open={discardOpen} onOpenChange={setDiscardOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Editor.input.discardDraftTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Editor.input.discardDraftHint")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Library.dialog.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={() => {
+                setDiscardOpen(false);
+                onDiscardDraft?.();
+              }}
+            >
+              {t("Editor.input.discardDraftConfirm")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      </>
     );
   }
 );

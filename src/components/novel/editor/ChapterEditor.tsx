@@ -504,8 +504,18 @@ export default function ChapterEditor({
     requestAnimationFrame(() => composerRef.current?.load(text, "end", true));
   }, [draft, setDraft]);
 
-  /** 丢弃暂存段落。 */
-  const discardDraft = useCallback(() => setDraft(null), [setDraft]);
+  /**
+   * 丢弃暂存段落。
+   *
+   * 必须连 ref 一起清。只清 state 的话卡片照样消失，但 draftRef 还留着
+   * 文本：下一次点开旧卡片再提交，handleSubmit 会把这段"扣下"又放回
+   * 输入框，用户会发现刚丢掉的段落又回来了。setDraft 本身已同步 ref，
+   * 这里额外确认一次是因为这条路径语义上要求彻底作废。
+   */
+  const discardDraft = useCallback(() => {
+    draftRef.current = null;
+    setDraft(null);
+  }, [setDraft]);
 
   /* cards 的 ref 副本，供回调读取最新值。 */
   const cardsRef = useRef(cards);
