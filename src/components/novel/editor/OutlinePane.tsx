@@ -156,6 +156,7 @@ function SortableChapter({
   index,
   selected,
   dragging,
+  sessionActive,
   onSelect,
   onEditMeta,
   registerEl,
@@ -169,6 +170,14 @@ function SortableChapter({
   index: number;
   selected: boolean;
   dragging: boolean;
+  /**
+   * 拖拽会话是否进行中。
+   *
+   * dnd-kit 的 `transform` 只应在拖拽期间生效。松手落盘后真实顺序已变，
+   * 若仍挂着预览位移，卡片会被视觉推回旧位置，用户看到的就是"换了序又弹回"。
+   * 所以会话结束就一律不再应用 transform。
+   */
+  sessionActive: boolean;
   onSelect: () => void;
   onEditMeta: () => void;
   /** 登记 DOM 节点：落点靠实时几何计算，必须能拿到元素。 */
@@ -197,7 +206,10 @@ function SortableChapter({
         setNodeRef(el);
         registerEl(el);
       }}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
+      style={{
+        transform: sessionActive ? CSS.Transform.toString(transform) : undefined,
+        transition,
+      }}
       className="group relative px-1"
     >
       <div
@@ -510,6 +522,7 @@ export default function OutlinePane({
                 index={i}
                 selected={currentChapterId === node.id}
                 dragging={activeId === NODE_PREFIX + node.id}
+                sessionActive={Boolean(activeId)}
                 onSelect={() => setCurrentChapterId(node.id)}
                 onEditMeta={() => setMetaTarget(node)}
                 registerEl={(el) => {
