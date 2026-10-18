@@ -94,7 +94,7 @@ export default function CardItem({
   onDelete,
 }: CardItemProps) {
   const { t } = useI18n();
-  const { entries } = useCodex();
+  const { entries, colorOf } = useCodex();
   const { prefs } = usePreferences();
   const isEmpty = card.text.trim().length === 0;
 
@@ -115,6 +115,13 @@ export default function CardItem({
         : [{ text: card.text, entryId: null }],
     [card.text, mentionMap, prefs.highlightMentions]
   );
+
+  /** 高亮色按条目所属类型取：颜色是类型级设置，不逐条目存。 */
+  const colorById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const e of entries) map.set(e.id, colorOf(e.type));
+    return map;
+  }, [entries, colorOf]);
 
   return (
     <div
@@ -142,6 +149,9 @@ export default function CardItem({
                 <mark
                   key={i}
                   className="rounded-sm bg-primary/15 px-0.5 text-foreground"
+                  style={{
+                    backgroundColor: `${colorById.get(part.entryId) ?? "#7c3aed"}2e`,
+                  }}
                 >
                   {part.text}
                 </mark>

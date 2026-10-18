@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BookMarked, FolderOpen, Plus, Trash2 } from "lucide-react";
+import { BookMarked, Database, FolderOpen, Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
@@ -217,6 +217,11 @@ export default function Library() {
           <Button variant="outline" size="sm" onClick={() => void pick()}>
             <FolderOpen className="icon-md" />
             {t("Library.workspace.change")}
+          </Button>
+          {/* 素材库属于工作区，不是某一部作品，所以入口在作品库这一层。 */}
+          <Button variant="outline" size="sm" onClick={() => navigate("/codex")}>
+            <Database className="icon-md" />
+            {t("Codex.library.title")}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setTrashOpen(true)}>
             <Trash2 className="icon-md" />

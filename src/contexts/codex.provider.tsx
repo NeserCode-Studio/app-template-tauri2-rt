@@ -1,113 +1,165 @@
 /**
- * CodexProvider：素材条目在内存中的索引与增删改。
+ * CodexProvider：工作区级素材库的内存索引与增删改。
  *
- * 条目数量是几百级别（远小于正文），全部读进内存后提及高亮、
- * 素材搜索才能在输入时即时响应。写入仍走磁盘。
+ * 素材库属于工作区而非作品，所以不再随 `currentWorkId` 重装——
+ * 切换作品时条目与关系都保持不变。
  */
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { CodexContext, type CodexContextValue } from "./codex";
-import { useWorkspace } from "./workspace";
-import { useLibrary } from "./library";
 import {
   createEntry,
   loadAllEntries,
+  loadTypeConfigs,
+  migrateLegacyEntries,
   removeEntry,
   saveEntry,
+  saveTypeConfigs,
+  DEFAULT_CODEX_COLORS,
   type CodexEntry,
   type CodexType,
+  type CodexTypeConfig,
 } from "@/services/codex";
 import { createLogger } from "@/lib/logger";
+import { useWorkspace } from "./workspace";
+import { CodexContext, type CodexContextValue } from "./codex";
+import { loadWorkspace } from "@/services/workspace";
 
 const log = createLogger("CodexProvider");
 
+function byName(a: CodexEntry, b: CodexEntry): number {
+  return a.name.localeCompare(b.name, "zh-Hans-CN");
+}
+
+/** 迁移只做一次：标记按工作区根路径存，避免每次启动重扫旧目录。 */
+const MIGRATION_FLAG = "codex-migrated:";
+
 export function CodexProvider({ children }: { children: ReactNode }) {
   const { root } = useWorkspace();
-  const { currentWorkId } = useLibrary();
   const [entries, setEntries] = useState<CodexEntry[]>([]);
+  const [typeConfigs, setTypeConfigs] = useState<CodexTypeConfig[]>([]);
   const [currentEntryId, setCurrentEntryId] = useState<string | null>(null);
 
-  /** 作品切换时重装；无工作区时清空。 */
+  /* 工作区变化时装载；无工作区时清空。 */
   useEffect(() => {
-    if (!root || !currentWorkId) {
+    if (!root) {
       setEntries([]);
+      setTypeConfigs([]);
       setCurrentEntryId(null);
       return;
     }
     let alive = true;
-    loadAllEntries(root, currentWorkId)
-      .then((next) => {
-        if (!alive) return;
-        setEntries(next);
-        log.info("codex loaded", { workId: currentWorkId, count: next.length });
-      })
-      .catch((err) => log.error("codex load failed", err));
+    void (async () => {
+      const flag = MIGRATION_FLAG + root;
+      if (!localStorage.getItem(flag)) {
+        try {
+          const ws = await loadWorkspace(root);
+          const report = await migrateLegacyEntries(root, [...ws.order, ...ws.archived]);
+          localStorage.setItem(flag, JSON.stringify(report));
+          if (report.copied) {
+            log.info("codex migrated", { copied: report.copied, duplicates: report.duplicates.length });
+          }
+        } catch (err) {
+          log.error("codex migration failed", err);
+        }
+      }
+      const [nextEntries, nextConfigs] = await Promise.all([
+        loadAllEntries(root),
+        loadTypeConfigs(root),
+      ]);
+      if (!alive) return;
+      setEntries(nextEntries);
+      setTypeConfigs(nextConfigs);
+      log.info("codex loaded", { count: nextEntries.length });
+    })().catch((err) => log.error("codex load failed", err));
     return () => {
       alive = false;
     };
-  }, [root, currentWorkId]);
+  }, [root]);
 
   const reload = useCallback(async () => {
-    if (!root || !currentWorkId) return;
-    setEntries(await loadAllEntries(root, currentWorkId));
-  }, [root, currentWorkId]);
+    if (!root) return;
+    setEntries(await loadAllEntries(root));
+  }, [root]);
 
   const create = useCallback(
     async (type: CodexType, name: string) => {
-      if (!root || !currentWorkId) return null;
-      const entry = await createEntry(root, currentWorkId, type, name);
-      setEntries((prev) =>
-        [...prev, entry].sort((a, b) => a.name.localeCompare(b.name, "zh-Hans-CN"))
-      );
+      if (!root) return null;
+      const entry = await createEntry(root, type, name);
+      setEntries((prev) => [...prev, entry].sort(byName));
       setCurrentEntryId(entry.id);
       return entry;
     },
-    [root, currentWorkId]
+    [root]
   );
 
   const save = useCallback(
     async (entry: CodexEntry) => {
-      if (!root || !currentWorkId) return;
-      await saveEntry(root, currentWorkId, entry);
-      /* 就地替换；类型变了则要从旧类型里挪走，故整体按 id 重排。 */
-      setEntries((prev) => {
-        const rest = prev.filter((e) => e.id !== entry.id);
-        return [...rest, { ...entry, updatedAt: Date.now() }].sort((a, b) =>
-          a.name.localeCompare(b.name, "zh-Hans-CN")
-        );
-      });
+      if (!root) return;
+      await saveEntry(root, entry);
+      /*
+       * 关系是双向的：保存一条会让对方条目也跟着落盘，
+       * 因此整表重排而不是就地替换，免得关联列表停留在旧状态。
+       */
+      setEntries(await loadAllEntries(root));
     },
-    [root, currentWorkId]
+    [root]
   );
 
   const remove = useCallback(
     async (entry: CodexEntry) => {
-      if (!root || !currentWorkId) return;
-      await removeEntry(root, currentWorkId, entry);
-      setEntries((prev) => prev.filter((e) => e.id !== entry.id));
+      if (!root) return;
+      await removeEntry(root, entry);
+      setEntries(await loadAllEntries(root));
       setCurrentEntryId((prev) => (prev === entry.id ? null : prev));
     },
-    [root, currentWorkId]
+    [root]
   );
 
-  const byType = useCallback(
-    (type: CodexType) => entries.filter((e) => e.type === type),
-    [entries]
+  const setTypeColor = useCallback(
+    async (type: CodexType, color: string) => {
+      if (!root) return;
+      const next = typeConfigs.map((c) => (c.id === type ? { ...c, color } : c));
+      setTypeConfigs(next);
+      await saveTypeConfigs(root, next);
+    },
+    [root, typeConfigs]
+  );
+
+  const byType = useCallback((type: CodexType) => entries.filter((e) => e.type === type), [entries]);
+
+  const colorOf = useCallback(
+    (type: CodexType) =>
+      typeConfigs.find((c) => c.id === type)?.color ?? DEFAULT_CODEX_COLORS[type],
+    [typeConfigs]
   );
 
   const value = useMemo<CodexContextValue>(
     () => ({
       entries,
+      typeConfigs,
       currentEntryId,
       byType,
+      colorOf,
       setCurrentEntryId,
       reload,
       create,
       save,
       remove,
+      setTypeColor,
     }),
-    [entries, currentEntryId, byType, reload, create, save, remove]
+    [
+      entries,
+      typeConfigs,
+      currentEntryId,
+      byType,
+      colorOf,
+      reload,
+      create,
+      save,
+      remove,
+      setTypeColor,
+    ]
   );
 
   return <CodexContext.Provider value={value}>{children}</CodexContext.Provider>;

@@ -1,21 +1,31 @@
-import { useState } from "react";
-import { BookOpen, ChevronRight, FileText, Plus, Settings2 } from "lucide-react";
+import { useMemo, useState } from "react";
+import { BookOpen, ChevronRight, FileText, GripVertical, Plus, Settings2 } from "lucide-react";
+import {
+  DndContext,
+  DragOverlay,
+  PointerSensor,
+  closestCenter,
+  useDroppable,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useI18n } from "@/composables";
 import { useOutline } from "@/contexts/outline";
 import type { OutlineNode } from "@/shared/schema";
 
-/** 章 / 卷状态：与 schema 的 status 枚举一致。 */
-type NodeStatus = "draft" | "revising" | "final";
+import NodeMetaEditor, { type NodeStatus } from "./NodeMetaEditor";
 
 export interface OutlinePaneProps {
   /** 新建章节：创建后自动打开。 */
@@ -36,29 +46,140 @@ export interface OutlinePaneProps {
 }
 
 /**
- * 拖放过程中的两种落点。
+ * 落点 id 编码。
  *
- * - `over`：插在目标节点之前（同级换位）
- * - `inside`：移进目标节点内部（仅卷可作为容器）
+ * - `drop:<parentId|root>`：追加到该父级末尾（root 表示顶层）
+ * - `node:<nodeId>`：插到该节点之前（保持同级）
  *
- * 区分二者是升降级的关键：竖直位置偏上=插入其前，偏下=插入其后，
- * 悬停在条目正中=移进它。两个意图不能混在一个手势里。
+ * 容器与排序项分开成两种 id，才能让"拖进卷"和"同卷换位"在
+ * 同一个手势里有确定语义。
  */
-type DropIntent =
-  | { kind: "before" | "after"; parentId: string | null }
-  | { kind: "inside"; parentId: string };
+const DROP_PREFIX = "drop:";
+const NODE_PREFIX = "node:";
+const ROOT = "root";
 
-interface DragState {
-  nodeId: string;
-  /** 当前悬停的落点意图。 */
-  intent: DropIntent | null;
+function dropInto(parentId: string | null): string {
+  return `${DROP_PREFIX}${parentId ?? ROOT}`;
+}
+
+type DropRef =
+  | { kind: "into"; parentId: string | null }
+  | { kind: "before"; nodeId: string };
+
+function parseDroppableId(id: string): DropRef | null {
+  if (id.startsWith(DROP_PREFIX)) {
+    const raw = id.slice(DROP_PREFIX.length);
+    return { kind: "into", parentId: raw === ROOT ? null : raw };
+  }
+  if (id.startsWith(NODE_PREFIX)) return { kind: "before", nodeId: id.slice(NODE_PREFIX.length) };
+  return null;
+}
+
+/** 可拖拽的章节行。 */
+function SortableChapter({
+  node,
+  selected,
+  dragging,
+  onSelect,
+  onEditMeta,
+  editMetaLabel,
+}: {
+  node: OutlineNode;
+  selected: boolean;
+  dragging: boolean;
+  onSelect: () => void;
+  onEditMeta: () => void;
+  editMetaLabel: string;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: NODE_PREFIX + node.id,
+    data: { type: "chapter", nodeId: node.id },
+  });
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className="group flex items-center"
+    >
+      <div
+        className={[
+          "flex min-w-0 flex-1 cursor-grab items-center gap-2 rounded-md py-1.5 pr-1 pl-2 text-left text-sm transition-colors active:cursor-grabbing",
+          "hover:bg-accent hover:text-accent-foreground",
+          selected ? "bg-accent/60 font-medium text-accent-foreground" : "text-muted-foreground",
+          isDragging || dragging ? "opacity-40" : "",
+        ].join(" ")}
+        onClick={onSelect}
+        title={node.title}
+        {...attributes}
+        {...listeners}
+      >
+        <GripVertical className="icon-sm shrink-0 text-muted-foreground/40" />
+        <FileText className="icon-sm shrink-0" />
+        <span className="truncate">{node.title}</span>
+        {/* 状态点：非草稿才标，否则整棵树都是点、看不出差别。 */}
+        {node.status !== "draft" ? (
+          <span
+            className={[
+              "size-1.5 shrink-0 rounded-full",
+              node.status === "final" ? "bg-emerald-500" : "bg-amber-500",
+            ].join(" ")}
+          />
+        ) : null}
+        {node.synopsis ? (
+          <span className="ml-auto max-w-[40%] truncate text-xs text-muted-foreground/60">
+            {node.synopsis}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          aria-label={editMetaLabel}
+          title={editMetaLabel}
+          className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation();
+            onEditMeta();
+          }}
+        >
+          <Settings2 className="icon-sm" />
+        </button>
+      </div>
+    </li>
+  );
+}
+
+/** 容器落点：卷本身、以及顶层拖出区。 */
+function DropZone({
+  parentId,
+  dragging,
+  className,
+  children,
+}: {
+  parentId: string | null;
+  dragging: boolean;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: dropInto(parentId) });
+  return (
+    <div
+      ref={setNodeRef}
+      className={[
+        className ?? "",
+        dragging && isOver ? "rounded-md bg-accent/50 ring-1 ring-primary" : "",
+      ].join(" ")}
+    >
+      {children}
+    </div>
+  );
 }
 
 /**
  * 左侧结构树：卷分组 + 章列表。
  *
- * 计划书 M2 / M9：层级为作品 > 卷 > 章 > 场景，
- * 左栏承载结构树并常驻当前位置指示。
+ * 拖放走 dnd-kit（PointerSensor + 5px 激活阈值），单击选中章节
+ * 不会被误判为拖拽；旧版 HTML5 DnD 在 Tauri WebView 上事件不稳定，
+ * 已整体移除。
  */
 export default function OutlinePane({
   onCreateChapter,
@@ -80,7 +201,12 @@ export default function OutlinePane({
   const [metaDraft, setMetaDraft] = useState<{ status: NodeStatus; synopsis: string } | null>(
     null
   );
-  const [drag, setDrag] = useState<DragState | null>(null);
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [overId, setOverId] = useState<string | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
 
   async function commitVolume() {
     const name = volumeName.trim();
@@ -105,74 +231,61 @@ export default function OutlinePane({
   }
 
   /** 章节按 parentId 归到卷下；parentId 为 null 的归到根。 */
-  const chaptersByVolume = new Map<string | null, OutlineNode[]>();
-  for (const c of chapters) {
-    const key = c.parentId;
-    const list = chaptersByVolume.get(key) ?? [];
-    list.push(c);
-    chaptersByVolume.set(key, list);
-  }
-  for (const list of chaptersByVolume.values()) list.sort((a, b) => a.order - b.order);
-
-  /* ---------- 拖放 ---------- */
-
-  /**
-   * 计算落点意图。
-   *
-   * 用指针相对条目中线的位置区分三个意图：上半区 = 插到它前面、
-   * 中带 = 移进它内部（仅卷可作容器）、下半区 = 插到它后面。
-   * 排序与升降级挤在同一个手势里，若不区分，拖到卷上到底
-   * 是"排到卷前面"还是"挪进卷里"会变得不可预期。
-   */
-  function resolveIntent(
-    e: React.DragEvent,
-    node: OutlineNode,
-    canNest: boolean
-  ): DropIntent {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = (e.clientY - rect.top) / rect.height;
-    if (canNest && ratio > 0.35 && ratio < 0.7) {
-      return { kind: "inside", parentId: node.id };
+  const chaptersByVolume = useMemo(() => {
+    const map = new Map<string | null, OutlineNode[]>();
+    for (const c of chapters) {
+      const list = map.get(c.parentId) ?? [];
+      list.push(c);
+      map.set(c.parentId, list);
     }
-    return {
-      kind: ratio < 0.5 ? "before" : "after",
-      parentId: node.parentId,
-    };
+    for (const list of map.values()) list.sort((a, b) => a.order - b.order);
+    return map;
+  }, [chapters]);
+
+  const nodeById = useMemo(() => new Map(chapters.map((c) => [c.id, c])), [chapters]);
+
+  const activeNode = activeId ? nodeById.get(activeId.slice(NODE_PREFIX.length)) ?? null : null;
+  /** 命中具体节点时抑制容器高亮，避免同时亮两处。 */
+  const overRef = overId ? parseDroppableId(overId) : null;
+
+  function handleDragStart(e: DragStartEvent) {
+    setActiveId(String(e.active.id));
+  }
+
+  function handleDragOver(e: DragOverEvent) {
+    setOverId(e.over ? String(e.over.id) : null);
+  }
+
+  function handleDragCancel() {
+    setActiveId(null);
+    setOverId(null);
   }
 
   /**
-   * 提交拖放。
-   *
    * `targetIndex` 语义是「把被拖节点从原位置取出后，插入到目标下标处」，
-   * 因此"落在某节点之后"= 该节点在列表里的下标 + 1（不含自身）。
+   * 所以"落在某节点之前"就是目标节点在其同级列表里的下标。
    */
-  function commitDrop(intent: DropIntent | null) {
-    if (!drag) return;
-    const { nodeId } = drag;
-    setDrag(null);
-    if (!intent) return;
+  function handleDragEnd(e: DragEndEvent) {
+    const active = String(e.active.id);
+    const over = e.over ? String(e.over.id) : null;
+    setActiveId(null);
+    setOverId(null);
+    if (!over) return;
 
-    if (intent.kind === "inside") {
-      /* 移进卷内：追加到该卷末尾。 */
-      void onMoveNode(nodeId, intent.parentId, Number.MAX_SAFE_INTEGER);
+    const ref = parseDroppableId(over);
+    const nodeId = active.slice(NODE_PREFIX.length);
+    if (!ref) return;
+
+    if (ref.kind === "into") {
+      void onMoveNode(nodeId, ref.parentId, Number.MAX_SAFE_INTEGER);
       return;
     }
 
-    const siblings = chaptersByVolume.get(intent.parentId) ?? [];
-    const at = siblings.findIndex((n) => n.id === nodeId);
-    const target = intent.kind === "before" ? at : at < 0 ? 0 : at;
-    void onMoveNode(nodeId, intent.parentId, target);
-  }
-
-  /* 拖放反馈：当前落点的指示线 / 高亮。 */
-  function dropClass(intent: DropIntent | null): string {
-    if (!drag || !intent || drag.intent?.kind !== intent.kind) return "";
-    if (drag.intent.parentId !== intent.parentId) return "";
-    return intent.kind === "inside"
-      ? "ring-1 ring-primary bg-accent/60"
-      : intent.kind === "before"
-        ? "border-t-2 border-primary"
-        : "border-b-2 border-primary";
+    const target = nodeById.get(ref.nodeId);
+    if (!target) return;
+    const siblings = chaptersByVolume.get(target.parentId) ?? [];
+    const index = siblings.findIndex((n) => n.id === target.id);
+    void onMoveNode(nodeId, target.parentId, index);
   }
 
   /* ---------- 状态 / 摘要 ---------- */
@@ -196,128 +309,49 @@ export default function OutlinePane({
     const list = chaptersByVolume.get(parentId) ?? [];
     if (!list.length) return null;
     return (
-      <ul className="flex flex-col">
-        {list.map((node) => {
-          const intent: DropIntent = {
-            kind: "before",
-            parentId,
-          };
-          const isDragging = drag?.nodeId === node.id;
-          if (editingMeta === node.id && metaDraft) {
-            return (
+      <SortableContext
+        items={list.map((n) => NODE_PREFIX + n.id)}
+        strategy={verticalListSortingStrategy}
+      >
+        <ul className="flex flex-col">
+          {list.map((node) =>
+            editingMeta === node.id && metaDraft ? (
               <li key={node.id} className="px-2 py-1">
-                <div className="flex flex-col gap-1.5 rounded-md border bg-background p-1.5">
-                  <Select
-                    value={metaDraft.status}
-                    onValueChange={(v) =>
-                      setMetaDraft({ ...metaDraft, status: v as NodeStatus })
-                    }
-                  >
-                    <SelectTrigger className="h-7 text-xs" aria-label={t("Editor.node.status")}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="draft">{t("Editor.node.status.draft")}</SelectItem>
-                      <SelectItem value="revising">
-                        {t("Editor.node.status.revising")}
-                      </SelectItem>
-                      <SelectItem value="final">{t("Editor.node.status.final")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    autoFocus
-                    value={metaDraft.synopsis}
-                    placeholder={t("Editor.node.synopsis")}
-                    aria-label={t("Editor.node.synopsis")}
-                    className="h-7 text-xs"
-                    onChange={(e) =>
-                      setMetaDraft({ ...metaDraft, synopsis: e.target.value })
-                    }
-                    onKeyDown={(e) => {
-                      if (e.nativeEvent.isComposing) return;
-                      if (e.key === "Enter") void commitMeta();
-                      if (e.key === "Escape") setEditingMeta(null);
-                    }}
-                  />
-                  <div className="flex gap-1">
-                    <Button size="sm" className="h-6 flex-1 text-xs" onClick={() => void commitMeta()}>
-                      {t("Editor.chapter.confirmRename")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-6 flex-1 text-xs"
-                      onClick={() => setEditingMeta(null)}
-                    >
-                      {t("Editor.chapter.cancelRename")}
-                    </Button>
-                  </div>
-                </div>
-              </li>
-            );
-          }
-          return (
-          <li key={node.id} className={["group flex items-center", isDragging ? "opacity-40" : ""].join(" ")}>
-            {/*
-             * 行容器而非直接用 button：状态 / 摘要编辑是同级按钮，
-             * 嵌套 button 属于非法 HTML，浏览器还会连带吃掉点击事件。
-             */}
-            <div
-              draggable
-              aria-grabbed={isDragging}
-              title={t("Editor.node.dragHint")}
-              onClick={() => setCurrentChapterId(node.id)}
-              onDragStart={() => setDrag({ nodeId: node.id, intent: null })}
-              onDragEnd={() => setDrag(null)}
-              onDragOver={(e) => {
-                e.preventDefault();
-                if (!drag || drag.nodeId === node.id) return;
-                setDrag({ nodeId: drag.nodeId, intent: resolveIntent(e, node, false) });
-              }}
-              onDrop={(e) => {
-                e.preventDefault();
-                commitDrop(resolveIntent(e, node, false));
-              }}
-              className={[
-                "flex min-w-0 flex-1 cursor-grab items-center gap-2 rounded-md py-1.5 pr-1 text-left text-sm transition-colors active:cursor-grabbing",
-                "pl-8 hover:bg-accent hover:text-accent-foreground",
-                currentChapterId === node.id
-                  ? "bg-accent/60 font-medium text-accent-foreground"
-                  : "text-muted-foreground",
-                dropClass(intent),
-              ].join(" ")}
-            >
-              <FileText className="icon-sm shrink-0" />
-              <span className="truncate">{node.title}</span>
-              {/* 状态点：非草稿才标，否则整棵树都是点、看不出差别。 */}
-              {node.status !== "draft" ? (
-                <span
-                  className={[
-                    "size-1.5 shrink-0 rounded-full",
-                    node.status === "final" ? "bg-emerald-500" : "bg-amber-500",
-                  ].join(" ")}
-                  title={t(`Editor.node.status.${node.status}`)}
+                <NodeMetaEditor
+                  node={node}
+                  status={metaDraft.status}
+                  synopsis={metaDraft.synopsis}
+                  onChange={(patch) =>
+                    setMetaDraft((prev) =>
+                      prev
+                        ? {
+                            status: patch.status ?? prev.status,
+                            synopsis: patch.synopsis ?? prev.synopsis,
+                          }
+                        : prev
+                    )
+                  }
+                  onSubmit={() => void commitMeta()}
+                  onCancel={() => {
+                    setEditingMeta(null);
+                    setMetaDraft(null);
+                  }}
                 />
-              ) : null}
-              {node.synopsis ? (
-                <span className="ml-auto max-w-[40%] truncate text-xs text-muted-foreground/60">
-                  {node.synopsis}
-                </span>
-              ) : null}
-            </div>
-            <button
-              type="button"
-              aria-label={t("Editor.node.editMeta")}
-              title={t("Editor.node.editMeta")}
-              className="flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100"
-              onClick={() => openMeta(node)}
-            >
-              <Settings2 className="icon-sm" />
-            </button>
-          </li>
-          );
-        })}
-      </ul>
+              </li>
+            ) : (
+              <SortableChapter
+                key={node.id}
+                node={node}
+                selected={currentChapterId === node.id}
+                dragging={activeId === NODE_PREFIX + node.id}
+                onSelect={() => setCurrentChapterId(node.id)}
+                onEditMeta={() => openMeta(node)}
+                editMetaLabel={t("Editor.node.editMeta")}
+              />
+            )
+          )}
+        </ul>
+      </SortableContext>
     );
   }
 
@@ -356,161 +390,155 @@ export default function OutlinePane({
         </div>
       </div>
 
-      {/* 树体 */}
-      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
-        {/* 添加卷输入框 */}
-        {addingVolume ? (
-          <div className="mb-1 flex items-center gap-1 px-1">
-            <Input
-              autoFocus
-              value={volumeName}
-              placeholder={t("Editor.side.volume")}
-              className="h-7 text-sm"
-              onChange={(e) => setVolumeName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) void commitVolume();
-                if (e.key === "Escape") setAddingVolume(false);
-              }}
-            />
-          </div>
-        ) : null}
-
-        {/* 卷分组 */}
-        {volumes.map((volume) => {
-          const isCollapsed = collapsed[volume.id];
-          /* 卷同时是「排序项」和「容器」，所以 canNest 为 true。 */
-          const volumeIntent: DropIntent = { kind: "inside", parentId: volume.id };
-          return (
-            <div
-              key={volume.id}
-              className={[
-                "mb-1",
-                drag?.nodeId === volume.id ? "opacity-40" : "",
-                dropClass(volumeIntent),
-              ].join(" ")}
-            >
-              <div
-                className="group flex items-center gap-1 rounded-md px-2 py-1 hover:bg-accent/40"
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  if (!drag || drag.nodeId === volume.id) return;
-                  setDrag({
-                    nodeId: drag.nodeId,
-                    intent: resolveIntent(e, volume, true),
-                  });
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
+        onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
+      >
+        {/* 树体 */}
+        <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+          {/* 添加卷输入框 */}
+          {addingVolume ? (
+            <div className="mb-1 flex items-center gap-1 px-1">
+              <Input
+                autoFocus
+                value={volumeName}
+                placeholder={t("Editor.side.volume")}
+                className="h-7 text-sm"
+                onChange={(e) => setVolumeName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.nativeEvent.isComposing) void commitVolume();
+                  if (e.key === "Escape") setAddingVolume(false);
                 }}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  commitDrop(resolveIntent(e, volume, true));
-                }}
-              >
-                <button
-                  type="button"
-                  onClick={() =>
-                    setCollapsed((prev) => ({ ...prev, [volume.id]: !prev[volume.id] }))
-                  }
-                  className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                >
-                  <ChevronRight
-                    className={[
-                      "icon-sm shrink-0 text-muted-foreground transition-transform",
-                      isCollapsed ? "" : "rotate-90",
-                    ].join(" ")}
-                  />
-                  <BookOpen className="icon-sm shrink-0 text-muted-foreground" />
-                  <span className="truncate text-sm font-medium">{volume.title}</span>
-                  <span className="ml-auto text-xs text-muted-foreground/60">
-                    {(chaptersByVolume.get(volume.id) ?? []).length}
-                  </span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setChapterName("");
-                    setAddingChapterIn(volume.id);
-                  }}
-                  className="flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground"
-                  aria-label={t("Editor.side.addChapter")}
-                >
-                  <Plus className="icon-sm" />
-                </button>
-              </div>
-
-              {!isCollapsed ? (
-                <>
-                  {addingChapterIn === volume.id ? (
-                    <div className="flex items-center gap-1 py-1 pl-6 pr-2">
-                      <Input
-                        autoFocus
-                        value={chapterName}
-                        placeholder={t("Editor.side.chapter")}
-                        className="h-7 text-sm"
-                        onChange={(e) => setChapterName(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" && !e.nativeEvent.isComposing)
-                            void commitChapter(volume.id);
-                          if (e.key === "Escape") setAddingChapterIn(undefined);
-                        }}
-                      />
-                    </div>
-                  ) : null}
-                  {renderChapterList(volume.id)}
-                </>
-              ) : null}
+              />
             </div>
-          );
-        })}
+          ) : null}
 
-        {/* 根层章节（不属于任何卷）*/}
-        {/*
-         * 根层拖放区：把章从卷里拖出来必须有落点，
-         * 否则"移出到顶层"这个动作在界面上无法完成。
-         * 拖拽进行中才显示，避免平时占掉空白处。
-         */}
-        {drag ? (
-          <div
-            className={[
-              "mt-1 rounded-md border border-dashed px-2 py-1.5 text-center text-xs transition-colors",
-              drag.intent?.kind !== "inside" && drag.intent?.parentId === null
-                ? "border-primary bg-accent/60 text-accent-foreground"
-                : "border-border text-muted-foreground/60",
-            ].join(" ")}
-            onDragOver={(e) => {
-              e.preventDefault();
-              if (!drag) return;
-              setDrag({ nodeId: drag.nodeId, intent: { kind: "after", parentId: null } });
-            }}
-            onDrop={(e) => {
-              e.preventDefault();
-              commitDrop({ kind: "after", parentId: null });
-            }}
+          {/* 卷分组 */}
+          {volumes.map((volume) => {
+            const isCollapsed = collapsed[volume.id];
+            return (
+              <DropZone
+                key={volume.id}
+                parentId={volume.id}
+                dragging={Boolean(activeId) && overRef?.kind !== "before"}
+                className="mb-1"
+              >
+                <div className="group flex items-center gap-1 rounded-md px-2 py-1 hover:bg-accent/40">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setCollapsed((prev) => ({ ...prev, [volume.id]: !prev[volume.id] }))
+                    }
+                    className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+                  >
+                    <ChevronRight
+                      className={[
+                        "icon-sm shrink-0 text-muted-foreground transition-transform",
+                        isCollapsed ? "" : "rotate-90",
+                      ].join(" ")}
+                    />
+                    <BookOpen className="icon-sm shrink-0 text-muted-foreground" />
+                    <span className="truncate text-sm font-medium">{volume.title}</span>
+                    <span className="ml-auto text-xs text-muted-foreground/60">
+                      {(chaptersByVolume.get(volume.id) ?? []).length}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChapterName("");
+                      setAddingChapterIn(volume.id);
+                    }}
+                    className="flex size-5 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground"
+                    aria-label={t("Editor.side.addChapter")}
+                  >
+                    <Plus className="icon-sm" />
+                  </button>
+                </div>
+
+                {!isCollapsed ? (
+                  <>
+                    {addingChapterIn === volume.id ? (
+                      <div className="flex items-center gap-1 py-1 pl-6 pr-2">
+                        <Input
+                          autoFocus
+                          value={chapterName}
+                          placeholder={t("Editor.side.chapter")}
+                          className="h-7 text-sm"
+                          onChange={(e) => setChapterName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" && !e.nativeEvent.isComposing)
+                              void commitChapter(volume.id);
+                            if (e.key === "Escape") setAddingChapterIn(undefined);
+                          }}
+                        />
+                      </div>
+                    ) : null}
+                    {renderChapterList(volume.id)}
+                  </>
+                ) : null}
+              </DropZone>
+            );
+          })}
+
+          {/*
+           * 根层拖放区：把章从卷里拖出来必须有落点，
+           * 否则"移出到顶层"这个动作在界面上无法完成。
+           * 拖拽进行中才显示虚线框，避免平时占掉空白处。
+           */}
+          <DropZone
+            parentId={null}
+            dragging={Boolean(activeId) && overRef?.kind !== "before"}
+            className={activeId ? "mt-1 rounded-md border border-dashed border-border/60 p-1" : ""}
           >
-            {t("Editor.node.moveOut")}
-          </div>
-        ) : null}
-        {addingChapterIn === null ? (
-          <div className="flex items-center gap-1 py-1 pl-2 pr-2">
-            <Input
-              autoFocus
-              value={chapterName}
-              placeholder={t("Editor.side.chapter")}
-              className="h-7 text-sm"
-              onChange={(e) => setChapterName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) void commitChapter(null);
-                if (e.key === "Escape") setAddingChapterIn(undefined);
-              }}
-            />
-          </div>
-        ) : null}
-        {renderChapterList(null)}
+            {activeId ? (
+              <p className="px-1 py-1 text-center text-xs text-muted-foreground/60">
+                {t("Editor.node.moveOut")}
+              </p>
+            ) : null}
+            {addingChapterIn === null ? (
+              <div className="flex items-center gap-1 py-1 pl-2 pr-2">
+                <Input
+                  autoFocus
+                  value={chapterName}
+                  placeholder={t("Editor.side.chapter")}
+                  className="h-7 text-sm"
+                  onChange={(e) => setChapterName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing)
+                      void commitChapter(null);
+                    if (e.key === "Escape") setAddingChapterIn(undefined);
+                  }}
+                />
+              </div>
+            ) : null}
+            {renderChapterList(null)}
+          </DropZone>
 
-        {!volumes.length && !chapters.length && addingVolume === false && addingChapterIn === undefined ? (
-          <div className="px-2 py-6 text-center">
-            <p className="text-xs text-muted-foreground">{t("Editor.side.emptyWork")}</p>
-          </div>
-        ) : null}
-      </div>
+          {!volumes.length &&
+          !chapters.length &&
+          !addingVolume &&
+          addingChapterIn === undefined ? (
+            <div className="px-2 py-6 text-center">
+              <p className="text-xs text-muted-foreground">{t("Editor.side.emptyWork")}</p>
+            </div>
+          ) : null}
+        </div>
+
+        <DragOverlay>
+          {activeNode ? (
+            <div className="flex items-center gap-2 rounded-md bg-accent px-2 py-1.5 text-sm shadow-lg">
+              <GripVertical className="icon-sm shrink-0 opacity-60" />
+              <FileText className="icon-sm shrink-0" />
+              <span className="truncate">{activeNode.title}</span>
+            </div>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
     </div>
   );
 }

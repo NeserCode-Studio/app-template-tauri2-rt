@@ -32,6 +32,7 @@ const log = createLogger("App");
 
 const Library = lazy(() => import("@/views/Library"));
 const Editor = lazy(() => import("@/views/Editor"));
+const CodexLibrary = lazy(() => import("@/views/CodexLibrary"));
 const TrayMenu = lazy(() => import("@/views/TrayMenu"));
 
 /**
@@ -176,6 +177,14 @@ function App() {
                     <Suspense fallback={null}>
                       <Routes>
                         <Route path="/" index element={<Library />} />
+                        <Route
+                          path="/codex"
+                          element={
+                            <div className="h-[calc(100vh-2rem)] w-full">
+                              <CodexLibrary />
+                            </div>
+                          }
+                        />
                         <Route
                           path="/editor"
                           element={
