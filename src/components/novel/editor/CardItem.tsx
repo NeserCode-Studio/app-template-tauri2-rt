@@ -1,14 +1,7 @@
 import { useMemo } from "react";
-import { ArrowDown, ArrowUp, BookOpen, Combine, MoreHorizontal, Scissors, Trash2 } from "lucide-react";
+import { BookOpen } from "lucide-react";
 import { Pencil } from "lucide-react";
 
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { useI18n } from "@/composables";
 import { useCodex } from "@/contexts/codex";
 import { usePreferences } from "@/contexts/preferences";
@@ -299,71 +292,13 @@ export default function CardItem({
             )}
       </p>
 
-      {/* 操作菜单：悬停或聚焦时浮现，不干扰阅读 */}
-      <div
-        className={[
-          "absolute -top-3 right-0 flex items-center gap-0.5 rounded-md border bg-background/95 px-0.5 py-0.5 shadow-sm",
-          "opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
-          isActive ? "opacity-100" : "",
-        ].join(" ")}
-      >
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              className="flex size-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-              aria-label={t("Editor.card.more")}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <MoreHorizontal className="icon-sm" />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
-            <DropdownMenuItem
-              disabled={index === 0}
-              onSelect={() => onMoveUp(index)}
-            >
-              <ArrowUp className="icon-sm" />
-              {t("Editor.card.moveUp")}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={index === total - 1}
-              onSelect={() => onMoveDown(index)}
-            >
-              <ArrowDown className="icon-sm" />
-              {t("Editor.card.moveDown")}
-            </DropdownMenuItem>
-
-            <DropdownMenuSeparator />
-
-            <DropdownMenuItem
-              disabled={isEmpty}
-              onSelect={() => onSplit(index)}
-            >
-              <Scissors className="icon-sm" />
-              {t("Editor.card.split")}
-            </DropdownMenuItem>
-            <DropdownMenuItem
-              disabled={index === total - 1}
-              onSelect={() => onMergeDown(index)}
-            >
-              <Combine className="icon-sm" />
-              {t("Editor.card.merge")}
-            </DropdownMenuItem>
-
-            <DropdownMenuSeparator />
-
-            <DropdownMenuItem
-              variant="destructive"
-              onSelect={() => onDelete(index)}
-            >
-              <Trash2 className="icon-sm" />
-              {t("Editor.card.delete")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
-
+      {/*
+       * 原先这里挂过一个悬停浮现的操作菜单（拆分 / 拼合 / 上下移 / 删除）。
+       * 已移除：四个操作在右键菜单里全都有，而悬停菜单会在鼠标扫过
+       * 正文时不断闪现——恰好在阅读时最密集的地方制造视觉噪音，
+       * 而且它浮在段落右上角，会遮住相邻段落的行尾。
+       * 右键是那个层级该有的入口：它按需出现，不抢注意力。
+       */}
     </div>
     </TextContextMenu>
   );
