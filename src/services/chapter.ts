@@ -5,7 +5,7 @@
  *   卡片数组 鈫? 生成 txt 视图 鈫? 落盘 chapters/<id>.json + texts/<id>.txt
  */
 
-import { createFs } from "./fs";
+import { createFs, joinRel } from "./fs";
 import { chapterFile, chapterTextFile } from "./paths";
 import { chapterSchema, type Chapter, type Card } from "@/shared/schema";
 import { createLogger } from "@/lib/logger";
@@ -87,6 +87,60 @@ export async function createChapter(root: string, workId: string, title: string)
   const chapter = emptyChapter(crypto.randomUUID(), title);
   await saveChapter(root, workId, chapter);
   return chapter;
+}
+
+/**
+ * 重命名章节。
+ *
+ * 标题存在两处，必须一起改：章文件里的 title，以及结构树节点的 title。
+ * 只改其一会出现「结构树显示新名字，打开后又是旧名字」。
+ */
+export async function renameChapter(
+  root: string,
+  workId: string,
+  chapter: Chapter,
+  title: string
+): Promise<Chapter> {
+  const next: Chapter = { ...chapter, title, updatedAt: Date.now() };
+  await saveChapter(root, workId, next);
+  return next;
+}
+
+/** 删除章：同时清掉 json 与 txt 视图。 */
+export async function deleteChapter(root: string, workId: string, chapterId: string): Promise<void> {
+  const fs2 = createFs(root);
+  await fs2.remove(chapterFile(workId, chapterId));
+  await fs2.remove(chapterTextFile(workId, chapterId));
+  log.debug("chapter deleted", { id: chapterId });
+}
+
+/**
+ * 统计整部作品的字数：逐个读取章文件累加。
+ *
+ * 作品库要显示的是全书字数，因此不能靠"当前编辑的章"累加——
+ * 那样数字会随最后编辑的位置跳变。这里以磁盘为准全量重算，
+ * 单章损坏只跳过该章，不让整部作品统计失败。
+ */
+export async function countWorkWords(root: string, workId: string): Promise<number> {
+  const fs2 = createFs(root);
+  let files: string[];
+  try {
+    files = await fs2.readDir(joinRel("works", workId, "chapters"));
+  } catch {
+    return 0;
+  }
+  let total = 0;
+  for (const name of files) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      const raw = await fs2.readText(joinRel("works", workId, "chapters", name));
+      const parsed = chapterSchema.safeParse(JSON.parse(raw));
+      if (parsed.success) total += countWords(cardsToText(parsed.data.cards));
+    } catch (err) {
+      log.warn("work word count: chapter unreadable", name, err);
+    }
+  }
+  return total;
 }
 
 /** 仅取 id 的小工具（避免上面把参数名写错）。 */

@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight, Pencil, Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   ResizableHandle,
   ResizablePanel,
@@ -18,8 +29,15 @@ import { useI18n } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useWorkspace } from "@/contexts/workspace";
-import { addNode as addOutlineNode } from "@/services/outline";
-import { createChapter as createChapterFile, loadChapter } from "@/services/chapter";
+import { addNode as addOutlineNode, removeNode, updateNode } from "@/services/outline";
+import {
+  createChapter as createChapterFile,
+  countWorkWords,
+  deleteChapter as deleteChapterFile,
+  loadChapter,
+  renameChapter as renameChapterFile,
+} from "@/services/chapter";
+import { recordWrite } from "@/services/stats";
 import { createLogger } from "@/lib/logger";
 import type { Chapter } from "@/shared/schema";
 
@@ -43,6 +61,11 @@ export default function Editor() {
   const [loading, setLoading] = useState(false);
   /** 新建章节对话框：打开时只做命名，命名后才真正建章。 */
   const [newChapterFor, setNewChapterFor] = useState<string | null | undefined>(undefined);
+  /** 章节重命名：行内输入态。 */
+  const [renaming, setRenaming] = useState(false);
+  const [renameDraft, setRenameDraft] = useState("");
+  /** 待确认删除的章节。 */
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
 
   /* 作品切换后回到作品库，避免空编辑器。 */
   useEffect(() => {
@@ -132,6 +155,54 @@ export default function Editor() {
 
   const work = currentWorkId ? works[currentWorkId] : null;
 
+  /* ---------- 章节操作（右侧栏） ---------- */
+
+  /** 重命名：章文件与结构树节点必须同步改，否则两处标题会不一致。 */
+  const renameChapter = useCallback(async () => {
+    if (!root || !currentWorkId || !chapter) return;
+    const title = renameDraft.trim();
+    if (!title || title === chapter.title) {
+      setRenaming(false);
+      return;
+    }
+    const updated = await renameChapterFile(root, currentWorkId, chapter, title);
+    setChapter(updated);
+    setOutline(await updateNode(root, currentWorkId, updated.id, { title }));
+    setRenameDraft("");
+    setRenaming(false);
+  }, [root, currentWorkId, chapter, renameDraft, setOutline]);
+
+  /** 删除当前章：先删正文文件，再从结构树上摘掉节点。 */
+  const deleteCurrentChapter = useCallback(async () => {
+    if (!root || !currentWorkId || !chapter) return;
+    const index = chapters.findIndex((c) => c.id === chapter.id);
+    await deleteChapterFile(root, currentWorkId, chapter.id);
+    const next = await removeNode(root, currentWorkId, chapter.id);
+    setOutline(next);
+    /* 选中相邻的章；没有别的章就回到空态。 */
+    setCurrentChapterId(next.nodes.some((n) => n.id === chapter.id)
+      ? null
+      : (chapters[index - 1]?.id ?? chapters[index + 1]?.id ?? null));
+    setChapter(null);
+    setPendingDelete(null);
+  }, [root, currentWorkId, chapter, chapters, setOutline, setCurrentChapterId]);
+
+  /**
+   * 章落盘后更新作品库字数。
+   *
+   * 作品总字数是全书各章之和，且作品库可能已经打开了别的章，
+   * 因此按磁盘全量重算最可靠——靠累加增量只会在多章轮流编辑时算错。
+   */
+  const commitWords = useCallback(
+    async () => {
+      if (!root || !currentWorkId) return;
+      const total = await countWorkWords(root, currentWorkId);
+      /* delta 只影响"今日新增字数"这一项，不影响作品总字数。 */
+      await recordWrite(root, currentWorkId, total, 0);
+    },
+    [root, currentWorkId]
+  );
+
   if (!currentWorkId || !root) return null;
 
   return (
@@ -167,11 +238,14 @@ export default function Editor() {
         {/* 中栏：卡片区 */}
         <ResizablePanel defaultSize={58} minSize={40}>
           {/*
-           * 必须包一层 h-full：ResizablePanel 本身是普通块级 div，
-           * ChapterEditor 的 flex-1 只有在父级是 flex 且有确定高度时才生效。
-           * 少这一层，卡片区会按内容高度撑开，底部输入框被顶到可视区之外。
+           * 必须包一层「flex + h-full」。
+           *
+           * ResizablePanel 本身是普通块级 div，而 ChapterEditor 靠 flex-1
+           * 撑满剩余高度——flex-1 只在父级是 flex 容器时生效。若父级只是
+           * h-full 的块级 div，ChapterEditor 高度就退化成内容高度，
+           * 卡片区随正文长短伸缩，底部输入框被顶在正文后面而非贴底。
            */}
-          <div className="h-full">
+          <div className="flex h-full min-h-0 flex-col">
             {chapter ? (
               <ChapterEditor
                 key={chapter.id}
@@ -180,6 +254,7 @@ export default function Editor() {
                 workId={currentWorkId}
                 onWordsChange={setWords}
                 onSaved={setChapter}
+                onWordsCommitted={() => void commitWords()}
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3">
@@ -242,12 +317,89 @@ export default function Editor() {
               ) : null}
             </section>
 
+            {/*
+             * 当前章操作。
+             *
+             * 放右侧而非卡片悬浮菜单：这些是"章级"动作（改名、删除），
+             * 与单张卡片的编辑动作是两回事，混在一起会让轻操作和重操作
+             * 挤在同一个几像素的悬浮条里。
+             */}
+            {chapter ? (
+              <>
+                <Separator />
+                <section className="flex flex-col gap-2">
+                  <h2 className="row-label">{t("Editor.side.actions")}</h2>
+
+                  {renaming ? (
+                    <Input
+                      autoFocus
+                      value={renameDraft}
+                      className="h-7 text-sm"
+                      aria-label={t("Editor.chapter.renameTitle")}
+                      onChange={(e) => setRenameDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.nativeEvent.isComposing) return;
+                        if (e.key === "Enter") void renameChapter();
+                        if (e.key === "Escape") setRenaming(false);
+                      }}
+                    />
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="w-full justify-start"
+                      onClick={() => {
+                        setRenameDraft(chapter.title);
+                        setRenaming(true);
+                      }}
+                    >
+                      <Pencil className="icon-md" />
+                      {t("Editor.chapter.rename")}
+                    </Button>
+                  )}
+
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="w-full justify-start text-destructive hover:text-destructive"
+                    onClick={() => setPendingDelete(chapter.id)}
+                  >
+                    <Trash2 className="icon-md" />
+                    {t("Editor.chapter.delete")}
+                  </Button>
+                </section>
+              </>
+            ) : null}
+
             {loading ? (
               <p className="text-xs text-muted-foreground">{t("Editor.status.saving")}</p>
             ) : null}
           </div>
         </ResizablePanel>
       </ResizablePanelGroup>
+
+      {/* 删除确认：删章会连正文一起清掉，必须二次确认。 */}
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Editor.chapter.delete")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("Editor.chapter.deleteConfirm")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Editor.split.cancel")}</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void deleteCurrentChapter()}>
+              {t("Editor.chapter.confirmDelete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

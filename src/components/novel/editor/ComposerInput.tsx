@@ -1,4 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
+import { CornerDownLeft } from "lucide-react";
 
 import { useI18n } from "@/composables";
 
@@ -21,6 +22,13 @@ export interface ComposerInputProps {
   onSubmit: (text: string, editingIndex: number) => void;
   /** 正在编辑的卡片下标，-1 表示新建模式。仅用于显示提示。 */
   editingIndex: number;
+  /**
+   * 从「编辑已有卡片」退回「接着写新段落」。
+   *
+   * 点击时会把当前卡片原文留在卡片里（不做修改），输入框清空并回到追加模式。
+   * 未提交时按 Esc 也会走这条路。
+   */
+  onReturnToNew?: () => void;
 }
 
 /**
@@ -35,7 +43,7 @@ export interface ComposerInputProps {
  * 3. Shift+Enter 保留为换行，不提交。
  */
 const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
-  function ComposerInput({ onSubmit, editingIndex }, ref) {
+  function ComposerInput({ onSubmit, editingIndex, onReturnToNew }, ref) {
     const { t } = useI18n();
     const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -76,6 +84,17 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
             onKeyDown={(e) => {
               // 输入法组合中：Enter 属于候选确认，绝不提交。
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+
+              // Esc：放弃当前编辑态，回到"接着写新段落"。
+              if (e.key === "Escape") {
+                e.preventDefault();
+                if (editingIndex >= 0 && onReturnToNew) {
+                  onReturnToNew();
+                  e.currentTarget.value = "";
+                }
+                return;
+              }
+
               if (e.key !== "Enter" || e.shiftKey) return;
 
               e.preventDefault();
@@ -89,17 +108,34 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
 
         </div>
 
-        <p className="text-xs text-muted-foreground/60">
-          {editingIndex >= 0 ? (
-            <>
-              <span className="font-semibold text-foreground">
-                {t("Editor.input.editing")}
-              </span>
-              <span className="mx-1">·</span>
-            </>
+        {/*
+         * 提示行：左侧状态，右侧"回到最新段落"。
+         * 用户点了某张旧卡片后，底部输入框就被那条卡片占住了，
+         * 没有出口就只能继续改那张卡；这里给出明确的返回入口。
+         */}
+        <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground/60">
+          <span className="min-w-0 truncate">
+            {editingIndex >= 0 ? (
+              <>
+                <span className="font-semibold text-foreground">
+                  {t("Editor.input.editing")}
+                </span>
+                <span className="mx-1">·</span>
+              </>
+            ) : null}
+            {t("Editor.input.hint")}
+          </span>
+          {editingIndex >= 0 && onReturnToNew ? (
+            <button
+              type="button"
+              onClick={onReturnToNew}
+              className="flex shrink-0 items-center gap-1 rounded px-1 py-0.5 font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+            >
+              <CornerDownLeft className="icon-sm" />
+              {t("Editor.input.returnNew")}
+            </button>
           ) : null}
-          {t("Editor.input.hint")}
-        </p>
+        </div>
       </div>
     );
   }

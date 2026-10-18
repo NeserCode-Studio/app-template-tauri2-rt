@@ -27,7 +27,8 @@ import WorkCard from "@/components/novel/WorkCard";
 import { useI18n, useToast } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useWorkspace } from "@/contexts/workspace";
-import { loadStats } from "@/services/stats";
+import { loadStats, recordWrite } from "@/services/stats";
+import { countWorkWords } from "@/services/chapter";
 import { createLogger } from "@/lib/logger";
 import type { Work } from "@/shared/schema";
 
@@ -68,7 +69,17 @@ export default function Library() {
     for (const id of [...workspace.order, ...workspace.archived]) {
       try {
         const stats = await loadStats(root, id);
-        next[id] = stats.workWords[id] ?? 0;
+        /*
+         * stats.json 只是缓存；以磁盘上的章文件为准全量重算。
+         * 早期版本从未写过 stats，或统计早已与正文脱节，
+         * 直接信 stats 会让作品库长期显示 0。
+         */
+        const fromChapters = await countWorkWords(root, id);
+        next[id] = fromChapters || stats.workWords[id] || 0;
+        if (fromChapters !== (stats.workWords[id] ?? 0)) {
+          /* 回写修正，让下次打开不必重算。 */
+          await recordWrite(root, id, fromChapters, 0).catch(() => undefined);
+        }
       } catch (err) {
         log.warn("stats unreadable", id, err);
         next[id] = 0;

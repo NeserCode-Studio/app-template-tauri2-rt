@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, Check, Loader2, Save } from "lucide-react";
+import { BookOpen, Check, Loader2, Save, Undo2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import CardItem from "./CardItem";
@@ -24,12 +24,44 @@ export interface ChapterEditorProps {
   onWordsChange?: (words: number) => void;
   /** 章保存后通知父级（用于同步 outline 状态）。 */
   onSaved?: (chapter: Chapter) => void;
+  /**
+   * 章保存后上报本章字数（用于作品库的字数统计）。
+   * 传全量而非增量，避免重载 / 修数据后统计越漂越远。
+   */
+  onWordsCommitted?: (chapterWords: number) => void;
 }
 
 /** 防抖自动保存间隔（计划书 §6.3：800ms）。 */
 const AUTOSAVE_DELAY = 800;
 
 type SaveState = "saved" | "dirty" | "saving";
+
+/**
+ * 段末句读：用于判断"这一段是否已经写完"。
+ * 只认真正收束语义的标点，逗号顿号这类停顿符不算。
+ */
+const TERMINATORS = new Set([
+  "。", "！", "？", "…", "）", "】", "》", "」", "』", "〉",
+  "”", "’", ".", "!", "?", "…", ")", "]", "}", '"', "'",
+]);
+
+/** 该段是否以句读收束。 */
+function isTerminated(text: string): boolean {
+  const trimmed = text.trimEnd();
+  if (!trimmed) return false;
+  return TERMINATORS.has(Array.from(trimmed).at(-1) ?? "");
+}
+
+/** 上一次合并的信息，供"撤回合并"使用。 */
+interface LastMerge {
+  /** 合并后主卡所在下标。 */
+  index: number;
+  /** 合并前主卡的文本。 */
+  text: string;
+  /** 被并进来的那张卡的 id 与文本。 */
+  removedId: string;
+  removedText: string;
+}
 
 /**
  * 章内容编辑器：卡片列表 + 底部唯一输入框。
@@ -48,6 +80,7 @@ export default function ChapterEditor({
   workId,
   onWordsChange,
   onSaved,
+  onWordsCommitted,
 }: ChapterEditorProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -56,6 +89,8 @@ export default function ChapterEditor({
   const [editingIndex, setEditingIndex] = useState(-1);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [splitTarget, setSplitTarget] = useState<number | null>(null);
+  /** 上一次合并，用于"撤回合并"按钮。 */
+  const [lastMerge, setLastMerge] = useState<LastMerge | null>(null);
 
   const composerRef = useRef<ComposerHandle | null>(null);
   const historyRef = useRef<CommandHistory<Card[]> | null>(null);
@@ -74,6 +109,11 @@ export default function ChapterEditor({
           cursor: { cardIndex: editingIndexRef.current, offset: 0 },
         };
         await saveChapter(root, workId, next);
+        /*
+         * 作品库的字数来自 stats.json。作品总字数是全书各章之和，
+         * 由父级汇总后写入——单章字数不等于作品字数，这里只上报本章。
+         */
+        onWordsCommitted?.(countWords(cardsToText(nextCards)));
         pendingCards.current = null;
         setSaveState("saved");
         onSaved?.(next);
@@ -84,7 +124,7 @@ export default function ChapterEditor({
         toast.error("Editor.save.failed");
       }
     },
-    [root, workId, onSaved, toast]
+    [root, workId, onSaved, onWordsCommitted, toast]
   );
 
   /* 切章时重置：卡片、编辑态、历史栈。依赖 chapter.id 而非 chapter，
@@ -164,6 +204,22 @@ export default function ChapterEditor({
 
   /* ---------- 卡片操作 ---------- */
 
+  /* ---------- 撤销 / 重做 ----------
+     放在合并操作之前：撤回合并在结构对不上时会退回到通用撤销。 */
+  const undo = useCallback(() => {
+    const prev = historyRef.current?.undo();
+    if (!prev) return;
+    setCards(prev);
+    scheduleSave(prev);
+  }, [scheduleSave]);
+
+  const redo = useCallback(() => {
+    const next = historyRef.current?.redo();
+    if (!next) return;
+    setCards(next);
+    scheduleSave(next);
+  }, [scheduleSave]);
+
   /** 回车提交：editingIndex 为 -1 新建，否则更新该卡。 */
   const handleSubmit = useCallback(
     (text: string, index: number) => {
@@ -196,6 +252,30 @@ export default function ChapterEditor({
       if (card) composerRef.current?.load(card.text, "end");
     });
   }, []);
+
+  /**
+   * 从"编辑已有卡片"退回"接着写新段落"。
+   *
+   * 输入框里此时可能已经打了字但没提交。这里不丢弃：先把内容交还给原卡片
+   * （与正常提交一致），再清空输入框回到追加模式。这样"回车"和"点返回"
+   * 两种放弃方式行为一致，不会静默吃掉用户输入。
+   */
+  const returnToNew = useCallback(() => {
+    const index = editingIndexRef.current;
+    const draft = composerRef.current?.read().trim() ?? "";
+    if (index >= 0 && draft) {
+      const now = Date.now();
+      const next = cardsRef.current.map((c, i) =>
+        i === index ? cardSchema.parse({ ...c, text: draft, updatedAt: now }) : c
+      );
+      setCards(next);
+      historyRef.current?.record(next);
+      scheduleSave(next);
+    }
+    setEditingIndex(-1);
+    composerRef.current?.clear();
+    requestAnimationFrame(() => composerRef.current?.focus("end"));
+  }, [scheduleSave]);
 
   /* cards 的 ref 副本，供回调读取最新值。 */
   const cardsRef = useRef(cards);
@@ -262,20 +342,66 @@ export default function ChapterEditor({
     [cards, splitTarget, applyCards]
   );
 
-  /** 合并：当前卡与下一张合并为一张。 */
+  /**
+   * 合并：当前卡与下一张合并为一张。
+   *
+   * 合并只在"上一段确实写完了"时才合理——段末没有句读说明话还没说完，
+   * 硬拼起来会变成一段没有内部停顿的长句。因此先检查段末标点，
+   * 不满足时给出提示而不是默默合并。
+   */
   const mergeDown = useCallback(
     (index: number) => {
       if (index >= cards.length - 1) return;
-      const merged = `${cards[index].text}\n${cards[index + 1].text}`;
+      const head = cards[index].text.trimEnd();
+      if (!isTerminated(head)) {
+        toast.warning("Editor.card.mergeUnfinished");
+        return;
+      }
+      /* 段末标点与下一段开头之间不再插入换行：既然是同段，标点后就该接续。 */
+      const merged = `${head}${cards[index + 1].text}`;
       const next = [
         ...cards.slice(0, index),
         { ...cards[index], text: merged, updatedAt: Date.now() },
         ...cards.slice(index + 2),
       ];
       applyCards(next);
+      /* 记住这次合并，便于一键撤回（撤销栈也会记，但撤回入口更直接）。 */
+      setLastMerge({
+        index,
+        text: head,
+        removedId: cards[index + 1].id,
+        removedText: cards[index + 1].text,
+      });
     },
-    [cards, applyCards]
+    [cards, applyCards, toast]
   );
+
+  /** 撤回上一次的合并：把被并进来的那张卡还原成独立一张。 */
+  const undoMerge = useCallback(() => {
+    const merge = lastMerge;
+    if (!merge) return;
+    /* 内容可能已经被再次编辑过，结构对不上时交给通用撤销处理。 */
+    const current = cards[merge.index];
+    if (!current || !current.text.includes(merge.removedText)) {
+      setLastMerge(null);
+      undo();
+      return;
+    }
+    const restored: Card = cardSchema.parse({
+      id: merge.removedId,
+      text: merge.removedText,
+      createdAt: current.createdAt,
+      updatedAt: Date.now(),
+    });
+    const next = [
+      ...cards.slice(0, merge.index),
+      { ...current, text: merge.text },
+      restored,
+      ...cards.slice(merge.index + 1),
+    ];
+    applyCards(next);
+    setLastMerge(null);
+  }, [lastMerge, cards, applyCards, undo]);
 
   /** 删除一张卡。 */
   const deleteCard = useCallback(
@@ -290,21 +416,6 @@ export default function ChapterEditor({
     },
     [cards, applyCards]
   );
-
-  /* ---------- 撤销 / 重做 ---------- */
-  const undo = useCallback(() => {
-    const prev = historyRef.current?.undo();
-    if (!prev) return;
-    setCards(prev);
-    scheduleSave(prev);
-  }, [scheduleSave]);
-
-  const redo = useCallback(() => {
-    const next = historyRef.current?.redo();
-    if (!next) return;
-    setCards(next);
-    scheduleSave(next);
-  }, [scheduleSave]);
 
   /* 全局快捷键：Ctrl+Z / Ctrl+Shift+Z。输入框内让位给原生 undo。 */
   useEffect(() => {
@@ -391,6 +502,21 @@ export default function ChapterEditor({
             <Save className="icon-sm" />
             {t("Editor.save.manual")}
           </Button>
+          {/*
+           * 撤回合并：合并是"破坏性"的（少了一张卡），
+           * 因此在保存按钮旁给一个显式出口，而不只依赖 Ctrl+Z。
+           */}
+          {lastMerge ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7"
+              onClick={undoMerge}
+            >
+              <Undo2 className="icon-sm" />
+              {t("Editor.card.undoMerge")}
+            </Button>
+          ) : null}
         </div>
       </header>
 
@@ -432,7 +558,12 @@ export default function ChapterEditor({
       {/* 底部输入框：常驻，不随卡片数量滚动消失 */}
       <div className="border-t px-6 py-3">
         <div className="mx-auto max-w-3xl">
-          <ComposerInput ref={composerRef} editingIndex={editingIndex} onSubmit={handleSubmit} />
+          <ComposerInput
+            ref={composerRef}
+            editingIndex={editingIndex}
+            onSubmit={handleSubmit}
+            onReturnToNew={returnToNew}
+          />
         </div>
       </div>
     </div>
