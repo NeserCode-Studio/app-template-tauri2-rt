@@ -86,22 +86,100 @@ fn read_bytes_auto(bytes: Vec<u8>) -> Result<AutoReadResult, String> {
         });
     }
     /*
-     * 3) GB18030 需要 encoding_rs。
+     * 3) 不是 UTF-8。此时**不猜着解码**，只做辅助判断。
      *
-     * 它目前只是 Cargo.lock 里的**传递依赖**，未在本 crate 声明，
-     * 直接 `use encoding_rs::…` 是借用未声明的依赖，不可靠。
-     * 按项目规则（未获准不新增依赖），这里不引入它，而是返回错误：
-     * 让上层明确提示"该文件不是 UTF-8，请先转存为 UTF-8 再导入"，
-     * 好过悄悄用错编码把用户文稿写坏。
+     * 真正的 GB18030 转码需要 encoding_rs，它目前只是 Cargo.lock 里的
+     * 传递依赖、未在本 crate 声明。按项目规则（未获准不新增依赖）这里不引入。
      *
-     * 待办见 .agent/findings.md F6：获准后加 encoding_rs 并放开 GBK 导入。
+     * 但"文件不是 UTF-8"这句话对用户没有任何帮助——他不知道该怎么办。
+     * 所以做一层启发式判断：按 GBK/GB18030 的字节结构统计合法双字节比例，
+     * 若比例高就明确告诉他"这看起来是 GB18030/GBK 编码"，并给出可执行的
+     * 下一步。这比笼统报"不是 UTF-8"有用得多，同时仍然不擅自按错编码落盘。
      */
-    Err("file is not valid utf-8; convert it to utf-8 before importing".into())
+    let hint = detect_cjk_legacy(&bytes);
+    /* 路径由调用方 fs_read_text_auto 附加，这里不重复拼。 */
+    Err(hint.into())
+}
+
+/**
+ * 启发式判断非 UTF-8 内容是否像 GBK / GB18030。
+ *
+ * GBK 系编码的汉字占两个字节：首字节 0x81–0xFE，次字节 0x40–0xFE
+ * （排除 0x7F）。这里统计"按此规则能成对切分、且切分后没有落单字节"
+ * 的比例。比例够高就基本可以断定是 GBK 系编码。
+ *
+ * 这不是解码器：即使判断成立也**不产出文本**，只用于给用户一句能照做的提示。
+ * 猜着解码的风险太大——一旦判错就是满屏乱码落进用户的作品目录，
+ * 而报错只需要用户多做一个动作就能避免。
+ */
+fn detect_cjk_legacy(bytes: &[u8]) -> &'static str {
+    let mut pairs = 0usize;
+    let mut consumed = 0usize;
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b < 0x80 {
+            i += 1;
+            consumed += 1;
+            continue;
+        }
+        let next = bytes.get(i + 1).copied();
+        match next {
+            /*
+             * 首字节必须落在 0x81–0xFE：GBK 的首字节区间不含 0x80，
+             * 而二进制数据里 0x80 很常见。这一条能把不少二进制流挡在外面。
+             */
+            Some(t) if (0x81..=0xFE).contains(&b) && (0x40..=0xFE).contains(&t) && t != 0x7F => {
+                pairs += 1;
+                i += 2;
+                consumed += 2;
+            }
+            // 落单的高位字节：不符合 GBK 结构。
+            _ => {
+                i += 1;
+                consumed += 1;
+            }
+        }
+    }
+    if consumed == 0 {
+        return "file is not valid utf-8 and looks like binary data; please convert it to utf-8 before importing";
+    }
+    /*
+     * 双字节占比：成对字节数 ÷ 总字节数。
+     * 注意分子要乘 2——pairs 数的是"双字节组"，consumed 数的是"字节"，
+     * 直接相除上限只有 0.5，全是中文的 GBK 文件反而永远判不出来。
+     */
+    let ratio = (pairs * 2) as f64 / consumed as f64;
+    if ratio > 0.7 {
+        "file looks like GBK/GB18030 encoded; please convert it to utf-8 before importing"
+    } else {
+        "file is not valid utf-8; please convert it to utf-8 before importing"
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn detects_gbk_like_bytes() {
+        /* "中文" 的 GBK 编码：0xD6 0xD0 0xCE 0xC4。 */
+        let gbk: Vec<u8> = vec![0xD6, 0xD0, 0xCE, 0xC4];
+        assert!(detect_cjk_legacy(&gbk).contains("GBK"));
+    }
+
+    #[test]
+    fn plain_binary_is_not_called_gbk() {
+        /* 落单高位字节，不成对，不该被误判成中文编码。 */
+        let bin: Vec<u8> = vec![0x80, 0x41, 0xFF, 0x80, 0x80, 0x41];
+        assert!(!detect_cjk_legacy(&bin).contains("GBK"));
+    }
+
+    #[test]
+    fn utf8_never_reaches_the_legacy_branch() {
+        let r = read_bytes_auto("中文".as_bytes().to_vec());
+        assert!(r.is_ok());
+    }
 
     #[test]
     fn rejects_relative_path() {
