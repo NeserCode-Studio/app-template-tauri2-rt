@@ -65,6 +65,13 @@ export default function HistoryDialog({
    * null 表示没有待删除项。
    */
   const [pendingDrop, setPendingDrop] = useState<number | null>(null);
+  /**
+   * 待确认回滚的版本下标。
+   *
+   * 列表里的回滚按钮同样要确认，否则这里就成了绕过预览的捷径——
+   * 用户不必看清内容就能整体替换正文。
+   */
+  const [pendingRollback, setPendingRollback] = useState<number | null>(null);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -144,7 +151,7 @@ export default function HistoryDialog({
                           size="sm"
                           variant="outline"
                           className="h-7"
-                          onClick={() => onRollback(h.index)}
+                          onClick={() => setPendingRollback(h.index)}
                         >
                           {t("Editor.history.rollback")}
                         </Button>
@@ -209,6 +216,34 @@ export default function HistoryDialog({
                 }}
               >
                 {t("Editor.history.drop")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/* 回滚确认：与预览弹窗里的提示一致。 */}
+        <AlertDialog
+          open={pendingRollback !== null}
+          onOpenChange={(o) => {
+            if (!o) setPendingRollback(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("Editor.history.rollbackConfirm")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("Editor.history.rollbackHint")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("Editor.split.cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (pendingRollback !== null) onRollback(pendingRollback);
+                  setPendingRollback(null);
+                }}
+              >
+                {t("Editor.history.rollback")}
               </AlertDialogAction>
             </AlertDialogFooter>
           </AlertDialogContent>

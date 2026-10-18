@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import {
   Dialog,
   DialogContent,
@@ -6,6 +8,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useI18n } from "@/composables";
@@ -51,6 +63,8 @@ export default function HistoryPreviewDialog({
   const { t } = useI18n();
   const now = Date.now();
   const paragraphs = index === null ? [] : historyText(chapter, index);
+  /** 是否正等着用户确认回滚。 */
+  const [confirming, setConfirming] = useState(false);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,11 +105,40 @@ export default function HistoryPreviewDialog({
             {t("Titlebar.operations.close.tooltip")}
           </Button>
           {index !== null && index >= 0 && onRollback ? (
-            <Button onClick={() => onRollback(index)}>
+            <Button onClick={() => setConfirming(true)}>
               {t("Editor.history.rollback")}
             </Button>
           ) : null}
         </DialogFooter>
+
+        {/*
+         * 回滚确认。
+         *
+         * 回滚不像删除那样不可逆——当前正文会被存回历史，滚错了还能再滚回来。
+         * 但它确实会整体替换正文、并把目标版本从历史里移走，属于重写级的
+         * 动作，值得停一下让用户看清"现在写的内容会被换成这一版"。
+         */}
+        <AlertDialog open={confirming} onOpenChange={setConfirming}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t("Editor.history.rollbackConfirm")}</AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("Editor.history.rollbackHint")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>{t("Editor.split.cancel")}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (index !== null && index >= 0) onRollback?.(index);
+                  setConfirming(false);
+                }}
+              >
+                {t("Editor.history.rollback")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </DialogContent>
     </Dialog>
   );
