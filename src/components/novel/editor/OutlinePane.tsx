@@ -13,7 +13,6 @@ import {
   type CollisionDetection,
   closestCenter,
   pointerWithin,
-  type ClientRect,
 } from "@dnd-kit/core";
 import {
   SortableContext,
@@ -371,12 +370,18 @@ export default function OutlinePane({
    * 拖拽开始那一刻的布局快照（元素自身几何，不含 sortable 的 transform）。
    *
    * 落点不能靠松手瞬间 `getBoundingClientRect()` 现场读：dnd-kit 把被拖卡片钉在
-   * 原位、只用 transform 位移其它兄弟节点，所以此刻读到的仍是起始矩形，这正是
-   * 之前无论拖到哪都恒算出 index 0 的原因。这里在开始时记下原始矩形，松手时用
-   * dnd-kit 的 `delta.y` 叠加出用户真正落下的位置。
+   * 原位、只用 transform 位移其它兄弟节点，所以此刻读到的仍是起始矩形。
    */
   const layoutAtStart = useRef<{
-    activeRect: ClientRect;
+    /**
+     * 抓取瞬间的指针纵坐标。
+     *
+     * 落点必须按指针位置算，不能按卡片中心算：把手在卡片偏下处，用户按住的位置
+     * 与卡片中心相差一个固定偏移。dnd-kit 的碰撞检测用的就是指针坐标，若我们按
+     * 卡片中心判定，两者会差这一个偏移量——拖动距离越小，偏移占比越大，于是
+     * 出现"预览已经换位、松手却判定未变"。统一到指针坐标系即可对齐。
+     */
+    pointerY: number;
     centers: Map<string, number>;
   } | null>(null);
 
@@ -392,13 +397,18 @@ export default function OutlinePane({
       centers.set(id, r.top + r.height / 2);
     }
     /*
-     * 这里刻意从 DOM 读而不是 `active.rect.current.initial`：dragStart 那一刻
-     * sortable 的 transform 还没落到 DOM，读到的就是真实起始位置；dnd-kit 的
-     * initial 在这个时机是 null，取不到就会让整份快照落空、落点恒为 0。
+     * 指针起点取自激活事件本身；拿不到（非指针传感器）才退回卡片中心。
+     * `active.rect.current.initial` 在 dragStart 时机为 null，不能依赖。
      */
     const activeEl = nodeEls.current.get(String(e.active.id).slice(NODE_PREFIX.length));
-    const activeRect = activeEl ? activeEl.getBoundingClientRect() : null;
-    if (activeRect) layoutAtStart.current = { activeRect, centers };
+    const rect = activeEl ? activeEl.getBoundingClientRect() : null;
+    const pointerY =
+      e.activatorEvent instanceof PointerEvent
+        ? e.activatorEvent.clientY
+        : rect
+          ? rect.top + rect.height / 2
+          : null;
+    if (pointerY !== null) layoutAtStart.current = { pointerY, centers };
     log.debug("[outline-dnd] start", {
       active: String(e.active.id),
       registered: nodeEls.current.size,
@@ -456,25 +466,22 @@ export default function OutlinePane({
     }
     /*
      * 落点几何必须来自「拖拽开始时的布局 + 指针位移」：兄弟节点保持起始中心，
-     * 被拖卡片中心 = 起始中心 + delta.y。绕开 sortable transform 的渲染时序。
+     * 指针当前位置 = 抓取点 + delta.y。绕开 sortable transform 的渲染时序，
+     * 也和 dnd-kit 的指针坐标碰撞判定对齐。
      */
     const snap = layoutAtStart.current;
-    const activeRect = e.active.rect.current.translated ?? snap?.activeRect ?? null;
-    if (!activeRect) {
-      log.warn("[outline-dnd] abort: no active rect", { nodeId });
+    if (!snap) {
+      log.warn("[outline-dnd] abort: no drag snapshot", { nodeId });
       return;
     }
     const centers: number[] = [];
     for (const n of chaptersByVolume.get(targetParentId) ?? []) {
       if (n.id === nodeId) continue;
-      const center = snap?.centers.get(n.id);
+      const center = snap.centers.get(n.id);
       if (center === undefined) continue;
       centers.push(center);
     }
-    const base = snap
-      ? snap.activeRect.top + snap.activeRect.height / 2
-      : activeRect.top + activeRect.height / 2;
-    const draggedCenter = base + e.delta.y;
+    const draggedCenter = snap.pointerY + e.delta.y;
     const index = computeIndexByPosition(centers, draggedCenter);
     const siblings = chaptersByVolume.get(targetParentId) ?? [];
     const without = siblings.filter((n) => n.id !== nodeId);
