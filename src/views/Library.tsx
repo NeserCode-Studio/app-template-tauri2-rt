@@ -107,7 +107,11 @@ export default function Library() {
     if (!title) return;
     try {
       if (dialog.kind === "create") {
-        await create(title, type.trim());
+        const created = await create(title, type.trim());
+        if (!created) {
+          toast.error("Library.toast.failed");
+          return;
+        }
         toast.success("Library.toast.created");
       } else {
         await rename(dialog.workId, title);

@@ -8,9 +8,11 @@ import {
   SettingSelectItem,
 } from "@/components/SettingItems";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import WritingPrefs from "@/views/WritingPrefs";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
+  BookText,
   CheckCircle2,
   ChevronRight,
   Clock,
@@ -48,6 +50,48 @@ const SETTING_INDEX: SettingIndexItem[] = [
     group: "general",
     labelKey: "Settings.items.auto-complete.title",
     keywords: ["auto", "complete", "自动补全", "补全"],
+  },
+  {
+    id: "article-font",
+    group: "writing",
+    labelKey: "Prefs.article.font",
+    keywords: ["font", "article", "正文", "文章字体", "字体", "宋体", "楷体"],
+  },
+  {
+    id: "ui-font",
+    group: "writing",
+    labelKey: "Prefs.ui.font",
+    keywords: ["font", "ui", "软件字体", "界面字体", "字体"],
+  },
+  {
+    id: "article-size",
+    group: "writing",
+    labelKey: "Prefs.article.fontSize",
+    keywords: ["size", "字号", "正文"],
+  },
+  {
+    id: "line-height",
+    group: "writing",
+    labelKey: "Prefs.article.lineHeight",
+    keywords: ["line", "height", "行高", "行距"],
+  },
+  {
+    id: "line-width",
+    group: "writing",
+    labelKey: "Prefs.article.lineWidth",
+    keywords: ["width", "measure", "行宽", "字数"],
+  },
+  {
+    id: "indent",
+    group: "writing",
+    labelKey: "Prefs.article.indent",
+    keywords: ["indent", "缩进", "段落"],
+  },
+  {
+    id: "paragraph-gap",
+    group: "writing",
+    labelKey: "Prefs.article.gap",
+    keywords: ["gap", "blank", "空行", "段落"],
   },
 ];
 
@@ -182,7 +226,15 @@ export default function Settings() {
             <Settings2 className="icon-md" />
             {t("Settings.tabs.general")}
           </TabsTrigger>
+          <TabsTrigger value="writing" className="flex-none gap-1.5 rounded-lg">
+            <BookText className="icon-md" />
+            {t("Prefs.tab.writing")}
+          </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="writing" className="mt-5">
+          <WritingPrefs />
+        </TabsContent>
 
         <TabsContent value="search" className="mt-5">
           <div className="stack-5">

@@ -6,11 +6,9 @@ import {
 } from "@/components/ui/dialog";
 
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useI18n } from "@/composables";
-import { BookText, Settings2 } from "lucide-react";
+import { Settings2 } from "lucide-react";
 import Settings from "@/views/Settings";
-import WritingPrefs from "@/views/WritingPrefs";
 
 interface SettingsDialogProps {
   open: boolean;
@@ -40,31 +38,11 @@ export default function SettingsDialog({
           </div>
         </header>
 
-        <Tabs defaultValue="writing" className="flex min-h-0 flex-1 flex-col">
-          <div className="border-b px-6 pt-3">
-            <TabsList className="justify-start gap-1 rounded-lg bg-muted/50 p-1">
-              <TabsTrigger value="writing" className="gap-1.5">
-                <BookText className="icon-md" />
-                {t("Prefs.tab.writing")}
-              </TabsTrigger>
-              <TabsTrigger value="general" className="gap-1.5">
-                <Settings2 className="icon-md" />
-                {t("Settings.tabs.general")}
-              </TabsTrigger>
-            </TabsList>
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="px-6 py-5">
+            <Settings />
           </div>
-
-          <ScrollArea className="min-h-0 flex-1">
-            <div className="px-6 py-5">
-              <TabsContent value="writing">
-                <WritingPrefs />
-              </TabsContent>
-              <TabsContent value="general">
-                <Settings />
-              </TabsContent>
-            </div>
-          </ScrollArea>
-        </Tabs>
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );

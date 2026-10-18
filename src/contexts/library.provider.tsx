@@ -89,9 +89,12 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
 
   const create = useCallback(
     async (title: string, type: string): Promise<Work | null> => {
-      if (!root || !workspace) return null;
-      const { ws, work } = await createWork(root, workspace, title, type);
-      setWorkspace(ws);
+      // workspace 可能尚未装载完成（如刚选完工作区就点新建），
+      // 此时直接读盘拿到最新清单，而不是静默返回 null。
+      if (!root) return null;
+      const base = workspace ?? (await loadWorkspace(root));
+      const { ws: nextWs, work } = await createWork(root, base, title, type);
+      setWorkspace(nextWs);
       setWorks((prev) => ({ ...prev, [work.id]: work }));
       setCurrentWorkId(work.id);
       return work;
@@ -113,9 +116,10 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
 
   const archive = useCallback(
     async (workId: string) => {
-      if (!root || !workspace) return;
-      const ws = await archiveWork(root, workspace, workId);
-      setWorkspace(ws);
+      if (!root) return;
+      const base = workspace ?? (await loadWorkspace(root));
+      const nextWs = await archiveWork(root, base, workId);
+      setWorkspace(nextWs);
       setWorks((prev) => {
         const next = { ...prev };
         const w = next[workId];
@@ -129,9 +133,10 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
 
   const unarchive = useCallback(
     async (workId: string) => {
-      if (!root || !workspace) return;
-      const ws = await unarchiveWork(root, workspace, workId);
-      setWorkspace(ws);
+      if (!root) return;
+      const base = workspace ?? (await loadWorkspace(root));
+      const nextWs = await unarchiveWork(root, base, workId);
+      setWorkspace(nextWs);
       setWorks((prev) => {
         const next = { ...prev };
         const w = next[workId];

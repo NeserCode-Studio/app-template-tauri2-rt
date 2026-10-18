@@ -3,6 +3,7 @@ import { BookOpen, Check, Loader2 } from "lucide-react";
 
 import CardItem from "./CardItem";
 import ComposerInput, { type ComposerHandle } from "./ComposerInput";
+import SplitDialog from "./SplitDialog";
 
 import { useI18n } from "@/composables";
 import { useToast } from "@/composables";
@@ -53,6 +54,7 @@ export default function ChapterEditor({
   const [cards, setCards] = useState<Card[]>(chapter.cards);
   const [editingIndex, setEditingIndex] = useState(-1);
   const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [splitTarget, setSplitTarget] = useState<number | null>(null);
 
   const composerRef = useRef<ComposerHandle | null>(null);
   const historyRef = useRef<CommandHistory<Card[]> | null>(null);
@@ -188,19 +190,22 @@ export default function ChapterEditor({
   /** 拆分：在光标处把一张卡分成两张。 */
   const splitCard = useCallback(
     (index: number) => {
+      if (!cards[index]?.text.trim()) return;
+      setSplitTarget(index);
+    },
+    [cards]
+  );
+
+  /** 在指定偏移处真正执行拆分。 */
+  const confirmSplit = useCallback(
+    (offset: number) => {
+      const index = splitTarget;
+      if (index === null) return;
       const card = cards[index];
       if (!card) return;
-      const text = card.text.trim();
-      if (!text) return;
-
-      // 在中间切开：用户可用输入框微调两侧内容后再提交。
-      const mid = Math.ceil(text.length / 2);
-      const head = text.slice(0, mid).trim();
-      const tail = text.slice(mid).trim();
-      if (!head || !tail) {
-        toast.info("Editor.card.split");
-        return;
-      }
+      const head = card.text.slice(0, offset).trim();
+      const tail = card.text.slice(offset).trim();
+      if (!head || !tail) return;
       const now = Date.now();
       const nextCard: Card = cardSchema.parse({
         id: crypto.randomUUID(),
@@ -216,7 +221,7 @@ export default function ChapterEditor({
       ];
       applyCards(next);
     },
-    [cards, applyCards, toast]
+    [cards, splitTarget, applyCards]
   );
 
   /** 合并：当前卡与下一张合并为一张。 */
@@ -291,6 +296,16 @@ export default function ChapterEditor({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
+      <SplitDialog
+        open={splitTarget !== null}
+        cardIndex={splitTarget ?? -1}
+        text={splitTarget !== null ? (cards[splitTarget]?.text ?? "") : ""}
+        onOpenChange={(o) => {
+          if (!o) setSplitTarget(null);
+        }}
+        onConfirm={confirmSplit}
+      />
+
       {/* 章标题区 */}
       <header className="flex items-center justify-between gap-3 border-b px-6 py-3">
         <div className="flex min-w-0 items-center gap-2">

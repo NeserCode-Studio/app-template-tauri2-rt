@@ -27,8 +27,6 @@ fn resolve_inside(root: &Path, rel: &str) -> Result<PathBuf, String> {
     if rel.is_empty() {
         return Err("empty path".into());
     }
-    let _candidate = root.join(rel);
-
     // 显式拒绝包含父目录回退的写法，作为第一道防线。
     if rel.contains("..") {
         return Err(format!("path escapes workspace: {}", rel));
@@ -52,20 +50,53 @@ fn resolve_inside(root: &Path, rel: &str) -> Result<PathBuf, String> {
     }
 
     // canonicalize 会把软链解析成真实路径；若文件尚不存在则跳过（写场景）。
-    if checked.exists() {
-        match fs::canonicalize(&checked) {
-            Ok(real) => {
-                if real != checked && !real.starts_with(root) {
-                    return Err(format!("path escapes workspace: {}", rel));
-                }
-                return Ok(real);
-            }
-            Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-            Err(e) => return Err(format!("resolve failed: {} ({})", rel, e)),
+    //
+    // 注意：Windows 上 canonicalize 返回 `\\?\Z:\...` 这类 verbatim 前缀路径，
+    // 与调用方传入的 `Z:\...` 直接比较必然不相等。因此必须先把 root 也
+    // canonicalize 成同一种形式，再比较前缀，否则所有路径都会被误判为越界。
+    // 统一以 canonicalize 后的 root 为基准判断是否越界。
+    let real_root = normalize(
+        &fs::canonicalize(root).map_err(|e| format!("resolve root failed: {}", e))?,
+    );
+    if let Ok(real) = fs::canonicalize(&checked) {
+        let real = normalize(&real);
+        if !real.starts_with(&real_root) {
+            return Err(format!("path escapes workspace: {}", rel));
         }
+        return Ok(real);
+    }
+
+    // 目标尚不存在（写入新文件的常见情形）。逐级向上找到第一个已存在的
+    // 祖先目录，在那里做越界校验：新建 `works/abc/work.json` 时中间目录
+    // 也可能尚未创建，直接 canonicalize 整条路径会失败。
+    let mut ancestor = checked.parent();
+    while let Some(dir) = ancestor {
+        if dir.exists() {
+            let real = normalize(
+                &fs::canonicalize(dir).map_err(|e| format!("resolve failed: {} ({})", rel, e))?,
+            );
+            if !real.starts_with(&real_root) {
+                return Err(format!("path escapes workspace: {}", rel));
+            }
+            break;
+        }
+        ancestor = dir.parent();
     }
 
     Ok(checked)
+}
+
+/// 去掉 Windows verbatim 前缀（`\\?\`），让 canonicalize 的结果
+/// 与调用方传入的普通路径可比较。UNC 前缀（`\\?\UNC\`）单独还原。
+fn normalize(path: &Path) -> PathBuf {
+    let s = path.as_os_str().to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{}", rest));
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest);
+    }
+    path.to_path_buf()
 }
 
 #[tauri::command]
@@ -151,4 +182,51 @@ pub fn fs_stat(root: String, rel: String) -> Result<FileStat, String> {
         size: meta.len(),
         modified,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 父目录回退必须被拒绝，无论它是否真的能解析到工作区内。
+    #[test]
+    fn rejects_parent_traversal() {
+        let root = std::env::temp_dir();
+        let err = resolve_inside(&root, "../outside.txt");
+        assert!(err.is_err(), "expected traversal to be rejected");
+    }
+
+    /// 绝对路径输入必须被拒绝（命令约定只接受相对路径）。
+    #[test]
+    fn rejects_absolute_path() {
+        let root = std::env::temp_dir();
+        let err = resolve_inside(&root, r"C:\Windows\System32\drivers\etc\hosts");
+        assert!(err.is_err(), "expected absolute path to be rejected");
+    }
+
+    /// 空路径必须被拒绝。
+    #[test]
+    fn rejects_empty_path() {
+        let root = std::env::temp_dir();
+        assert!(resolve_inside(&root, "").is_err());
+    }
+
+    /// 正常相对路径应当能解析出，且位于工作区之内。
+    #[test]
+    fn resolves_normal_relative_path() {
+        let root = std::env::temp_dir();
+        let path = resolve_inside(&root, "works/abc/work.json").expect("should resolve");
+        assert!(path.starts_with(normalize(&fs::canonicalize(&root).unwrap())));
+    }
+
+    /// Windows 下 canonicalize 返回 `\\?\` 前缀，normalize 应当剥掉它，
+    /// 使其与普通路径可比较（这正是"创建后看不到文件"那个 bug 的根因）。
+    #[test]
+    fn normalize_strips_verbatim_prefix() {
+        let p = PathBuf::from(r"\\?\C:\Users\test");
+        assert_eq!(normalize(&p), PathBuf::from(r"C:\Users\test"));
+
+        let unc = PathBuf::from(r"\\?\UNC\server\share");
+        assert_eq!(normalize(&unc), PathBuf::from(r"\\server\share"));
+    }
 }
