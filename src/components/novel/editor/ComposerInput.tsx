@@ -155,7 +155,7 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
              * min-h 给空稿一个落脚点；max-h 封顶后由 overflow-y-auto 内部滚动，
              * 免得长草稿把正文区整个顶出视口。
              */
-            className="prose-article [field-sizing:content] max-h-[220px] min-h-[3lh] w-full resize-none overflow-y-auto border-0 bg-transparent px-0 py-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
+            className="prose-article [field-sizing:content] scrollbar-app mx-1 max-h-[220px] min-h-[3lh] w-[calc(100%-0.5rem)] resize-none overflow-y-auto border-0 bg-transparent px-0 py-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
             onKeyDown={(e) => {
               // 输入法组合中：Enter 属于候选确认，绝不提交。
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;

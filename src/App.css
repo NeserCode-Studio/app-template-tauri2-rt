@@ -158,16 +158,64 @@
     color: var(--foreground);
   }
 
+}
+
+/*
+ * 滚动条统一样式。
+ *
+ * 不做的话，各控件回落到系统默认滚动条，宽度、圆角、颜色都随系统走，
+ * 在自绘的界面里尤其突兀（Windows 默认那种宽扁灰条）。这里统一成细窄、
+ * 无箭头的窄条，轨道透明，滑块取边框色，与全局"底色低对比"的调子一致。
+ *
+ * 提供两套写法：
+ * - `scrollbar-app`：挂在任意可滚动元素上，显式给滚动条着色（Firefox 与
+ *   支持 scrollbar-color 的 Chromium 生效）。
+ * - `scrollbar-app-none`：原生滚动条完全隐藏（用于自绘了滚动条的容器，
+ *   比如 ScrollArea，避免系统条与自绘条同时出现）。
+ * 另外 WebView2 走旧渲染时只有 `::-webkit-scrollbar` 认，全局兜底一份。
+ */
+@utility scrollbar-app {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+
+  &::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background-color: var(--border);
+    border: 3px solid transparent;
+    background-clip: content-box;
+    border-radius: 9999px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background-color: color-mix(
+      in oklab,
+      var(--muted-foreground) 55%,
+      transparent
+    );
+  }
+  &::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+@utility scrollbar-app-none {
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+}
+
+@layer base {
   /*
-   * 原生滚动条统一样式。
-   *
-   * 不做的话，各控件回落到系统默认滚动条，宽度、圆角、颜色都随系统走，
-   * 在自绘的输入框里尤其突兀（尤其 Windows 默认那种宽扁灰条）。这里统一
-   * 成细窄、无箭头的窄条，轨道透明，滑块取边框色、悬停时才显出主色，
-   * 与全局"底色低对比、交互时才着重"的调子一致。
-   *
-   * `scrollbar-width/color` 管 Firefox 与新版 Chromium，
-   * `::-webkit-scrollbar` 管仍走旧渲染的 WebView2，两者都要写。
+   * WebView2 走旧渲染路径时，`@utility` 里挂在元素上的规则同样生效，
+   * 但为了保证任何漏挂类的可滚动元素也有一致外观，这里给全部元素兜底。
    */
   * {
     scrollbar-width: thin;
