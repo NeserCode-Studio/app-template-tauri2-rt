@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, ChevronRight, FileText, GripVertical, Plus, Settings2, Trash2 } from "lucide-react";
 import {
   DndContext,
@@ -300,6 +300,120 @@ function SortableChapter({
   );
 }
 
+/**
+ * 卷行。
+ *
+ * 与章节行共用一套拖拽约定（把手激活、几何算落点、落盘后不留过渡），
+ * 差别只在于：卷的把手常驻在左侧而不是悬停才出现——卷的折叠箭头
+ * 已经在最左边，再放把手需要另找位置，而卷是低频拖拽对象，
+ * 把手可见的额外提示成本可以接受。
+ */
+function VolumeRow({
+  volume,
+  isCollapsed,
+  sessionActive,
+  dragging,
+  chapterCount,
+  addChapterLabel,
+  deleteVolumeLabel,
+  dragLabel,
+  registerEl,
+  onToggle,
+  onAddChapter,
+  onDelete,
+}: {
+  volume: OutlineNode;
+  isCollapsed: boolean;
+  sessionActive: boolean;
+  dragging: boolean;
+  chapterCount: number;
+  addChapterLabel: string;
+  deleteVolumeLabel: string;
+  dragLabel: string;
+  registerEl: (el: HTMLElement | null) => void;
+  onToggle: () => void;
+  onAddChapter: () => void;
+  onDelete: () => void;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({
+    id: NODE_PREFIX + volume.id,
+    data: { type: "volume", nodeId: volume.id },
+  });
+
+  return (
+    <div
+      ref={(el) => {
+        setNodeRef(el);
+        registerEl(el);
+      }}
+      style={{
+        transform: sessionActive ? CSS.Transform.toString(transform) : undefined,
+        transition: sessionActive ? transition : undefined,
+      }}
+      className={[
+        "group relative flex items-center gap-1 rounded-md px-2 py-1 hover:bg-accent/40",
+        isDragging || dragging ? "opacity-40" : "",
+      ].join(" ")}
+      {...attributes}
+    >
+      <span
+        {...listeners}
+        aria-label={dragLabel}
+        title={dragLabel}
+        className="flex size-4 shrink-0 cursor-grab items-center justify-center text-muted-foreground/30 transition-colors hover:text-muted-foreground/70 focus-visible:text-muted-foreground/70 active:cursor-grabbing"
+      >
+        <GripVertical className="size-3" />
+      </span>
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex min-w-0 flex-1 items-center gap-2 text-left"
+      >
+        <ChevronRight
+          className={[
+            "icon-sm shrink-0 text-muted-foreground transition-transform",
+            isCollapsed ? "" : "rotate-90",
+          ].join(" ")}
+        />
+        <span className="truncate text-sm font-medium">{volume.title}</span>
+        {/*
+         * 章数跟在名称后面而不是推到最右：名称与数量是同一条信息
+         * （"这卷有多少章"），推到右侧会被两端的操作按钮挤远，
+         * 视线要来回扫才联系得上。
+         */}
+        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/60">
+          {chapterCount}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onAddChapter}
+        className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground"
+        aria-label={addChapterLabel}
+      >
+        <Plus className="icon-sm" />
+      </button>
+      {/* 删卷：与加章同排，悬停卷行时出现。 */}
+      <button
+        type="button"
+        onClick={onDelete}
+        className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+        aria-label={deleteVolumeLabel}
+        title={deleteVolumeLabel}
+      >
+        <Trash2 className="icon-sm" />
+      </button>
+    </div>
+  );
+}
+
 /** 容器落点：卷本身、以及顶层拖出区。 */
 function DropZone({
   parentId,
@@ -376,7 +490,11 @@ export default function OutlinePane({
     return map;
   }, [chapters]);
 
-  const nodeById = useMemo(() => new Map(chapters.map((c) => [c.id, c])), [chapters]);
+  /** 章与卷的统一索引：拖拽解析父级时要能查到两者。 */
+  const nodeById = useMemo(
+    () => new Map([...chapters, ...volumes].map((n) => [n.id, n])),
+    [chapters, volumes]
+  );
   /** 章节点 DOM：位置法算插入下标时要读实时矩形。 */
   const nodeEls = useRef(new Map<string, HTMLElement>());
   /**
@@ -401,6 +519,25 @@ export default function OutlinePane({
   const activeNode = activeId ? nodeById.get(activeId.slice(NODE_PREFIX.length)) ?? null : null;
   /** 命中具体节点时抑制容器高亮，避免同时亮两处。 */
   const overRef = overId ? parseDroppableId(overId) : null;
+
+  /**
+   * 被拖节点的同级序列，按 order 排好。
+   *
+   * 卷与章混在一棵扁平树里，但各自的 order 只在各自父级下有意义，
+   * 所以这里按"被拖节点的类型"选不同的同级集合：
+   * 拖卷时拿顶层卷，拖章时拿同父级的章。
+   */
+  const siblingsOf = useCallback(
+    (node: OutlineNode): OutlineNode[] => {
+      if (node.type === "volume") {
+        return volumes
+          .filter((v) => v.parentId === node.parentId)
+          .sort((a, b) => a.order - b.order);
+      }
+      return chaptersByVolume.get(node.parentId) ?? [];
+    },
+    [volumes, chaptersByVolume]
+  );
 
   function handleDragStart(e: DragStartEvent) {
     setActiveId(String(e.active.id));
@@ -468,7 +605,15 @@ export default function OutlinePane({
      * 而容器体积大、位置判别可靠，不依赖精细碰撞。
      */
     const ref = parseDroppableId(over);
-    const targetParentId = ref?.kind === "into" ? ref.parentId : (ref ? nodeById.get(ref.nodeId)?.parentId ?? source.parentId : source.parentId);
+    const landedParent =
+      ref?.kind === "into" ? ref.parentId : ref ? nodeById.get(ref.nodeId)?.parentId ?? source.parentId : source.parentId;
+
+    /*
+     * 卷不参与"拖进别的卷"这种玩法：章节能降级到卷里，卷再往下钻
+     * 没有对应的界面与语义（卷里不会再有卷）。这里把卷的目标父级钉死
+     * 在顶层，只允许它与其它顶层卷换位。
+     */
+    const targetParentId = source.type === "volume" ? source.parentId : landedParent;
 
     if (!nodeEls.current.has(nodeId)) {
       log.warn("[outline-dnd] abort: element not registered", {
@@ -487,8 +632,14 @@ export default function OutlinePane({
       log.warn("[outline-dnd] abort: no drag snapshot", { nodeId });
       return;
     }
+    /*
+     * 同级序列取自被拖节点自身，而不是 targetParentId：
+     * 降级场景下（章拖进卷），落点下标是相对"目标卷的章"算的，
+     * 若用源兄弟算就会插错位置。siblingsOf 已按 order 排好。
+     */
+    const siblings = siblingsOf(source);
     const centers: number[] = [];
-    for (const n of chaptersByVolume.get(targetParentId) ?? []) {
+    for (const n of siblings) {
       if (n.id === nodeId) continue;
       const center = snap.centers.get(n.id);
       if (center === undefined) continue;
@@ -496,7 +647,6 @@ export default function OutlinePane({
     }
     const draggedCenter = snap.pointerY + e.delta.y;
     const index = computeIndexByPosition(centers, draggedCenter);
-    const siblings = chaptersByVolume.get(targetParentId) ?? [];
     const without = siblings.filter((n) => n.id !== nodeId);
     log.debug("[outline-dnd] computed", {
       nodeId,
@@ -658,6 +808,10 @@ export default function OutlinePane({
         <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto">
         <div className="w-full px-2 pb-3">
           {/* 卷分组 */}
+          <SortableContext
+            items={volumes.map((v) => NODE_PREFIX + v.id)}
+            strategy={verticalListSortingStrategy}
+          >
           {volumes.map((volume, vi) => {
             const isCollapsed = collapsed[volume.id];
             return (
@@ -683,49 +837,26 @@ export default function OutlinePane({
                     aria-hidden="true"
                   />
                 ) : null}
-                <div className="group flex items-center gap-1 rounded-md px-2 py-1 hover:bg-accent/40">
-                  <button
-                    type="button"
-                    onClick={() =>
-                      setCollapsed((prev) => ({ ...prev, [volume.id]: !prev[volume.id] }))
-                    }
-                    className="flex min-w-0 flex-1 items-center gap-2 text-left"
-                  >
-                    <ChevronRight
-                      className={[
-                        "icon-sm shrink-0 text-muted-foreground transition-transform",
-                        isCollapsed ? "" : "rotate-90",
-                      ].join(" ")}
-                    />
-                    <span className="truncate text-sm font-medium">{volume.title}</span>
-                    {/*
-                     * 章数跟在名称后面而不是推到最右：名称与数量是同一条信息
-                     * （"这卷有多少章"），推到右侧会被两端的操作按钮挤远，
-                     * 视线要来回扫才联系得上。
-                     */}
-                    <span className="shrink-0 text-xs tabular-nums text-muted-foreground/60">
-                      {(chaptersByVolume.get(volume.id) ?? []).length}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setChapterDialogIn(volume.id)}
-                    className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground"
-                    aria-label={t("Editor.side.addChapter")}
-                  >
-                    <Plus className="icon-sm" />
-                  </button>
-                  {/* 删卷：与加章同排，悬停卷行时出现。 */}
-                  <button
-                    type="button"
-                    onClick={() => onDeleteVolume(volume.id)}
-                    className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
-                    aria-label={t("Editor.volume.delete")}
-                    title={t("Editor.volume.delete")}
-                  >
-                    <Trash2 className="icon-sm" />
-                  </button>
-                </div>
+                <VolumeRow
+                  key={volume.id}
+                  volume={volume}
+                  isCollapsed={isCollapsed}
+                  sessionActive={Boolean(activeId)}
+                  dragging={activeId === NODE_PREFIX + volume.id}
+                  chapterCount={(chaptersByVolume.get(volume.id) ?? []).length}
+                  addChapterLabel={t("Editor.side.addChapter")}
+                  deleteVolumeLabel={t("Editor.volume.delete")}
+                  dragLabel={t("Editor.node.dragHint")}
+                  registerEl={(el) => {
+                    if (el) nodeEls.current.set(volume.id, el);
+                    else nodeEls.current.delete(volume.id);
+                  }}
+                  onToggle={() =>
+                    setCollapsed((prev) => ({ ...prev, [volume.id]: !prev[volume.id] }))
+                  }
+                  onAddChapter={() => setChapterDialogIn(volume.id)}
+                  onDelete={() => onDeleteVolume(volume.id)}
+                />
 
                 {!isCollapsed ? (
                   <>
@@ -735,6 +866,7 @@ export default function OutlinePane({
               </DropZone>
             );
           })}
+          </SortableContext>
 
           {/*
            * 根层拖放区：把章从卷里拖出来必须有落点，
