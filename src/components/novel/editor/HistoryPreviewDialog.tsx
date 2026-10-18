@@ -68,7 +68,7 @@ export default function HistoryPreviewDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[80vh] max-w-2xl flex-col">
+        <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>{t("Editor.history.preview")}</DialogTitle>
           <DialogDescription>
@@ -80,10 +80,20 @@ export default function HistoryPreviewDialog({
           </DialogDescription>
         </DialogHeader>
 
+        {/*
+         * 预览框必须自己把内容关住。
+         *
+         * DialogContent 已是 flex 列 + max-h，但 ScrollArea 的 Root 只是
+         * position:relative —— Radix 把 overflow 交给 viewport，Root 本身
+         * 不裁剪，于是内层 40em 的行宽溢出后直接画到 DialogFooter 之上，
+         * 看上去就是"内容盖住关闭按钮"。补两处：overflow-hidden 让 Root
+         * 裁掉溢出，min-h-0 让 flex 子项能真正收缩（flex 默认
+         * min-height:auto，不给 0 就不肯让出空间）。
+         */}
         {paragraphs.length ? (
-          <ScrollArea className="min-h-0 flex-1 rounded-md border">
+          <ScrollArea className="min-h-0 flex-1 overflow-hidden rounded-md border">
             {/* 段落序号帮助对照：回滚后要能按位置核对改对了没有。 */}
-            <div className="article-body prose-article mx-auto flex flex-col gap-2 px-6 py-4">
+            <div className="prose-article mx-auto flex max-w-[var(--app-line-width)] flex-col gap-2 px-6 py-4">
               {paragraphs.map((p, i) => (
                 <p key={i} className="flex gap-3">
                   <span className="w-6 shrink-0 pt-1 text-right text-[10px] tabular-nums text-muted-foreground/40">
