@@ -292,7 +292,12 @@ export default function ProgressPane({ chapterWords }: { chapterWords: number })
               <div key={c.key} className="flex h-full min-w-0 flex-1 items-end">
                 <div
                   className={[
-                    "w-full rounded-sm transition-[height]",
+                    /*
+                     * 柱形只做极轻微的圆角（2px）。原来的 rounded-sm 在
+                     * 细柱子上会让两端变成半圆，读起来像胶囊而不是柱子；
+                     * 数据图不该有这种装饰。
+                     */
+                    "w-full rounded-[2px] transition-[height]",
                     c.key === todayKey() ? "bg-primary" : "bg-primary/40",
                   ].join(" ")}
                   style={{
