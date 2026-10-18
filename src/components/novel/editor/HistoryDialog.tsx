@@ -1,4 +1,4 @@
-import { History } from "lucide-react";
+import { Clock, History, Trash2 } from "lucide-react";
 
 import {
   Dialog,
@@ -29,6 +29,8 @@ export interface HistoryDialogProps {
   onOpenChange: (open: boolean) => void;
   /** 回滚到指定历史下标，由父级负责落盘与刷新。 */
   onRollback: (index: number) => void;
+  /** 删除指定历史快照，由父级负责落盘与刷新。 */
+  onDelete: (index: number) => void;
 }
 
 export default function HistoryDialog({
@@ -36,6 +38,7 @@ export default function HistoryDialog({
   chapter,
   onOpenChange,
   onRollback,
+  onDelete,
 }: HistoryDialogProps) {
   const { t } = useI18n();
   const now = Date.now();
@@ -52,30 +55,82 @@ export default function HistoryDialog({
           <DialogDescription>{t("Editor.history.confirm")}</DialogDescription>
         </DialogHeader>
 
-        {entries.length ? (
-          <ScrollArea className="max-h-80">
+        {entries.length > 1 ? (
+          <ScrollArea className="max-h-96">
             <ul className="flex flex-col gap-1 pr-3">
               {entries.map((h) => (
-                <li key={h.index} className="flex items-center gap-3 rounded-md border px-3 py-2">
-                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                    {formatAt(h.at, now)}
-                  </span>
+                <li
+                  key={h.index}
+                  className={[
+                    "flex items-start gap-3 rounded-md border px-3 py-2",
+                    /* 当前正文固定在首项并高亮，与历史快照区分开。 */
+                    h.index < 0 ? "border-primary/40 bg-accent/40" : "",
+                  ].join(" ")}
+                >
                   <span className="min-w-0 flex-1">
-                    <span className="block truncate text-sm">
-                      {h.preview || t("Editor.chapter.new")}
+                    <span className="flex items-center gap-1.5">
+                      {h.index < 0 ? (
+                        <Clock className="icon-sm shrink-0 text-primary" />
+                      ) : null}
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {formatAt(h.at, now)}
+                      </span>
+                      {h.index < 0 ? (
+                        <span className="rounded-sm bg-primary/15 px-1 text-[10px] text-primary">
+                          {t("Editor.history.current")}
+                        </span>
+                      ) : null}
                     </span>
-                    <span className="text-[11px] text-muted-foreground">
-                      {h.words} {t("Editor.history.words")}
+                    {/*
+                     * 预览给两段而不是一行前缀：长章的前 40 字常常全挤在
+                     * 第一段里，单行看不出这一版到底写了什么。折行展示也
+                     * 让"这一版比上一版长/短"看得出来。
+                     */}
+                    <span className="mt-1 block space-y-0.5">
+                      {h.paragraphs.length ? (
+                        h.paragraphs.map((p, i) => (
+                          <span
+                            key={i}
+                            className="line-clamp-2 block text-xs leading-snug text-foreground/90"
+                          >
+                            {p}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="block text-xs text-muted-foreground">
+                          {t("Editor.chapter.new")}
+                        </span>
+                      )}
+                    </span>
+                    <span className="mt-1 block text-[11px] text-muted-foreground/70">
+                      {h.words} {t("Editor.history.words")} · {h.cardCount}{" "}
+                      {t("Editor.history.cards")}
                     </span>
                   </span>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="h-7 shrink-0"
-                    onClick={() => onRollback(h.index)}
-                  >
-                    {t("Editor.history.rollback")}
-                  </Button>
+                  <span className="flex shrink-0 flex-col gap-1">
+                    {h.index < 0 ? null : (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7"
+                          onClick={() => onRollback(h.index)}
+                        >
+                          {t("Editor.history.rollback")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 text-muted-foreground hover:text-destructive"
+                          aria-label={t("Editor.history.drop")}
+                          title={t("Editor.history.drop")}
+                          onClick={() => onDelete(h.index)}
+                        >
+                          <Trash2 className="icon-sm" />
+                        </Button>
+                      </>
+                    )}
+                  </span>
                 </li>
               ))}
             </ul>

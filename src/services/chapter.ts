@@ -81,7 +81,15 @@ export async function loadChapter(root: string, workId: string, chapterId: strin
 export async function saveChapter(
   root: string,
   workId: string,
-  chapter: Chapter
+  chapter: Chapter,
+  /**
+   * 是否为正文改动而留快照。
+   *
+   * 删除某个历史版本这类**只改元数据**的保存不该留快照：正文一个字没动，
+   * 却会凭空多出一个和当前正文重复的版本，把历史列表越撑越脏。
+   * 只有正文真的变了才值得留档。
+   */
+  snapshot = true
 ): Promise<Chapter> {
   const fs2 = createFs(root);
   const now = Date.now();
@@ -92,7 +100,7 @@ export async function saveChapter(
    */
   const history = [...(chapter.history ?? [])];
   const meaningful = chapter.cards.some((c) => c.text.trim());
-  if (meaningful && !sameCards(history[history.length - 1]?.cards, chapter.cards)) {
+  if (snapshot && meaningful && !sameCards(history[history.length - 1]?.cards, chapter.cards)) {
     history.push({ at: now, savedAt: chapter.updatedAt, cards: chapter.cards });
     if (history.length > HISTORY_LIMIT) history.splice(0, history.length - HISTORY_LIMIT);
   }
@@ -126,19 +134,58 @@ export interface HistoryEntry {
   savedAt: number;
   words: number;
   preview: string;
+  /**
+   * 预览用的分段文本，通常取前两段。
+   *
+   * 原先只给 `slice(0, 40)` 的单行前缀，长章的前 40 字常常挤在同一段里，
+   * 看不出这一版到底写了什么。分段预览能看出结构，也便于界面上折行展示。
+   */
+  paragraphs: string[];
+  /** 段落总数，用于在界面上补"共 N 段"。 */
+  cardCount: number;
 }
 
-/** 列出可回滚的历史，供界面展示。 */
+/** 列出可回滚的历史，供界面展示。当前正文作为固定的第一项。 */
 export function listHistory(chapter: Chapter): HistoryEntry[] {
-  return [...(chapter.history ?? [])]
-    .map((h, i) => ({
-      index: i,
-      at: h.at,
-      savedAt: h.savedAt,
-      words: countWords(cardsToText(h.cards)),
-      preview: cardsToText(h.cards).slice(0, 40),
-    }))
+  const toEntry = (index: number, cards: Card[], at: number): HistoryEntry => {
+    const texts = cards.map((c) => c.text.trim()).filter(Boolean);
+    return {
+      index,
+      at,
+      savedAt: at,
+      words: countWords(cardsToText(cards)),
+      preview: texts[0]?.slice(0, 40) ?? "",
+      paragraphs: texts.slice(0, 2),
+      cardCount: cards.length,
+    };
+  };
+  /*
+   * 第一项是"当前正文"，用 index -1 表示"不是历史、不可删除"。
+   *
+   * 把它和历史并列显示，用户才能一眼看出"我现在在第几版、
+   * 往前还有几版可回"。若只列历史，就无法回答"现在这版是什么时候的"。
+   */
+  const current = toEntry(-1, chapter.cards, chapter.updatedAt);
+  const past = [...(chapter.history ?? [])]
+    .map((h, i) => toEntry(i, h.cards, h.at))
     .reverse();
+  return [current, ...past];
+}
+
+/**
+ * 删除某个历史快照。
+ *
+ * 快照占章文件的体积，上限 20 份之外还会被静默挤出。删除单个快照的价值在于
+ * **用户主动清掉不想要的版本**（比如推翻重写时把那 19 版草稿都丢掉），
+ * 否则淘汰 oldest 的策略替他做决定。
+ *
+ * `index === -1` 表示当前正文，不可删——删掉它等于清空本章。
+ */
+export function dropHistory(chapter: Chapter, index: number): Chapter {
+  const history = chapter.history ?? [];
+  if (index < 0 || index >= history.length) return chapter;
+  const next = history.filter((_, i) => i !== index);
+  return chapterSchema.parse({ ...chapter, history: next, updatedAt: Date.now() });
 }
 
 /**

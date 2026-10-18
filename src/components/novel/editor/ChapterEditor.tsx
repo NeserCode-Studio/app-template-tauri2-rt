@@ -12,7 +12,13 @@ import { useToast } from "@/composables";
 import { useViewMode } from "@/contexts/viewmode";
 import { createLogger } from "@/lib/logger";
 import { CommandHistory } from "@/lib/command-history";
-import { cardsToText, countWords, rollbackTo, saveChapter } from "@/services/chapter";
+import {
+  cardsToText,
+  countWords,
+  dropHistory,
+  rollbackTo,
+  saveChapter,
+} from "@/services/chapter";
 import { readDraft, writeDraft } from "@/services/drafts";
 import { cardSchema, type Card, type Chapter } from "@/shared/schema";
 
@@ -195,6 +201,29 @@ export default function ChapterEditor({
       }
     },
     [root, workId, onSaved, onWordsCommitted, toast]
+  );
+
+  /**
+   * 删除某个历史版本。
+   *
+   * 落盘时关掉快照：正文没改动，只是删了一条历史。若照常留快照，
+   * 会凭空多出一个与当前正文完全相同的版本——历史列表越删越脏。
+   */
+  const dropVersion = useCallback(
+    async (index: number) => {
+      const base = chapterRef.current;
+      const next = dropHistory(base, index);
+      if (next === base) return;
+      try {
+        const saved = await saveChapter(root, workId, next, false);
+        chapterRef.current = saved;
+        setChapterWithHistory(saved);
+      } catch (err) {
+        log.error("drop history failed", err);
+        toast.error("Editor.save.failed");
+      }
+    },
+    [root, workId, toast]
   );
 
   /* 切章时重置：卡片、编辑态、历史栈。依赖 chapter.id 而非 chapter，
@@ -690,6 +719,7 @@ export default function ChapterEditor({
         chapter={chapterWithHistory}
         onOpenChange={setHistoryOpen}
         onRollback={(i) => void rollback(i)}
+        onDelete={(i) => void dropVersion(i)}
       />
 
       {/* 章标题区 */}
