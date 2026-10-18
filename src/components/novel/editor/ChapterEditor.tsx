@@ -277,7 +277,12 @@ export default function ChapterEditor({
       if (restored === base) return;
       setSaveState("saving");
       try {
-        const saved = await saveChapter(root, workId, restored);
+        /*
+         * 传 snapshot=false：rollbackTo 已经把"回滚前的正文"存进历史，
+         * 若这里再让 saveChapter 存一次，存的会是刚回滚回去的正文——
+         * 等于把目标版本又抄了一份。两次存档叠加，回滚一次就多两条。
+         */
+        const saved = await saveChapter(root, workId, restored, false);
         chapterRef.current = saved;
         setChapterWithHistory(saved);
         setCards(saved.cards);

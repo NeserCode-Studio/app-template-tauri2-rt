@@ -206,19 +206,25 @@ export function dropHistory(chapter: Chapter, index: number): Chapter {
 /**
  * 回滚到某个历史快照。
  *
- * 当前正文也会被压入 history 再切换，所以"回滚"本身同样可撤销——
- * 误点了回滚还能再滚回来。
+ * 语义是**消费**掉目标版本：它变成了当前正文，就不该同时还挂在历史里，
+ * 否则同一个内容在列表里出现两次（一次作为历史、一次作为当前）。
+ * 与此同时把回滚前的正文压入 history，所以"回滚"本身同样可撤销——
+ * 误点了还能再滚回来，且回滚前后历史条目总数不变。
  */
 export function rollbackTo(chapter: Chapter, index: number): Chapter {
   const history = chapter.history ?? [];
   const target = history[index];
   if (!target) return chapter;
-  const nextHistory = [...history];
-  nextHistory.push({
-    at: Date.now(),
-    savedAt: chapter.updatedAt,
-    cards: chapter.cards,
-  });
+  /* 目标版本被消费掉，取出后不再保留在历史里。 */
+  const nextHistory = history.filter((_, i) => i !== index);
+  /* 已经在这一版上（内容相同）则无需存档，否则历史会塞满重复条目。 */
+  if (!sameCards(chapter.cards, target.cards)) {
+    nextHistory.push({
+      at: Date.now(),
+      savedAt: chapter.updatedAt,
+      cards: chapter.cards,
+    });
+  }
   if (nextHistory.length > HISTORY_LIMIT) nextHistory.splice(0, nextHistory.length - HISTORY_LIMIT);
   return chapterSchema.parse({
     ...chapter,
