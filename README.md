@@ -23,6 +23,8 @@
 | **本地优先** | 正文明文落盘（UTF-8），随时可被 Git 或任意编辑器接管，应用不绑定用户数据 |
 | **结构驱动** | 作品 / 卷 / 章 / 场景是可导航实体，统计与检索建立在这层结构之上 |
 | **自研卡片式编辑器** | 章内容为卡片列表，底部常驻唯一输入框，回车固化卡片；重算收敛到单卡 |
+| **不丢稿的暂存段落** | 写新段落时点开旧卡片，草稿自动暂存并可随时取回；编辑旧段落后自动归位（按章存入 localStorage） |
+| **拼合有依据** | 段末无句读时拒绝拼合，避免把两段硬接成一句；拼合可一键撤回 |
 | **章即页** | 默认单章视野，上滑上一章、下滑下一章，右栏提供翻章按钮 |
 | **素材库** | 人物 / 地点 / 物品等类型化条目，写作时可侧边查阅与高亮提及 |
 | **全站搜索** | 一次搜索覆盖章标题、正文与素材条目，命中高亮 |
@@ -86,11 +88,11 @@ src/
 │
 ├── views/                # 页面
 │   ├── Library           # 作品库（M1）
-│   ├── Editor            # 编辑器（M3，待实现）
+│   ├── Editor            # 编辑器（三栏：结构树 / 卡片区 / 章节操作）
 │   └── TrayMenu          # 托盘菜单
 │
 ├── composables/          # 业务 Hook（useTheme / useI18n / useToast / useSuperCommand）
-├── contexts/             # 全局 Context（后续新增 workspace / library / outline / codex / progress）
+├── contexts/             # 全局 Context（workspace / library / outline / preferences）
 ├── lifecycle/            # 生命周期总线（阶段：mount / ready）
 ├── lib/                  # 工具与资源
 │   ├── i18n.resource.ts  # 中英文案表
@@ -98,7 +100,8 @@ src/
 │   ├── editor.actions.ts # 编辑命令
 │   ├── logger.ts         # 日志模块
 │   └── utils.ts          # cn()
-└── shared/               # 共享类型
+├── services/             # 业务服务（fs 桥 / 作品 / 结构树 / 章 / 统计）
+└── shared/               # 共享 schema（zod，前端与磁盘契约）
 
 src-tauri/
 ├── tauri.conf.json       # 窗口与打包配置（productName: novels-yes）
@@ -145,6 +148,32 @@ mount（React 挂载完成） → ready（应用就绪）
 - 全局状态用 React Context，value 统一经 `useMemo` 固定引用，避免无关状态引发全量重渲染
 - 用户偏好（主题、语言、标题、置顶状态等）持久化到 `localStorage`
 - 弹窗开关状态集中在根组件，通过 Context 下发
+
+#### 正文与磁盘的分工
+
+| 数据 | 位置 | 说明 |
+| --- | --- | --- |
+| 作品清单 / 元数据 | `works/<id>/work.json` | 标题、类型、归档状态 |
+| 结构树 | `works/<id>/outline.json` | 卷 / 章节点，扁平数组 + `parentId` |
+| 章正文 | `works/<id>/chapters/<id>.json` | **唯一事实来源**，`cards` 数组 |
+| 章纯文本视图 | `works/<id>/texts/<id>.txt` | 由 `cards` 生成，供导出 / 外部编辑 |
+| 统计 | `works/<id>/stats.json` | 作品字数以章文件全量重算，缓存只作加速 |
+
+两条容易踩的约束，改动相关代码前务必留意：
+
+1. **结构树里的章 id 必须等于章文件名的 id。** 打开哪一章由结构树 id 决定，正文按 `chapters/<id>.json` 读取。两者若各自生成随机 id，打开章节就会读到一个不存在的文件，表现为「保存成功但重进是空章」。`addNode` 因此支持传入 `id`，建章时复用章文件自身的 id。
+2. **章正文是 `cards` 数组，不是整段字符串。** 一张卡片承载一段文本；拆分在标点处切开、拼合把两张并成一张，都只改动 `cards`。
+
+#### 保存时机
+
+输入框回车固化卡片后，防抖 800ms 落盘（`AUTOSAVE_DELAY`）。除此之外：
+
+- 顶栏「保存」按钮常驻可点，用于在防抖窗口内强制落盘，或在失败后重试
+- 组件卸载时冲刷待写内容——切换章节 / 返回作品库都会卸载编辑器，只清定时器会丢数据
+- 切换章节后焦点直接落在底部输入框，无需先点卡片
+- 落盘失败会弹 `Editor.save.failed`，此时不要依赖自动保存
+
+暂存的新段落只进 `localStorage`（键 `novels-yes:draft:<workId>:<chapterId>`），**不进工作区目录**：它是没写完的半成品，混进 `works/<id>/` 会污染用户导出的文本。按章隔离，切回来能接着写。
 
 ### 主题机制
 

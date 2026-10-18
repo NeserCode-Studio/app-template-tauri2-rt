@@ -99,13 +99,8 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
 
     return (
       <div className="flex flex-col gap-1.5 px-6 pb-3 pt-2">
-        {/*
-         * 编辑区顶部的分隔线：只占 80% 宽并居中。
-         *
-         * 满宽的横线会把编辑区切成一块独立面板，与上方正文割裂；
-         * 收窄后它读起来更像"正文到此为止，接下来是书写区"的界标。
-         */}
-        <div className="mx-auto mb-1 h-px w-4/5 bg-border" />
+        {/* 编辑区顶界：整条满宽，明确划出"正文"与"正在写"两个区域。 */}
+        <div className="-mx-6 mb-1 h-px w-[calc(100%+3rem)] bg-border" />
 
         {/*
          * 暂存的新段落。

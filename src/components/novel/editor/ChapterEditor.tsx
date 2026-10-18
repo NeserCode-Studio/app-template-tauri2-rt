@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, Check, Loader2, Save, Undo2 } from "lucide-react";
+import { useLocalStorageState } from "ahooks";
 
 import { Button } from "@/components/ui/button";
 import CardItem from "./CardItem";
@@ -95,12 +96,28 @@ export default function ChapterEditor({
    * 暂存的新段落。
    *
    * 写新段落时点开一张旧卡片，原来输入框里的草稿会被卡片的原文覆盖，
-   * 于是"刚写的那段"凭空丢了。这里把草稿扣下来，贴在编辑区上方，
-   * 随时可取回。持久化到磁盘没有意义——它只是编辑器的编辑态。
+   * 于是"刚写的那段"凭空丢了。这里把草稿扣下来，贴在编辑区上方。
+   *
+   * 按作品 + 章分别存进 localStorage：只落浏览器，不进工作区目录。
+   * 正文是有版本意义的创作成果，草稿只是没写完的半成品，
+   * 混进 works/<id>/ 会污染用户导出的文本；崩了也只丢一次半成品。
+   * 按章隔离，切回来还能接着写。
    */
-  const [draft, setDraft] = useState<string | null>(null);
+  const [draft, setDraftRaw] = useLocalStorageState<string | null>(
+    `novels-yes:draft:${workId}:${chapter.id}`,
+    { defaultValue: null }
+  );
   /** draft 的 ref 副本：回调里读最新值，不必把 draft 塞进依赖。 */
-  const draftRef = useRef<string | null>(null);
+  const draftRef = useRef<string | null>(draft);
+
+  /** 统一写入口，保证 ref 与 localStorage 同步。 */
+  const setDraft = useCallback(
+    (value: string | null) => {
+      draftRef.current = value;
+      setDraftRaw(value);
+    },
+    [setDraftRaw]
+  );
 
   const composerRef = useRef<ComposerHandle | null>(null);
   const historyRef = useRef<CommandHistory<Card[]> | null>(null);
@@ -146,9 +163,10 @@ export default function ChapterEditor({
     setEditingIndex(-1);
     setSaveState("saved");
     pendingCards.current = null;
-    /* 草稿只对当前章有意义，切章即丢弃。 */
-    draftRef.current = null;
-    setDraft(null);
+    /*
+     * 草稿按章存在 localStorage 里，切章不动它——
+     * 切回来时还要接着写。这也是 localStorage 相对组件 state 的唯一理由。
+     */
     historyRef.current = new CommandHistory<Card[]>(initialCards);
     composerRef.current?.clear();
     /*
@@ -266,18 +284,16 @@ export default function ChapterEditor({
          * 草稿此时"回到"了编辑框，因此上面的暂存卡片同步撤掉，
          * 否则同一段文字会同时出现在卡片和输入框里。
          */
-        draftRef.current = null;
         setDraft(null);
         setEditingIndex(-1);
         requestAnimationFrame(() => composerRef.current?.load(stashed, "end", true));
         return;
       }
 
-      draftRef.current = null;
       setDraft(null);
       setEditingIndex(-1);
     },
-    [cards, applyCards]
+    [cards, applyCards, setDraft]
   );
 
   /** 点击卡片：载入输入框编辑。 */
@@ -290,7 +306,6 @@ export default function ChapterEditor({
     if (editingIndexRef.current < 0) {
       const pending = composerRef.current?.read().trim() ?? "";
       if (pending) {
-        draftRef.current = pending;
         setDraft(pending);
       }
     }
@@ -300,7 +315,7 @@ export default function ChapterEditor({
       const card = cardsRef.current[index];
       if (card) composerRef.current?.load(card.text, "end");
     });
-  }, []);
+  }, [setDraft]);
 
   /**
    * 从"编辑已有卡片"退回"接着写新段落"。
@@ -326,26 +341,22 @@ export default function ChapterEditor({
      * 否则会出现"点了回到最新段落，草稿却还孤零零挂在上面"的错位。
      */
     const stashed = draftRef.current;
-    draftRef.current = null;
     setDraft(null);
     setEditingIndex(-1);
     composerRef.current?.clear();
     requestAnimationFrame(() => composerRef.current?.load(stashed ?? "", "end", Boolean(stashed)));
-  }, [scheduleSave]);
+  }, [scheduleSave, setDraft]);
 
   /** 取回暂存段落：清空输入框回到追加模式，并把草稿放回去。 */
   const restoreDraft = useCallback(() => {
     setEditingIndex(-1);
     const text = draft ?? "";
-    draftRef.current = null;
     setDraft(null);
     requestAnimationFrame(() => composerRef.current?.load(text, "end", true));
-  }, [draft]);
+  }, [draft, setDraft]);
 
   /** 丢弃暂存段落。 */
-  const discardDraft = useCallback(() => {
-    setDraft(null);
-  }, []);
+  const discardDraft = useCallback(() => setDraft(null), [setDraft]);
 
   /* cards 的 ref 副本，供回调读取最新值。 */
   const cardsRef = useRef(cards);
