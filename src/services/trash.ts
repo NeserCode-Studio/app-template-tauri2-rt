@@ -23,7 +23,7 @@ import { createLogger } from "@/lib/logger";
 const log = createLogger("TrashService");
 
 /** 被删项的类型。 */
-export const TRASH_KINDS = ["work", "chapter", "volume"] as const;
+export const TRASH_KINDS = ["workspace", "work", "chapter", "volume"] as const;
 export type TrashKind = (typeof TRASH_KINDS)[number];
 
 /** 单条回收记录。 */
@@ -150,6 +150,51 @@ export async function moveToTrash(
   return item;
 }
 
+/**
+ * 把整个工作区移入回收站。
+ *
+ * 回收站本身就在工作区里（`.trash/`），所以不能直接搬走根目录——
+ * 那会把回收站连同自己一起搬走，恢复路径也就不存在了。
+ * 做法是逐项搬：工作区根下的每个条目（作品、素材库、清单文件…）
+ * 各自移进 `.trash/<itemId>.<序号>`，并把这份映射记进回收记录，
+ * 恢复时按映射逐项搬回原位。等于把根目录"摊平"进回收站。
+ */
+export async function moveWorkspaceToTrash(root: string, title: string): Promise<TrashItem> {
+  const fs2 = createFs(root);
+  const item = trashItemSchema.parse({
+    itemId: crypto.randomUUID(),
+    kind: "workspace",
+    originId: crypto.randomUUID(),
+    originPath: "",
+    title,
+    parentId: null,
+    order: 0,
+    subtree: [],
+    deletedAt: Date.now(),
+  });
+
+  await fs2.createDir(TRASH_DIR);
+  const moved: { rel: string; dest: string }[] = [];
+  /* 回收站自身不搬，否则它会在自己内部被再次搬运。 */
+  for (const name of await fs2.readDir("")) {
+    if (name === TRASH_DIR) continue;
+    const rel = joinRel(name);
+    const dest = `${item.itemId}.${moved.length}`;
+    await fs2.rename(rel, joinRel(TRASH_DIR, dest));
+    moved.push({ rel, dest });
+  }
+
+  await fs2.writeText(trashItemFile(item.itemId), JSON.stringify({ ...item, moved }, null, 2));
+  /*
+   * index.json 在 .trash/ 里，而回收站自身被显式跳过、仍留在原处，
+   * 所以这里可以直接写。但清单（novels-yes.json）刚被搬走了——
+   * 记下它原在哪，恢复时才能搬回原位。
+   */
+  await writeIndex(root, [...(await readIndex(root)), item.itemId]);
+  log.info("workspace moved to trash", { root, entries: moved.length });
+  return item;
+}
+
 /** 列出回收站条目（按删除时间倒序）。 */
 export async function listTrash(root: string): Promise<TrashItem[]> {
   const fs2 = createFs(root);
@@ -210,7 +255,8 @@ export async function restoreFromTrash(root: string, itemId: string): Promise<bo
 
 /** 把章 / 卷重新登记回结构树。 */
 async function reattachNode(root: string, item: TrashItem): Promise<void> {
-  if (item.kind === "work") return;
+  /* 作品与工作区不需要挂回结构树：前者整目录已搬回，后者连清单一起。 */
+  if (item.kind === "work" || item.kind === "workspace") return;
   const fs2 = createFs(root);
   const file = joinRel("works", item.originId, "outline.json");
   if (!(await fs2.exists(file))) return;

@@ -29,6 +29,8 @@ export interface LibraryContextValue {
   archive: (workId: string) => Promise<void>;
   /** 恢复已归档作品。 */
   unarchive: (workId: string) => Promise<void>;
+  /** 删除作品：整部目录移入回收站，清单同步摘除。 */
+  remove: (workId: string) => Promise<void>;
 }
 
 export const LibraryContext = createContext<LibraryContextValue>({
@@ -44,6 +46,7 @@ export const LibraryContext = createContext<LibraryContextValue>({
   rename: async () => {},
   archive: async () => {},
   unarchive: async () => {},
+  remove: async () => {},
 });
 
 export function useLibrary(): LibraryContextValue {

@@ -1,4 +1,11 @@
-import { Archive, ArchiveRestore, BookOpen, MoreHorizontal, Pencil } from "lucide-react";
+import {
+  Archive,
+  ArchiveRestore,
+  BookOpen,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +26,7 @@ export interface WorkCardProps {
   onRename: (workId: string) => void;
   onArchive: (workId: string) => void;
   onUnarchive: (workId: string) => void;
+  onDelete: (workId: string) => void;
 }
 
 /** 把毫秒时间戳格式化为本地日期 YYYY-MM-DD。 */
@@ -44,6 +52,7 @@ export default function WorkCard({
   onRename,
   onArchive,
   onUnarchive,
+  onDelete,
 }: WorkCardProps) {
   const { t } = useI18n();
 
@@ -121,6 +130,18 @@ export default function WorkCard({
                 {t("Library.action.archive")}
               </DropdownMenuItem>
             )}
+            {/*
+             * 删除放最后并染成破坏色：它紧挨着归档，而两者后果
+             * 差一个量级——归档一键可回，删除要进回收站再捞。
+             * 确认由上层的输入确认弹窗负责，这里只负责发起。
+             */}
+            <DropdownMenuItem
+              className="text-destructive focus:text-destructive"
+              onSelect={() => onDelete(work.id)}
+            >
+              <Trash2 className="icon-sm" />
+              {t("Library.action.delete")}
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

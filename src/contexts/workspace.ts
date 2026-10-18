@@ -22,6 +22,8 @@ export interface WorkspaceContextValue {
   pick: () => Promise<string | null>;
   /** 在系统文件管理器中打开工作区目录。 */
   reveal: () => Promise<void>;
+  /** 把整个工作区移入回收站，并关闭当前工作区。 */
+  deleteWorkspace: () => Promise<void>;
 }
 
 export const WorkspaceContext = createContext<WorkspaceContextValue>({
@@ -32,6 +34,7 @@ export const WorkspaceContext = createContext<WorkspaceContextValue>({
   close: () => {},
   pick: async () => null,
   reveal: async () => {},
+  deleteWorkspace: async () => {},
 });
 
 export function useWorkspace(): WorkspaceContextValue {

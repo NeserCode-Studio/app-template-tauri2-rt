@@ -7,6 +7,7 @@ import { useLocalStorageState } from "ahooks";
 import { createLogger } from "@/lib/logger";
 import { WorkspaceContext, type WorkspaceContextValue } from "./workspace";
 import { pickWorkspaceDir, revealWorkspaceDir } from "@/services/workspace";
+import { moveWorkspaceToTrash } from "@/services/trash";
 
 const log = createLogger("WorkspaceProvider");
 
@@ -45,6 +46,21 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [root]);
 
+  /**
+   * 把整个工作区移入回收站并关闭它。
+   *
+   * 关闭是必须的：磁盘内容已经变了，留在打开状态会让 UI 显示
+   * 一份已经不存在的作品清单，用户再点任何东西都会报错。
+   */
+  const deleteWorkspace = useCallback(async () => {
+    if (!root) return;
+    await moveWorkspaceToTrash(root, root);
+    /* 从最近列表里摘掉：它已经不在"最近用过"的状态下了。 */
+    setRecent((prev) => (prev ?? []).filter((p) => p !== root));
+    setRoot(null);
+    log.info("workspace moved to trash", root);
+  }, [root, setRecent]);
+
   /** 弹出选择框并打开；用户取消则返回 null。 */
   const pick = useCallback(async (): Promise<string | null> => {
     const selected = await pickWorkspaceDir();
@@ -53,8 +69,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   }, [open]);
 
   const value = useMemo<WorkspaceContextValue>(
-    () => ({ root, recent: recent ?? [], isOpen: root !== null, open, close, pick, reveal }),
-    [root, recent, open, close, pick, reveal]
+    () => ({
+      root,
+      recent: recent ?? [],
+      isOpen: root !== null,
+      open,
+      close,
+      pick,
+      reveal,
+      deleteWorkspace,
+    }),
+    [root, recent, open, close, pick, reveal, deleteWorkspace]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

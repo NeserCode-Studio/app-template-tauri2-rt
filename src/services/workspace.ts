@@ -9,6 +9,7 @@
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { createFs } from "./fs";
+import { moveToTrash } from "./trash";
 import { workspaceFile, workMetaFile, workDir } from "./paths";
 import { workspaceSchema, type Workspace, workSchema, type Work } from "@/shared/schema";
 import { createLogger } from "@/lib/logger";
@@ -39,6 +40,35 @@ export async function pickWorkspaceDir(): Promise<string | null> {
  */
 export async function revealWorkspaceDir(root: string): Promise<void> {
   await revealItemInDir(root);
+}
+
+/**
+ * 删除一部作品：整部目录移入回收站，清单同步摘除。
+ *
+ * 走回收站而非直接删目录：一部作品可能是几百章正文，
+ * "误点了删除"不该等同于永久丢失。卷与章的删除已经这样处理，
+ * 作品是它们的父级，标准必须一致。
+ */
+export async function deleteWork(
+  root: string,
+  ws: Workspace,
+  workId: string,
+  title: string
+): Promise<Workspace> {
+  await moveToTrash(root, {
+    kind: "work",
+    originId: workId,
+    paths: [workDir(workId)],
+    title,
+  });
+  const next = workspaceSchema.parse({
+    ...ws,
+    order: ws.order.filter((id) => id !== workId),
+    archived: ws.archived.filter((id) => id !== workId),
+  });
+  await saveWorkspace(root, next);
+  log.info("work moved to trash", { workId });
+  return next;
 }
 
 /** 读取工作区清单；若文件不存在或解析失败则回退到空清单并写入。 */

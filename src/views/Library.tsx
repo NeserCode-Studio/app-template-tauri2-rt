@@ -33,6 +33,7 @@ import { Label } from "@/components/ui/label";
 
 import WorkCard from "@/components/novel/WorkCard";
 import TrashDialog from "@/components/novel/TrashDialog";
+import ConfirmDeleteDialog from "@/components/framework/ConfirmDeleteDialog";
 import { useI18n, useToast } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useWorkspace } from "@/contexts/workspace";
@@ -53,7 +54,7 @@ export default function Library() {
   const { t } = useI18n();
   const toast = useToast();
   const navigate = useNavigate();
-  const { root, recent, isOpen, pick, open, reveal } = useWorkspace();
+  const { root, recent, isOpen, pick, open, reveal, deleteWorkspace } = useWorkspace();
   const {
     workspace,
     works,
@@ -62,6 +63,7 @@ export default function Library() {
     rename,
     archive,
     unarchive,
+    remove,
     setWorkspaceAlias,
     setCurrentWorkId,
   } = useLibrary();
@@ -70,6 +72,13 @@ export default function Library() {
   const [name, setName] = useState("");
   const [type, setType] = useState("");
   const [pendingArchive, setPendingArchive] = useState<string | null>(null);
+  /** 待输入确认删除的作品 / 工作区。 */
+  const [pendingWorkDelete, setPendingWorkDelete] = useState<string | null>(null);
+  const [pendingWorkspaceDelete, setPendingWorkspaceDelete] = useState<string | null>(null);
+  /** 工作区别名的待确认新值：改名与"保存设置"不是一回事。 */
+  const [pendingAlias, setPendingAlias] = useState<{ from: string; to: string } | null>(
+    null
+  );
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aliasName, setAliasName] = useState("");
   const [wordCounts, setWordCounts] = useState<Record<string, number>>({});
@@ -163,6 +172,21 @@ export default function Library() {
     setDialog({ kind: "rename", workId });
   }
 
+  /**
+   * 提交工作区别名。
+   *
+   * 从"无别名"改成"有别名"要确认一次：作品库的大标题就是它，
+   * 而 H1 之前一直是固定的"作品库"。用户可能以为改的是某个字段，
+   * 没想到整个页面的标题都换掉了。反向（清空别名）同理，
+   * 那是让标题退回默认文案的可见变化。
+   */
+  function requestAliasSave() {
+    const from = (workspace?.alias ?? "").trim();
+    const to = aliasName.trim();
+    if (from === to) return;
+    setPendingAlias({ from, to });
+  }
+
   /* ---------- 未选择工作区：引导选择 ---------- */
   if (!isOpen || !root) {
     return (
@@ -224,27 +248,16 @@ export default function Library() {
           <h1 className="text-xl font-semibold">
             {workspace?.alias?.trim() || t("Library.title")}
           </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            <button
-              type="button"
-              onClick={() => void reveal()}
-              title={t("Library.workspace.openDir")}
-              className="flex items-center gap-1 underline-offset-2 hover:underline"
-            >
-              <Folder className="icon-sm shrink-0" />
-              {root}
-            </button>
-          </p>
         </div>
         <div className="flex items-center gap-2">
           {/*
-           * 操作区只留三个：设置、素材库、新建作品。
+           * 操作区四个：工作区设置、素材库、回收站、新建作品。
            *
            * "更换工作区"收进设置——它是低频动作，且换工作区意味着
            * 离开当前上下文（当前作品、草稿都在里面），不该和"新建作品"
            * 并列成同级按钮，那会让人误以为随时可以无损切换。
-           * "回收站"也并入设置：删除是低频动作，而回收站本身是一个
-           * 需要浏览的地方，不适合挤在标题栏当按钮。
+           * 回收站留在外面：它是"东西在哪还能捞回来"的查证入口，
+           * 删了东西之后第一反应就是去找它，埋进设置等于找不到。
            */}
           <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
             <Settings2 className="icon-md" />
@@ -254,6 +267,10 @@ export default function Library() {
           <Button variant="outline" size="sm" onClick={() => navigate("/codex")}>
             <Database className="icon-md" />
             {t("Codex.library.title")}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setTrashOpen(true)}>
+            <Trash2 className="icon-md" />
+            {t("Trash.title")}
           </Button>
           <Button size="sm" onClick={openCreate}>
             <Plus className="icon-md" />
@@ -277,6 +294,7 @@ export default function Library() {
                 }}
                 onRename={openRename}
                 onArchive={setPendingArchive}
+                onDelete={setPendingWorkDelete}
                 onUnarchive={(id) => {
                   void unarchive(id)
                     .then(() => toast.success("Library.toast.unarchived"))
@@ -310,6 +328,7 @@ export default function Library() {
                 onOpen={() => undefined}
                 onRename={openRename}
                 onArchive={setPendingArchive}
+                onDelete={setPendingWorkDelete}
                 onUnarchive={(id) => {
                   void unarchive(id)
                     .then(() => toast.success("Library.toast.unarchived"))
@@ -389,9 +408,9 @@ export default function Library() {
       {/*
        * 工作区设置。
        *
-       * 收纳三件低频但必要的事：给库起个显示名、换个存放目录、
-       * 打开回收站。原先它们与"新建作品"并排在标题栏，
-       * 其中"更换工作区"会离开当前上下文，和主路径同级不合适。
+       * 收纳与"这个库本身"有关的事：目录在哪、显示名是什么、
+       * 换目录、删掉整个库。原先路径挂在标题下方、指向的却是
+       * "换工作区"，与用户看到的东西名不副实——路径的信息属于设置。
        */}
       <Dialog
         open={settingsOpen}
@@ -408,18 +427,72 @@ export default function Library() {
 
           <div className="flex flex-col gap-4">
             <div className="flex flex-col gap-2">
+              <Label>{t("Library.workspace.dirLabel")}</Label>
+              <div className="flex items-center gap-2">
+                <span className="min-w-0 flex-1 truncate rounded-md border bg-muted/30 px-2 py-1.5 text-sm text-muted-foreground">
+                  {root}
+                </span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="size-8 shrink-0"
+                  onClick={() => void reveal()}
+                  title={t("Library.workspace.openDir")}
+                  aria-label={t("Library.workspace.openDir")}
+                >
+                  <Folder className="icon-md" />
+                </Button>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2">
               <Label htmlFor="workspace-alias">{t("Library.workspace.aliasLabel")}</Label>
-              <Input
-                id="workspace-alias"
-                value={aliasName}
-                placeholder={t("Library.workspace.aliasPlaceholder")}
-                onChange={(e) => setAliasName(e.target.value)}
-              />
+              {/*
+               * 保存与取消紧贴输入框，不放到底部 DialogFooter。
+               *
+               * 这个弹窗里还有"更换工作区""删除工作区"两组按钮，
+               * 它们与改名无关，却会被底部的取消/保存隔开一整屏：
+               * 用户改完名字要往下扫过两个不相干的按钮才找到保存，
+               * 眼睛很自然会把"删除工作区"当成保存路径上的一个选项。
+               * 改名是个就地完成的动作，控件就该贴着它作用的对象。
+               */}
+              <div className="flex items-center gap-2">
+                <Input
+                  id="workspace-alias"
+                  value={aliasName}
+                  placeholder={t("Library.workspace.aliasPlaceholder")}
+                  onChange={(e) => setAliasName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                      e.preventDefault();
+                      requestAliasSave();
+                    }
+                  }}
+                />
+                <Button
+                  variant="ghost"
+                  className="shrink-0"
+                  onClick={() => {
+                    setAliasName(workspace?.alias ?? "");
+                    setSettingsOpen(false);
+                  }}
+                >
+                  {t("Library.dialog.cancel")}
+                </Button>
+                <Button
+                  className="shrink-0"
+                  disabled={aliasName.trim() === (workspace?.alias ?? "").trim()}
+                  onClick={requestAliasSave}
+                >
+                  {t("Library.dialog.save")}
+                </Button>
+              </div>
             </div>
 
             <div className="flex flex-col gap-2">
               <Button
                 variant="outline"
+                className="justify-start"
                 onClick={() => {
                   setSettingsOpen(false);
                   void pick();
@@ -430,29 +503,21 @@ export default function Library() {
               </Button>
               <Button
                 variant="outline"
+                className="justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
                 onClick={() => {
                   setSettingsOpen(false);
-                  setTrashOpen(true);
+                  setPendingWorkspaceDelete(root);
                 }}
               >
                 <Trash2 className="icon-md" />
-                {t("Trash.title")}
+                {t("Library.action.deleteWorkspace")}
               </Button>
             </div>
           </div>
 
           <DialogFooter>
             <Button variant="ghost" onClick={() => setSettingsOpen(false)}>
-              {t("Library.dialog.cancel")}
-            </Button>
-            <Button
-              onClick={() => {
-                void setWorkspaceAlias(aliasName)
-                  .catch(() => toast.error("Library.toast.failed"));
-                setSettingsOpen(false);
-              }}
-            >
-              {t("Library.dialog.save")}
+              {t("Library.dialog.close")}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -482,6 +547,87 @@ export default function Library() {
               }}
             >
               {t("Library.action.archive")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/*
+       * 作品删除：输入标题确认。
+       *
+       * 删除按钮就贴在"继续写作"右侧，两者只隔一个手指宽，
+       * 普通确认框只能挡住手快，挡不住"没看清在删什么"。
+       * 要求打一遍标题等于强迫用户读它一遍。
+       */}
+      <ConfirmDeleteDialog
+        open={pendingWorkDelete !== null}
+        title={pendingWorkDelete ? works[pendingWorkDelete]?.title ?? pendingWorkDelete : ""}
+        confirmText={pendingWorkDelete ? works[pendingWorkDelete]?.title ?? pendingWorkDelete : ""}
+        description={t("Library.action.deleteWorkDesc")}
+        onOpenChange={(o) => {
+          if (!o) setPendingWorkDelete(null);
+        }}
+        onConfirm={() => {
+          if (!pendingWorkDelete) return;
+          const id = pendingWorkDelete;
+          setPendingWorkDelete(null);
+          void remove(id)
+            .then(() => toast.success("Library.toast.deleted"))
+            .catch(() => toast.error("Library.toast.failed"));
+        }}
+      />
+
+      {/*
+       * 工作区删除。
+       *
+       * 校验键用目录名而不是别名：目录名是磁盘上的真实地址，
+       * 打错一位就通不过，比让用户打一个自己刚起的显示名更可靠。
+       */}
+      <ConfirmDeleteDialog
+        open={pendingWorkspaceDelete !== null}
+        title={pendingWorkspaceDelete ?? root ?? ""}
+        confirmText={pendingWorkspaceDelete ?? root ?? ""}
+        description={t("Library.workspace.deleteDesc")}
+        onOpenChange={(o) => {
+          if (!o) setPendingWorkspaceDelete(null);
+        }}
+        onConfirm={() => {
+          setPendingWorkspaceDelete(null);
+          void deleteWorkspace().catch(() => toast.error("Library.toast.failed"));
+        }}
+      />
+
+      {/* 工作区更名确认：标题是页面级变化，值得问一句。 */}
+      <AlertDialog
+        open={pendingAlias !== null}
+        onOpenChange={(o) => {
+          if (!o) setPendingAlias(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Library.workspace.renameTitle")}</AlertDialogTitle>
+            <AlertDialogDescription className="flex flex-col gap-1">
+              <span>{t("Library.workspace.renameDesc")}</span>
+              <span className="font-medium text-foreground">
+                {pendingAlias?.from || t("Library.title")}
+              </span>
+              <span>{t("Library.workspace.renameTo")}</span>
+              <span className="font-medium text-foreground">{pendingAlias?.to}</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Library.dialog.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!pendingAlias) return;
+                const next = pendingAlias.to;
+                setPendingAlias(null);
+                setSettingsOpen(false);
+                void setWorkspaceAlias(next).catch(() => toast.error("Library.toast.failed"));
+              }}
+            >
+              {t("Library.dialog.save")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
