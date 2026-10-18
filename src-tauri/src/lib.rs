@@ -110,6 +110,7 @@ pub fn run() {
             fs_bridge::fs_exists,
             fs_bridge::fs_stat,
             export_bridge::fs_write_export,
+            export_bridge::fs_read_text_auto,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

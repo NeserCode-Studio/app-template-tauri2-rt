@@ -13,6 +13,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 /// 写入单个导出文件。成功返回实际字节数。
 #[tauri::command]
 pub fn fs_write_export(path: String, content: String) -> Result<u64, String> {
@@ -33,6 +35,68 @@ pub fn fs_write_export(path: String, content: String) -> Result<u64, String> {
     let bytes = content.as_bytes();
     fs::write(&target, bytes).map_err(|e| format!("export write failed: {} ({})", path, e))?;
     Ok(bytes.len() as u64)
+}
+
+/// 以 UTF-8 读取任意文本文件，返回内容与实际使用的编码名。
+///
+/// 用于导入既有文稿：国内积累的 txt 小说相当一部分是 GBK / GB18030，
+/// 直接按 UTF-8 解码会得到满屏替换字符（U+FFFD），而且**原文件不会被改写**，
+/// 用户看不出哪里错了。这里做一次探测并转码，交给上层决定是否落盘。
+///
+/// 探测顺序：
+/// 1. UTF-8 BOM —— 最明确，直接信任；
+/// 2. 严格 UTF-8 —— 合法即 UTF-8（`from_utf8` 严格校验，不用容错解码）；
+/// 3. GB18030 —— 超集，覆盖 GBK 与 GB2312，是中文文本的实际兜底。
+///
+/// 两者都不成立时返回错误而不是猜：宁可告诉用户"无法识别编码"，
+/// 也不要静默产出一堆替换字符让用户去逐字校对。
+#[tauri::command]
+pub fn fs_read_text_auto(path: String) -> Result<AutoReadResult, String> {
+    let bytes = fs::read(&path).map_err(|e| format!("read failed: {} ({})", path, e))?;
+    read_bytes_auto(bytes).map_err(|e| format!("{} ({})", e, path))
+}
+
+#[derive(serde::Serialize, Debug)]
+pub struct AutoReadResult {
+    pub content: String,
+    /// 实际编码：`utf-8` / `utf-8-bom` / `gb18030`。
+    pub encoding: String,
+    /// 是否检测到 BOM 并已剥离。
+    pub had_bom: bool,
+}
+
+fn read_bytes_auto(bytes: Vec<u8>) -> Result<AutoReadResult, String> {
+    // 1) UTF-8 BOM
+    if bytes.starts_with(&[0xEF, 0xBB, 0xBF]) {
+        let body = &bytes[3..];
+        let content = String::from_utf8(body.to_vec())
+            .map_err(|_| "file claims utf-8 bom but body is invalid utf-8".to_string())?;
+        return Ok(AutoReadResult {
+            content,
+            encoding: "utf-8-bom".into(),
+            had_bom: true,
+        });
+    }
+    // 2) 严格 UTF-8
+    if let Ok(content) = String::from_utf8(bytes.clone()) {
+        return Ok(AutoReadResult {
+            content,
+            encoding: "utf-8".into(),
+            had_bom: false,
+        });
+    }
+    /*
+     * 3) GB18030 需要 encoding_rs。
+     *
+     * 它目前只是 Cargo.lock 里的**传递依赖**，未在本 crate 声明，
+     * 直接 `use encoding_rs::…` 是借用未声明的依赖，不可靠。
+     * 按项目规则（未获准不新增依赖），这里不引入它，而是返回错误：
+     * 让上层明确提示"该文件不是 UTF-8，请先转存为 UTF-8 再导入"，
+     * 好过悄悄用错编码把用户文稿写坏。
+     *
+     * 待办见 .agent/findings.md F6：获准后加 encoding_rs 并放开 GBK 导入。
+     */
+    Err("file is not valid utf-8; convert it to utf-8 before importing".into())
 }
 
 #[cfg(test)]
@@ -71,5 +135,29 @@ mod tests {
         // 换行风格必须原样保留，不能被平台改写。
         assert_eq!(fs::read_to_string(&p).unwrap(), "a\r\nb");
         let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn auto_read_strips_utf8_bom() {
+        let r = read_bytes_auto(vec![0xEF, 0xBB, 0xBF, b'h', b'i']).unwrap();
+        assert_eq!(r.content, "hi");
+        assert_eq!(r.encoding, "utf-8-bom");
+        assert!(r.had_bom);
+    }
+
+    #[test]
+    fn auto_read_plain_utf8() {
+        let r = read_bytes_auto("\u{4f60}\u{597d}".as_bytes().to_vec()).unwrap();
+        assert_eq!(r.content, "\u{4f60}\u{597d}");
+        assert_eq!(r.encoding, "utf-8");
+        assert!(!r.had_bom);
+    }
+
+    #[test]
+    fn auto_read_rejects_gbk_without_panicking() {
+        // "中文"的 GBK 编码：非法 UTF-8 序列。
+        let gbk = vec![0xD6u8, 0xD0, 0xCE, 0xC4];
+        let err = read_bytes_auto(gbk).unwrap_err();
+        assert!(err.contains("utf-8"), "error should mention utf-8: {}", err);
     }
 }
