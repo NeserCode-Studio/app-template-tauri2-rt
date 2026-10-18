@@ -65,6 +65,7 @@ export default function Library() {
     unarchive,
     remove,
     refresh,
+    bumpDataVersion,
     setWorkspaceAlias,
     setCurrentWorkId,
   } = useLibrary();
@@ -414,6 +415,13 @@ export default function Library() {
            * novels-yes.json 与各 work.json，字数随后由 orderKey 的 effect 补上。
            */
           void refresh();
+          /*
+           * refresh() 只更新作品库自己的状态。结构树 provider 挂在另一个
+           * context 上，它只在 [root, currentWorkId] 变化时重读 outline.json，
+           * 不通知它就继续拿着"已删除"的旧快照——于是恢复完当场看不见，
+           * 刷新页面才出现。bump 一下版本号让它跟着重载。
+           */
+          bumpDataVersion();
         }}
       />
 

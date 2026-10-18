@@ -58,6 +58,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [works, setWorks] = useState<Record<string, Work>>({});
   const [currentWorkId, setCurrentWorkId] = useState<string | null>(null);
+  /** 磁盘数据版本：见 LibraryContextValue.dataVersion 的说明。 */
+  const [dataVersion, setDataVersion] = useState(0);
+  const bumpDataVersion = useCallback(() => setDataVersion((v) => v + 1), []);
 
   /** root 变化时重装；root 为 null 时清空。 */
   useEffect(() => {
@@ -193,6 +196,8 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       setWorks,
       setCurrentWorkId,
       refresh,
+      dataVersion,
+      bumpDataVersion,
       setWorkspaceAlias,
       create,
       rename,
@@ -205,6 +210,8 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       currentWorkId,
       works,
       refresh,
+      dataVersion,
+      bumpDataVersion,
       setWorkspaceAlias,
       create,
       rename,

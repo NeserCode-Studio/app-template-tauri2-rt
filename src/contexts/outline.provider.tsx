@@ -16,7 +16,7 @@ const LAST_CHAPTER_KEY = "novels-yes:last-chapter";
 
 export function OutlineProvider({ children }: { children: ReactNode }) {
   const { root } = useWorkspace();
-  const { currentWorkId } = useLibrary();
+  const { currentWorkId, dataVersion } = useLibrary();
 
   const [outline, setOutline] = useState<{ nodes: OutlineNode[] }>({ nodes: [] });
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
@@ -53,6 +53,34 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
       // lastByWork 只在装载时读一次，不作为依赖以免重复装载。
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [root, currentWorkId]);
+
+  /**
+   * 外部改了磁盘（回收站恢复、深度扫描）时重载，但不动当前打开的章节。
+   *
+   * 刻意不并进上面的装载 effect：那个 effect 会按 lastByWork 重新决定
+   * 打开哪一章，恢复一章顺手把用户正在写的章关掉是不能接受的。
+   * 这里只换 outline，选中态原样保留。章元信息不用管——metasKey 由章 id
+   * 列表推出，节点一变那个 effect 自己会重跑。
+   *
+   * 初次挂载时 loadOutline 已跑过，这里靠 dataVersion 跳过首轮重复装载。
+   */
+  useEffect(() => {
+    if (!root || !currentWorkId) return;
+    let alive = true;
+    void (async () => {
+      try {
+        const next = await loadOutline(root, currentWorkId);
+        if (!alive) return;
+        setOutline(next);
+      } catch (err) {
+        log.error("outline reload failed", err);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataVersion]);
 
   /** 记住每部作品最后打开的章节。 */
   useEffect(() => {
