@@ -746,7 +746,21 @@ export default function OutlinePane({
             dragging={Boolean(activeId) && overRef?.kind !== "before"}
             className={activeId ? "mt-1 rounded-md border border-dashed border-border/60 p-1" : ""}
           >
-            {activeId ? (
+            {/*
+             * 提示文字只在指针真的落在这个区域时才出现。
+             *
+             * 之前是"只要在拖拽就渲染"，于是把游离章往卷里拖时，
+             * 底下这行"移到顶层"还杵着——它描述的是把章拖**出**卷的动作，
+             * 而用户此刻的目标是把章拖**进**卷，语义正好相反。
+             *
+             * 文案也随来源节点变化：从卷里往外拖才是"移到顶层"，
+             * 已经游离的章再拖回顶层没有意义（本来就在那）。
+             */}
+            {activeId &&
+            overRef?.kind === "into" &&
+            overRef.parentId === null &&
+            /* 已经在顶层的章拖回顶层没有意义，别给一个假动作发提示。 */
+            activeNode?.parentId !== null ? (
               <p className="px-1 py-1 text-center text-xs text-muted-foreground/60">
                 {t("Editor.node.moveOut")}
               </p>
