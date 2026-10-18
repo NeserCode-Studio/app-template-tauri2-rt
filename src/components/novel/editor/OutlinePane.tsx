@@ -523,18 +523,24 @@ export default function OutlinePane({
   /**
    * 被拖节点的同级序列，按 order 排好。
    *
-   * 卷与章混在一棵扁平树里，但各自的 order 只在各自父级下有意义，
-   * 所以这里按"被拖节点的类型"选不同的同级集合：
-   * 拖卷时拿顶层卷，拖章时拿同父级的章。
+   * 必须与 `services/outline.ts` 的 `moveNode` 取同级的口径完全一致，
+   * 否则算出的 targetIndex 落在另一个索引空间里，顺序看起来不动。
+   *
+   * 关键：卷与游离章的 parentId 都是 null，共享**同一个** order 序列
+   * ——它们在数据上是混在一起的，不存在"卷的序列"这种东西。
+   * 所以顶层要取「卷 + 游离章」合并后的有序列表，不能只取卷。
+   * （曾经只取卷，于是顶层有 2 卷 2 游离章时，把末卷拖到底算出的
+   * index 是卷内下标，moveNode 却按 4 个顶层节点解释，永远插不对。）
+   *
+   * 只有卷内才需要按类型过滤：那下面的同级必然全是章。
    */
   const siblingsOf = useCallback(
     (node: OutlineNode): OutlineNode[] => {
-      if (node.type === "volume") {
-        return volumes
-          .filter((v) => v.parentId === node.parentId)
-          .sort((a, b) => a.order - b.order);
-      }
-      return chaptersByVolume.get(node.parentId) ?? [];
+      const sameParent =
+        node.parentId === null
+          ? [...volumes.filter((v) => v.parentId === null), ...(chaptersByVolume.get(null) ?? [])]
+          : chaptersByVolume.get(node.parentId) ?? [];
+      return [...sameParent].sort((a, b) => a.order - b.order);
     },
     [volumes, chaptersByVolume]
   );
@@ -676,8 +682,28 @@ export default function OutlinePane({
 
   /* ---------- 章节详情 ---------- */
 
-  function renderChapterList(parentId: string | null) {
-    const list = chaptersByVolume.get(parentId) ?? [];
+  /**
+   * 顶层的一条有序序列：卷与游离章按 order 交错。
+   *
+   * 之前是「先渲染所有卷，再渲染所有游离章」两段。数据上两者共享同一个
+   * order 序列，渲染却拆开了，于是几何顺序表达不了数据顺序——
+   * 用户想把末卷拖到游离章下面，视觉上却没有任何位置能表示
+   * "这一卷排在这些游离章之后"，怎么拖都到不了底。
+   *
+   * 交错渲染后，几何顺序与 order 一致，落点算出的下标才有意义。
+   */
+  const topLevel = useMemo(() => {
+    const loose = chaptersByVolume.get(null) ?? [];
+    const byOrder = new Map<string, number>();
+    for (const n of [...volumes, ...loose]) byOrder.set(n.id, n.order);
+    /* order 可能因历史操作留下重复，用 id 做稳定的次级排序键。 */
+    return [...volumes, ...loose].sort(
+      (a, b) => (byOrder.get(a.id) ?? 0) - (byOrder.get(b.id) ?? 0)
+    );
+  }, [volumes, chaptersByVolume]);
+
+  function renderChapterList(parentId: string | null, explicit?: OutlineNode[]) {
+    const list = explicit ?? chaptersByVolume.get(parentId) ?? [];
     if (!list.length) return null;
     return (
       <SortableContext
@@ -807,12 +833,40 @@ export default function OutlinePane({
         {/* 树体 */}
         <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto">
         <div className="w-full px-2 pb-3">
-          {/* 卷分组 */}
+          {/*
+           * 顶层按 order 交错渲染：卷与游离章是同一条序列上的元素。
+           * SortableContext 只覆盖顶层（卷 + 游离章），卷内的章由
+           * renderChapterList 自己的 SortableContext 接管，互不干扰。
+           */}
           <SortableContext
-            items={volumes.map((v) => NODE_PREFIX + v.id)}
+            items={topLevel.map((n) => NODE_PREFIX + n.id)}
             strategy={verticalListSortingStrategy}
           >
-          {volumes.map((volume, vi) => {
+          {topLevel.map((item, i) => {
+            /*
+             * 分割线：卷之前、以及"卷后面紧跟的游离章"之前画。
+             * 顶层首项不画——顶边紧贴面板上沿，画线像被裁掉半截的边框。
+             * 游离章之间不画线，它们是连续的一张列表。
+             */
+            const prev = topLevel[i - 1];
+            const needsDivider =
+              i > 0 &&
+              (item.type === "volume" || (item.type === "chapter" && prev?.type === "volume"));
+
+            if (item.type === "chapter") {
+              return (
+                <div key={item.id}>
+                  {needsDivider ? (
+                    <div className="mx-2 mb-1.5 h-px bg-border/70" aria-hidden="true" />
+                  ) : null}
+                  <div className="mt-0.5 flex flex-col gap-0.5">
+                    {renderChapterList(null, [item])}
+                  </div>
+                </div>
+              );
+            }
+
+            const volume = item;
             const isCollapsed = collapsed[volume.id];
             return (
               <DropZone
@@ -821,24 +875,10 @@ export default function OutlinePane({
                 dragging={Boolean(activeId) && overRef?.kind !== "before"}
                 className="mb-1"
               >
-                {/*
-                 * 卷与卷之间的分割线。
-                 *
-                 * 放进 DropZone 内部而不是外层：DropZone 是可放置区域，
-                 * 在它外面插元素不影响命中，但在它内部插一个纯装饰节点
-                 * 不会把"这一整块卷"的可放置范围割裂。
-                 *
-                 * 首个卷不加：顶边紧贴面板上沿，画一条线只会显得是
-                 * 被裁掉一半的边框。
-                 */}
-                {vi > 0 ? (
-                  <div
-                    className="mx-2 mb-1.5 h-px bg-border/70"
-                    aria-hidden="true"
-                  />
+                {needsDivider ? (
+                  <div className="mx-2 mb-1.5 h-px bg-border/70" aria-hidden="true" />
                 ) : null}
                 <VolumeRow
-                  key={volume.id}
                   volume={volume}
                   isCollapsed={isCollapsed}
                   sessionActive={Boolean(activeId)}
@@ -858,11 +898,7 @@ export default function OutlinePane({
                   onDelete={() => onDeleteVolume(volume.id)}
                 />
 
-                {!isCollapsed ? (
-                  <>
-                    {renderChapterList(volume.id)}
-                  </>
-                ) : null}
+                {!isCollapsed ? renderChapterList(volume.id) : null}
               </DropZone>
             );
           })}
@@ -871,6 +907,9 @@ export default function OutlinePane({
           {/*
            * 根层拖放区：把章从卷里拖出来必须有落点，
            * 否则"移出到顶层"这个动作在界面上无法完成。
+           *
+           * 这里只提供落点提示，不再渲染游离章本身——那些章已作为
+           * topLevel 的成员交错渲染在上面，重复渲染会让同一章出现两次。
            * 拖拽进行中才显示虚线框，避免平时占掉空白处。
            */}
           <DropZone
@@ -897,16 +936,6 @@ export default function OutlinePane({
                 {t("Editor.node.moveOut")}
               </p>
             ) : null}
-            {/*
-             * 卷内所有章排在前面，未入卷的章跟在后面，两者之间也要有线。
-             * 分割线画在这里而不是依赖上一版"每个卷之间画线"——那一版
-             * 只切开了卷与卷，卷与未入卷区之间反而是连着的。
-             * 无卷时（全是未入卷章）不需要线，顶端不该凭空多一道。
-             */}
-            {volumes.length && (chaptersByVolume.get(null) ?? []).length ? (
-              <div className="mx-2 mb-1.5 h-px bg-border/70" aria-hidden="true" />
-            ) : null}
-            {renderChapterList(null)}
           </DropZone>
 
           {!volumes.length && !chapters.length ? (
