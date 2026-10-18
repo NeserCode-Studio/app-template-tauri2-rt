@@ -27,7 +27,7 @@ import WorkCard from "@/components/novel/WorkCard";
 import { useI18n, useToast } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useWorkspace } from "@/contexts/workspace";
-import { loadStats, recordWrite } from "@/services/stats";
+import { loadStats, recordWorkWords } from "@/services/stats";
 import { countWorkWords } from "@/services/chapter";
 import { createLogger } from "@/lib/logger";
 import type { Work } from "@/shared/schema";
@@ -78,7 +78,7 @@ export default function Library() {
         next[id] = fromChapters || stats.workWords[id] || 0;
         if (fromChapters !== (stats.workWords[id] ?? 0)) {
           /* 回写修正，让下次打开不必重算。 */
-          await recordWrite(root, id, fromChapters, 0).catch(() => undefined);
+          await recordWorkWords(root, id, fromChapters).catch(() => undefined);
         }
       } catch (err) {
         log.warn("stats unreadable", id, err);

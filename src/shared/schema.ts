@@ -103,6 +103,14 @@ export const statsSchema = z.object({
   todayWords: z.number().int().default(0),
   /** 最近一次写作日期（YYYY-MM-DD）。 */
   lastWriteDate: z.string().default(""),
+  /**
+   * 每日写作量：YYYY-MM-DD → 当日净增字数。
+   *
+   * 存"净增"而非"当日总量"：改写旧段落会让当日总量回落，
+   * 曲线就变成锯齿状；净增才反映真实推进速度，且重排历史时仍可累加。
+   * 键数随天数缓慢增长（每年 365 条，几 KB），无需清理。
+   */
+  daily: z.record(z.string(), z.number().int()).default({}),
   /** 每个作品的字数。 */
   workWords: z.record(idSchema, z.number().int()).default({}),
   /** 提及索引，为 v2 增强导出预留。 */

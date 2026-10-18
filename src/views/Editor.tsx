@@ -23,6 +23,7 @@ import {
 
 import ChapterEditor from "@/components/novel/editor/ChapterEditor";
 import CodexPane from "@/components/novel/CodexPane";
+import ProgressPane from "@/components/novel/ProgressPane";
 import NewChapterDialog from "@/components/novel/editor/NewChapterDialog";
 import OutlinePane from "@/components/novel/editor/OutlinePane";
 
@@ -43,7 +44,7 @@ import {
   loadChapter,
   renameChapter as renameChapterFile,
 } from "@/services/chapter";
-import { recordWrite } from "@/services/stats";
+import { recordWorkWords } from "@/services/stats";
 import { createLogger } from "@/lib/logger";
 import type { Chapter } from "@/shared/schema";
 
@@ -73,7 +74,7 @@ export default function Editor() {
   /** 待确认删除的章节。 */
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   /** 右栏页签：章节信息 / 素材库。 */
-  const [sideTab, setSideTab] = useState<"chapter" | "codex">("chapter");
+  const [sideTab, setSideTab] = useState<"chapter" | "codex" | "progress">("chapter");
 
   /* 作品切换后回到作品库，避免空编辑器。 */
   useEffect(() => {
@@ -226,8 +227,8 @@ export default function Editor() {
     async () => {
       if (!root || !currentWorkId) return;
       const total = await countWorkWords(root, currentWorkId);
-      /* delta 只影响"今日新增字数"这一项，不影响作品总字数。 */
-      await recordWrite(root, currentWorkId, total, 0);
+      /* delta 由服务内部按上一版作品字数求差，调用点不参与。 */
+      await recordWorkWords(root, currentWorkId, total);
     },
     [root, currentWorkId]
   );
@@ -330,10 +331,19 @@ export default function Editor() {
               >
                 {t("Editor.side.codex")}
               </Button>
+              <Button
+                size="sm"
+                variant={sideTab === "progress" ? "secondary" : "ghost"}
+                className="h-7 flex-1 text-xs"
+                onClick={() => setSideTab("progress")}
+              >
+                {t("Editor.side.progress")}
+              </Button>
             </div>
 
             <div className="min-h-0 flex-1">
               {sideTab === "codex" ? <CodexPane /> : null}
+              {sideTab === "progress" ? <ProgressPane chapterWords={words} /> : null}
             </div>
 
             {sideTab === "chapter" ? (

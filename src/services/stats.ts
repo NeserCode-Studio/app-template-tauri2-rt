@@ -71,10 +71,38 @@ export async function recordWrite(
     todayWords: prevDate === key ? Math.max(0, stats.todayWords + delta) : Math.max(0, delta),
     streak,
     lastWriteDate: key,
+    /* 负的日增量允许存在（回改旧文），但不把曲线拉到 0 以下。 */
+    daily: {
+      ...stats.daily,
+      [key]: Math.max(0, (stats.daily[key] ?? 0) + delta),
+    },
     workWords: { ...stats.workWords, [workId]: workWords },
   };
   await saveStats(root, workId, next);
   return next;
+}
+
+/**
+ * 按作品新字数登记一次写作。
+ *
+ * **delta 必须由这里算，不能由调用方传。** 早期版本让调用方自己算差额，
+ * 结果所有调用点都传了 0，于是 `totalWords` / `todayWords` 永远为 0，
+ * 而 `workWords` 却在正常增长——统计面板看起来"有作品字数、没总字数"，
+ * 排查起来毫无线索。
+ *
+ * 改为以 stats 里记录的上一版作品字数为基准求差，调用点只需给当前值，
+ * 就不可能再忘记传 delta。首次登记（无历史）只更新作品字数，
+ * 不把存量一次性算进"今日新增"——否则打开一天的作品会显示写了十万字。
+ */
+export async function recordWorkWords(
+  root: string,
+  workId: string,
+  workWords: number
+): Promise<Stats> {
+  const stats = await loadStats(root, workId);
+  const previous = stats.workWords[workId];
+  const delta = previous === undefined ? 0 : workWords - previous;
+  return recordWrite(root, workId, workWords, delta);
 }
 
 /** 合并提及索引（提交卡片时调用）。 */
