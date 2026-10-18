@@ -18,6 +18,8 @@ export interface WorkspaceContextValue {
   open: (root: string) => void;
   /** 关闭工作区（清空 root，保留最近列表）。 */
   close: () => void;
+  /** 弹出目录选择框并打开；用户取消返回 null。 */
+  pick: () => Promise<string | null>;
 }
 
 export const WorkspaceContext = createContext<WorkspaceContextValue>({
@@ -26,6 +28,7 @@ export const WorkspaceContext = createContext<WorkspaceContextValue>({
   isOpen: false,
   open: () => {},
   close: () => {},
+  pick: async () => null,
 });
 
 export function useWorkspace(): WorkspaceContextValue {

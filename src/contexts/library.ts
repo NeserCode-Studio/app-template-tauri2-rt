@@ -17,6 +17,16 @@ export interface LibraryContextValue {
   setWorkspace: (ws: Workspace) => void;
   setWorks: (works: Record<string, Work>) => void;
   setCurrentWorkId: (id: string | null) => void;
+  /** 从磁盘重新装载清单与作品元数据。 */
+  refresh: () => Promise<void>;
+  /** 新建作品并设为当前作品。 */
+  create: (title: string, type: string) => Promise<Work | null>;
+  /** 重命名作品。 */
+  rename: (workId: string, title: string) => Promise<void>;
+  /** 归档作品。 */
+  archive: (workId: string) => Promise<void>;
+  /** 恢复已归档作品。 */
+  unarchive: (workId: string) => Promise<void>;
 }
 
 export const LibraryContext = createContext<LibraryContextValue>({
@@ -26,6 +36,11 @@ export const LibraryContext = createContext<LibraryContextValue>({
   setWorkspace: () => {},
   setWorks: () => {},
   setCurrentWorkId: () => {},
+  refresh: async () => {},
+  create: async () => null,
+  rename: async () => {},
+  archive: async () => {},
+  unarchive: async () => {},
 });
 
 export function useLibrary(): LibraryContextValue {

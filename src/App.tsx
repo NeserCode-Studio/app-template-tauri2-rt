@@ -22,6 +22,8 @@ import SettingsDialog from "@/components/framework/SettingsDialog";
 import AboutDialog from "@/components/framework/AboutDialog";
 import { SettingsDialogContext } from "@/contexts/settings";
 import { createLogger } from "@/lib/logger";
+import { WorkspaceProvider } from "@/contexts/workspace.provider";
+import { LibraryProvider } from "@/contexts/library.provider";
 
 const log = createLogger("App");
 
@@ -151,8 +153,9 @@ function App() {
   }
 
   return (
-    <>
-      <SettingsDialogContext.Provider value={settingsValue}>
+    <WorkspaceProvider>
+      <LibraryProvider>
+        <SettingsDialogContext.Provider value={settingsValue}>
         <I18nContext.Provider value={i18nValue}>
           <ThemeContext.Provider value={themeValue}>
             <TitleContext.Provider value={titleValue}>
@@ -181,8 +184,9 @@ function App() {
             </TitleContext.Provider>
           </ThemeContext.Provider>
         </I18nContext.Provider>
-      </SettingsDialogContext.Provider>
-    </>
+        </SettingsDialogContext.Provider>
+      </LibraryProvider>
+    </WorkspaceProvider>
   );
 }
 
