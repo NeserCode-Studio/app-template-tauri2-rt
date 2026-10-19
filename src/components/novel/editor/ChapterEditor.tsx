@@ -29,6 +29,14 @@ export interface ChapterEditorProps {
   /** 工作区根与作品 id，落盘时需要。 */
   root: string;
   workId: string;
+  /**
+   * 是否嵌在连续章节流里。
+   *
+   * 嵌进去时正文不再自持滚动容器：滚动由 ChapterStream 统一负责，
+   * 否则一章套两层滚动条，输入框的「贴底」也随之失效。
+   * 独立使用时（未接流的老路径）仍是自持滚动的那一个。
+   */
+  embedded?: boolean;
   /** 章内容变化后通知父级（用于更新字数统计）。 */
   onWordsChange?: (words: number) => void;
   /** 章保存后通知父级（用于同步 outline 状态）。 */
@@ -103,6 +111,7 @@ export default function ChapterEditor({
   onRename,
   onDelete,
   onOpenCodexEntry,
+  embedded = false,
 }: ChapterEditorProps) {
   const { t } = useI18n();
   const toast = useToast();
@@ -840,8 +849,17 @@ export default function ChapterEditor({
        * 用原生滚动而非 ScrollArea：正文要跟随滚动条"读位置"，
        * 自绘滚动容器会把滚动交给内部 viewport，联动（如跟随光标、滚动到底）
        * 都得改成对内部元素操作，得不偿失。样式由 scrollbar-app 统一。
+       *
+       * embedded 时把滚动交还外层：连续章节流里一个屏幕装着好几章，
+       * 每章各自滚会让"往下看下一章"变成逐章翻页，流就断了。
+       * 这时本章按内容自然撑高，输入框仍由外层 flex 布局贴在屏幕底部。
        */}
-      <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto px-6 py-4">
+      <div
+        className={[
+          "px-6 py-4",
+          embedded ? "" : "scrollbar-app min-h-0 flex-1 overflow-y-auto",
+        ].join(" ")}
+      >
         {cards.length ? (
           <div
             ref={listRef}

@@ -8,6 +8,17 @@ export interface OutlineContextValue {
   outline: Outline;
   /** 当前打开的章节 id。 */
   currentChapterId: string | null;
+  /**
+   * 正在阅读的章节 id（滚动正文时由视口位置推出）。
+   *
+   * 与 currentChapterId 分开是刻意的：后者是"编辑目标"，前者是"阅读位置"。
+   * 连续章节流里往下滚过第 3 章时，用户还在写第 2 章，若把两者混成一个，
+   * 高亮就会反向把编辑目标切走——滚动本身成了改数据的操作。
+   * 两者一致时结构树只显示一份高亮，看不出差别。
+   */
+  readingChapterId: string | null;
+  /** 上报阅读位置。只影响高亮，不改编辑目标。 */
+  setReadingChapterId: (id: string | null) => void;
   /** 按 order 升序排列的章节节点（不分卷，章节跳转器用）。 */
   chapters: OutlineNode[];
   /** 按 order 升序排列的卷节点。 */
@@ -29,6 +40,8 @@ export interface OutlineContextValue {
 export const OutlineContext = createContext<OutlineContextValue>({
   outline: { nodes: [] },
   currentChapterId: null,
+  readingChapterId: null,
+  setReadingChapterId: () => {},
   chapters: [],
   volumes: [],
   chapterMetas: {},

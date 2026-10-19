@@ -455,11 +455,52 @@ export default function OutlinePane({
   onDeleteVolume,
 }: OutlinePaneProps) {
   const { t } = useI18n();
-  const { chapters, volumes, chapterMetas, currentChapterId, setCurrentChapterId } = useOutline();
+  /*
+   * 高亮读 readingChapterId 而不是 currentChapterId。
+   *
+   * 连续章节流里往下滚过第 3 章时，用户可能还在写第 2 章——阅读位置
+   * 与编辑目标本来就会短暂分叉。高亮要回答的是"我在读哪一章"，
+   * 用编辑目标会让用户觉得点错了地方。
+   */
+  const {
+    chapters,
+    volumes,
+    chapterMetas,
+    readingChapterId,
+    setCurrentChapterId,
+  } = useOutline();
 
   /** 新建卷对话框。 */
   const [volumeDialog, setVolumeDialog] = useState(false);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  /*
+   * 阅读章所在的卷自动展开。
+   *
+   * 连续滚动会跨卷：用户从上卷末章一路滚进下卷，若下卷是收起的，
+   * 高亮就落在了一个看不见的节点上——结构树像坏了。
+   * 这里只替"当前阅读章"展开，不碰用户手动收起别的卷的选择。
+   */
+  useEffect(() => {
+    if (!readingChapterId) return;
+    const parent = chapters.find((c) => c.id === readingChapterId)?.parentId;
+    if (!parent) return;
+    setCollapsed((prev) => (prev[parent] ? { ...prev, [parent]: false } : prev));
+  }, [readingChapterId, chapters]);
+
+
+  /*
+   * 阅读章所在卷自动展开。
+   *
+   * 连续滚动会跨卷，而用户可能早就把那一卷收起来了。不展开的话
+   * 高亮落在一棵看不见的树上，等于没高亮。
+   * 只展开、不收起：收起是用户的手势，反向操作会和用户抢控制权。
+   */
+  useEffect(() => {
+    if (!readingChapterId) return;
+    const parent = chapters.find((c) => c.id === readingChapterId)?.parentId;
+    if (!parent) return;
+    setCollapsed((prev) => (prev[parent] ? { ...prev, [parent]: false } : prev));
+  }, [readingChapterId, chapters]);
   /** 新建章节对话框的目标父级，undefined 表示未打开。 */
   const [chapterDialogIn, setChapterDialogIn] = useState<string | null | undefined>(undefined);
   /** 章节详情对话框的目标节点。 */
@@ -468,6 +509,37 @@ export default function OutlinePane({
   const [overId, setOverId] = useState<string | null>(null);
   /** 相对时间的基准：每分钟刷新一次即可，太频繁只会白白重渲染。 */
   const [now, setNow] = useState(() => Date.now());
+
+  /*
+   * 阅读章所在的卷必须展开。
+   *
+   * 连续滚动时阅读章会跨卷移动，而卷的收起状态是用户留下的。若某卷正收着，
+   * 高亮落进去就整卷看不见——用户只会看到"高亮莫名消失了"。
+   * 这里只做"该展开的展开"，绝不反向收起：收起是用户的明确意图，
+   * 被滚动顺手覆盖掉同样难以理解。
+   */
+  useEffect(() => {
+    if (!readingChapterId) return;
+    const host = volumes.find((v) => v.id === readingChapterId)
+      ? null
+      : chapters.find((c) => c.id === readingChapterId)?.parentId ?? null;
+    if (!host) return;
+    setCollapsed((prev) => (prev[host] ? { ...prev, [host]: false } : prev));
+  }, [readingChapterId, volumes, chapters]);
+
+  /*
+   * 阅读章所在的卷自动展开。
+   *
+   * 连续滚动会跨卷，用户滚进一卷时那卷可能正被他收起着——不展开的话
+   * 高亮落在看不见的地方，"同步高亮"等于没发生。这里只做展开，
+   * 不做反向收起：收起是用户的显式意图，不能被滚动覆盖掉。
+   */
+  useEffect(() => {
+    if (!readingChapterId) return;
+    const parent = chapters.find((c) => c.id === readingChapterId)?.parentId;
+    if (!parent) return;
+    setCollapsed((prev) => (prev[parent] ? { ...prev, [parent]: false } : prev));
+  }, [readingChapterId, chapters]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -740,7 +812,7 @@ export default function OutlinePane({
                 key={node.id}
                 node={node}
                 index={i}
-                selected={currentChapterId === node.id}
+                selected={readingChapterId === node.id}
                 dragging={activeId === NODE_PREFIX + node.id}
                 sessionActive={Boolean(activeId)}
                 onSelect={() => setCurrentChapterId(node.id)}

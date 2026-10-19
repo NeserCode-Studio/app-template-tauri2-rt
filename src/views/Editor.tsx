@@ -46,7 +46,7 @@ import {
   type ImperativePanelHandle,
 } from "@/components/ui/resizable";
 
-import ChapterEditor from "@/components/novel/editor/ChapterEditor";
+import ChapterStream from "@/components/novel/editor/ChapterStream";
 import CodexPane from "@/components/novel/CodexPane";
 import DraftBox from "@/components/novel/DraftBox";
 import ProgressPane from "@/components/novel/ProgressPane";
@@ -196,7 +196,20 @@ export default function Editor() {
     setLoading(true);
     loadChapter(root, currentWorkId, activeChapterId)
       .then((next) => {
-        if (alive && next) setChapter(next);
+        /*
+         * 读不到正文时必须说出来。返回 null 说明章文件不存在或解析失败，
+         * 此时若静默不 setChapter，正文区会是一片空白——
+         * 用户看到的是"我的字没了"，而不是"这个文件读不出来"。
+         */
+        if (!next) {
+          log.error("chapter file missing or unreadable", {
+            workId: currentWorkId,
+            chapterId: activeChapterId,
+          });
+          if (alive) setChapter(null);
+          return;
+        }
+        if (alive) setChapter(next);
       })
       .catch((err) => log.error("chapter load failed", err))
       .finally(() => {
@@ -593,7 +606,17 @@ export default function Editor() {
            */}
           <div className="flex h-full min-h-0 flex-col">
             {chapter ? (
-              <ChapterEditor
+              /*
+               * Continuous chapter stream: the active chapter still runs on
+               * ChapterEditor (save, history, undo, drafts all unchanged), while
+               * the two chapters before and after are read-only context.
+               *
+               * The scroll container belongs to ChapterStream, so no extra
+               * flex-1 wrapper here: two nested scrollers would break the
+               * bottom composer staying pinned.
+               */
+              <ChapterStream
+                onSelectChapter={setCurrentChapterId}
                 key={chapter.id}
                 chapter={chapter}
                 root={root}

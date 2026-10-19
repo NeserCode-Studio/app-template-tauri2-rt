@@ -20,6 +20,8 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
 
   const [outline, setOutline] = useState<{ nodes: OutlineNode[] }>({ nodes: [] });
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
+  /** 阅读位置：滚动正文时更新，只驱动结构树高亮。 */
+  const [readingChapterId, setReadingChapterId] = useState<string | null>(null);
   const [chapterMetas, setChapterMetas] = useState<Record<string, ChapterMeta>>({});
   const [lastByWork, setLastByWork] = useLocalStorageState<Record<string, string>>(
     LAST_CHAPTER_KEY,
@@ -31,6 +33,7 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
     if (!root || !currentWorkId) {
       setOutline({ nodes: [] });
       setCurrentChapterId(null);
+      setReadingChapterId(null);
       return;
     }
     let alive = true;
@@ -45,6 +48,7 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
         const remembered = (lastByWork ?? {})[currentWorkId] ?? null;
         const exists = remembered && next.nodes.some((n) => n.id === remembered);
         setCurrentChapterId(exists ? remembered : null);
+        setReadingChapterId(null);
       })
       .catch((err) => log.error("outline load failed", err));
     return () => {
@@ -88,6 +92,17 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
     setLastByWork({ ...(lastByWork ?? {}), [currentWorkId]: currentChapterId });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentWorkId, currentChapterId]);
+
+  /*
+   * 阅读位置跟随编辑目标。
+   *
+   * 点结构树、点"下一章"、草稿箱跳章，都是"人去哪一章"的显式指令，
+   * 阅读位置必须立刻跟上，否则高亮还停在上一章，像是点错了。
+   * 反过来（滚动改阅读位置）不碰这里——那正是二者要分开的原因。
+   */
+  useEffect(() => {
+    setReadingChapterId(currentChapterId);
+  }, [currentChapterId]);
 
   const reload = useCallback(async () => {
     if (!root || !currentWorkId) return;
@@ -141,6 +156,8 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
     () => ({
       outline,
       currentChapterId,
+      readingChapterId,
+      setReadingChapterId,
       chapters,
       volumes,
       chapterMetas,
@@ -152,6 +169,7 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
     [
       outline,
       currentChapterId,
+      readingChapterId,
       chapters,
       volumes,
       chapterMetas,
