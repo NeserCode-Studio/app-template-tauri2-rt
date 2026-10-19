@@ -127,7 +127,22 @@ export default function ChapterStream({
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollTop = landingRef.current === "end" ? el.scrollHeight : 0;
+    /*
+     * 必须延一帧：activeId 变化的同一帧里 DOM 还是上一章的内容，
+     * 此刻读 scrollHeight 拿到的是旧章高度，落点会停在中途。
+     * 等 rAF 之后新章已挂入，scrollHeight 才是这一章的。
+     */
+    const target = landingRef.current;
+    /* 读完就复位：落点只对紧接着的这一次切章生效。 */
+    landingRef.current = "start";
+    if (target === "start") {
+      el.scrollTop = 0;
+      return;
+    }
+    const raf = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(raf);
   }, [activeId]);
 
   /**
