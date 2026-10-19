@@ -1,42 +1,17 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, History, Loader2, Pencil, Save, Trash2, Undo2 } from "lucide-react";
-
-import { Button } from "@/components/ui/button";
-import CardItem from "./CardItem";
-import ComposerInput, { type ComposerHandle } from "./ComposerInput";
-import SplitDialog from "./SplitDialog";
-import HistoryDialog from "./HistoryDialog";
-
-import { useI18n } from "@/composables";
-import { useToast } from "@/composables";
 import { useViewMode } from "@/contexts/viewmode";
-import { createLogger } from "@/lib/logger";
-import { CommandHistory } from "@/lib/command-history";
-import {
-  cardsToText,
-  countWords,
-  dropHistory,
-  rollbackTo,
-  saveChapter,
-} from "@/services/chapter";
-import { readDraft, writeDraft } from "@/services/drafts";
-import { cardSchema, type Card, type Chapter } from "@/shared/schema";
-
-const log = createLogger("ChapterEditor");
+import type { Chapter } from "@/shared/schema";
+import ChapterBody from "./ChapterBody";
+import ChapterHeader from "./ChapterHeader";
+import ComposerInput from "./ComposerInput";
+import HistoryDialog from "./HistoryDialog";
+import SplitDialog from "./SplitDialog";
+import { useChapterController } from "./useChapterController";
 
 export interface ChapterEditorProps {
   chapter: Chapter;
   /** 工作区根与作品 id，落盘时需要。 */
   root: string;
   workId: string;
-  /**
-   * 是否嵌在连续章节流里。
-   *
-   * 嵌进去时正文不再自持滚动容器：滚动由 ChapterStream 统一负责，
-   * 否则一章套两层滚动条，输入框的「贴底」也随之失效。
-   * 独立使用时（未接流的老路径）仍是自持滚动的那一个。
-   */
-  embedded?: boolean;
   /** 章内容变化后通知父级（用于更新字数统计）。 */
   onWordsChange?: (words: number) => void;
   /** 章保存后通知父级（用于同步 outline 状态）。 */
@@ -58,48 +33,15 @@ export interface ChapterEditorProps {
   onOpenCodexEntry?: (entryId: string) => void;
 }
 
-/** 防抖自动保存间隔（计划书 §6.3：800ms）。 */
-const AUTOSAVE_DELAY = 800;
-
-type SaveState = "saved" | "dirty" | "saving";
-
-/**
- * 段末句读：用于判断"这一段是否已经写完"。
- * 只认真正收束语义的标点，逗号顿号这类停顿符不算。
- */
-const TERMINATORS = new Set([
-  "。", "！", "？", "…", "）", "】", "》", "」", "』", "〉",
-  "”", "’", ".", "!", "?", "…", ")", "]", "}", '"', "'",
-]);
-
-/** 该段是否以句读收束。 */
-function isTerminated(text: string): boolean {
-  const trimmed = text.trimEnd();
-  if (!trimmed) return false;
-  return TERMINATORS.has(Array.from(trimmed).at(-1) ?? "");
-}
-
-/** 上一次合并的信息，供"撤回合并"使用。 */
-interface LastMerge {
-  /** 合并后主卡所在下标。 */
-  index: number;
-  /** 合并前主卡的文本。 */
-  text: string;
-  /** 被并进来的那张卡的 id 与文本。 */
-  removedId: string;
-  removedText: string;
-}
-
 /**
  * 章内容编辑器：卡片列表 + 底部唯一输入框。
  *
- * 数据流（计划书 §6.3）：
- *   输入框(ref 读取，不进 state) → 回车提交为卡片 → 记入命令历史
- *   → 防抖 800ms → services/chapter.save() → 同时写 json 与 txt 视图
+ * 界面已拆成三块（ChapterHeader / ChapterBody / ComposerInput），
+ * 状态与副作用全在 useChapterController 里。这样连续章节流可以把三块
+ * 分别摆到屏幕上、中、下，而不必每章各渲染一整套 chrome。
  *
- * 卡片数组刻意整章放在 state 里但更新走"整章新数组"，
- * 因为结构操作（重排/删除/拆分/合并）本身就是整章级变更；
- * 高亮等重计算只发生在单卡上，不依赖整章 diff。
+ * 本组件保留给"单章使用"的场景（如没有流的回退路径）；
+ * 流内请直接用拆分后的三块 + 同一个 controller。
  */
 export default function ChapterEditor({
   chapter,
@@ -111,805 +53,71 @@ export default function ChapterEditor({
   onRename,
   onDelete,
   onOpenCodexEntry,
-  embedded = false,
 }: ChapterEditorProps) {
-  const { t } = useI18n();
-  const toast = useToast();
   const { mode } = useViewMode();
-
-  const [cards, setCards] = useState<Card[]>(chapter.cards);
-  const [editingIndex, setEditingIndex] = useState(-1);
-  const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [splitTarget, setSplitTarget] = useState<number | null>(null);
-  /** 历史版本对话框开关。 */
-  const [historyOpen, setHistoryOpen] = useState(false);
-  /**
-   * 章对象（带最新 history）的本地副本。
-   *
-   * 父级传下来的 chapter 只有在切章或重载时才更新，而每次保存都会新增一条
-   * 快照。历史面板要在保存后立刻反映出来，就得自己持有这份副本。
-   */
-  const [chapterWithHistory, setChapterWithHistory] = useState(chapter);
-  /** 上一次合并，用于"撤回合并"按钮。 */
-  const [lastMerge, setLastMerge] = useState<LastMerge | null>(null);
-  /**
-   * 暂存的新段落。
-   *
-   * 写新段落时点开一张旧卡片，原来输入框里的草稿会被卡片的原文覆盖，
-   * 于是"刚写的那段"凭空丢了。这里把草稿扣下来，贴在编辑区上方。
-   *
-   * 按作品 + 章分别存进 localStorage：只落浏览器，不进工作区目录。
-   * 正文是有版本意义的创作成果，草稿只是没写完的半成品，
-   * 混进 works/<id>/ 会污染用户导出的文本；崩了也只丢一次半成品。
-   * 按章隔离，切回来还能接着写。
-   */
-  /*
-   * 草稿改由 services/drafts 的集中 JSON 存储托管：
-   * 统一成一个键，才能在草稿箱里遍历全部半成品（见 F2）。
-   * 用 state 而非 useLocalStorageState，是为了自己控制读写时机——
-   * 切章时要按 chapterId 重新读，不能让 ahooks 沿用上一章的值。
-   */
-  const [draft, setDraftState] = useState<string | null>(() =>
-    readDraft(workId, chapter.id)
-  );
-  /** draft 的 ref 副本：回调里读最新值，不必把 draft 塞进依赖。 */
-  const draftRef = useRef<string | null>(draft);
-
-  /** 统一写入口，保证 ref 与 localStorage 同步。 */
-  const setDraft = useCallback(
-    (value: string | null) => {
-      draftRef.current = value;
-      setDraftState(value);
-      writeDraft({
-        text: value ?? "",
-        workId,
-        chapterId: chapter.id,
-        chapterTitle: chapter.title,
-      });
-    },
-    [workId, chapter.id, chapter.title]
-  );
-
-  const composerRef = useRef<ComposerHandle | null>(null);
-  const historyRef = useRef<CommandHistory<Card[]> | null>(null);
-  const saveTimer = useRef<number | null>(null);
-  /** 待保存的最新卡片数组，卸载时 flush 用。 */
-  const pendingCards = useRef<Card[] | null>(null);
-
-  /** 真正执行落盘。 */
-  const persistNow = useCallback(
-    async (nextCards: Card[]) => {
-      setSaveState("saving");
-      try {
-        const next: Chapter = {
-          ...chapterRef.current,
-          cards: nextCards,
-          cursor: { cardIndex: editingIndexRef.current, offset: 0 },
-        };
-        /*
-         * 保存会顺带压入一份历史快照，所以要用返回值而不是本地 next：
-         * 只有返回值才带最新的 history，并把它写回 chapterRef，
-         * 否则下一次保存会以缺失 history 的版本为基准，快照链断掉。
-         */
-        const saved = await saveChapter(root, workId, next);
-        chapterRef.current = saved;
-        setChapterWithHistory(saved);
-        /*
-         * 作品库的字数来自 stats.json。作品总字数是全书各章之和，
-         * 由父级汇总后写入——单章字数不等于作品字数，这里只上报本章。
-         */
-        onWordsCommitted?.(countWords(cardsToText(nextCards)));
-        pendingCards.current = null;
-        setSaveState("saved");
-        onSaved?.(saved);
-        log.debug("chapter saved", { cards: nextCards.length });
-      } catch (err) {
-        log.error("save failed", err);
-        setSaveState("dirty");
-        toast.error("Editor.save.failed");
-      }
-    },
-    [root, workId, onSaved, onWordsCommitted, toast]
-  );
-
-  /**
-   * 删除某个历史版本。
-   *
-   * 落盘时关掉快照：正文没改动，只是删了一条历史。若照常留快照，
-   * 会凭空多出一个与当前正文完全相同的版本——历史列表越删越脏。
-   */
-  const dropVersion = useCallback(
-    async (index: number) => {
-      const base = chapterRef.current;
-      const next = dropHistory(base, index);
-      if (next === base) return;
-      try {
-        const saved = await saveChapter(root, workId, next, false);
-        chapterRef.current = saved;
-        setChapterWithHistory(saved);
-      } catch (err) {
-        log.error("drop history failed", err);
-        toast.error("Editor.save.failed");
-      }
-    },
-    [root, workId, toast]
-  );
-
-  /* 切章时重置：卡片、编辑态、历史栈。依赖 chapter.id 而非 chapter，
-     否则父级回传保存结果会触发重置，把本地编辑态冲掉。 */
-  const chapterId = chapter.id;
-  const initialCards = chapter.cards;
-  useEffect(() => {
-    setCards(initialCards);
-    setEditingIndex(-1);
-    setSaveState("saved");
-    setChapterWithHistory(chapter);
-    pendingCards.current = null;
-    /*
-     * 切章时按新章重新取草稿并灌回输入框。
-     *
-     * 取回后只清 state、不清 ref：这份文字现在已经在输入框里了，
-     * 若 draft state 仍非空，编辑器上方还会再渲染一张"暂存草稿"卡片，
-     * 同一段内容在界面上出现两次。约定是「草稿归位到输入框 = 不再显示暂存卡」。
-     *
-     * draftRef 仍保留该文本：紧接着点开旧卡片时，handleCardClick 要靠它
-     * 把这段扣下来再载入卡片原文。清掉 ref 就会在点卡片时丢掉它。
-     */
-    const nextDraft = readDraft(workId, chapterId);
-    draftRef.current = nextDraft;
-    setDraftState(null);
-    historyRef.current = new CommandHistory<Card[]>(initialCards);
-    /*
-     * 把这一章自己的草稿灌回输入框。切回来要能接着写，
-     * 这是草稿存 localStorage（而非组件 state）的唯一理由。
-     * 顺带进入可写作状态：不必先去点某张卡片才能落笔。
-     */
-    requestAnimationFrame(() => {
-      composerRef.current?.clear();
-      if (nextDraft) composerRef.current?.load(nextDraft, "end", true);
-      composerRef.current?.focus("end");
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chapterId]);
-
-  /**
-   * 回滚到某个历史快照。
-   *
-   * 回滚本身也要落盘（否则下次保存会拿当前正文当"上一版"再存一份，
-   * 刚回滚掉的内容又留在了历史里）。历史栈清空重建，避免用户按 Ctrl+Z
-   * 回到回滚之前那个"已被回滚掉"的中间状态。
-   */
-  const rollback = useCallback(
-    async (index: number) => {
-      const base = chapterRef.current;
-      const restored = rollbackTo(base, index);
-      if (restored === base) return;
-      setSaveState("saving");
-      try {
-        /*
-         * 传 snapshot=false：rollbackTo 已经把"回滚前的正文"存进历史，
-         * 若这里再让 saveChapter 存一次，存的会是刚回滚回去的正文——
-         * 等于把目标版本又抄了一份。两次存档叠加，回滚一次就多两条。
-         */
-        const saved = await saveChapter(root, workId, restored, false);
-        chapterRef.current = saved;
-        setChapterWithHistory(saved);
-        setCards(saved.cards);
-        setEditingIndex(-1);
-        historyRef.current = new CommandHistory<Card[]>(saved.cards);
-        setSaveState("saved");
-        setHistoryOpen(false);
-        onWordsCommitted?.(countWords(cardsToText(saved.cards)));
-        onSaved?.(saved);
-        toast.success("Editor.history.restored");
-      } catch (err) {
-        log.error("rollback failed", err);
-        setSaveState("dirty");
-        toast.error("Editor.save.failed");
-      }
-    },
-    [root, workId, onSaved, onWordsCommitted, toast]
-  );
-
-  /* 字数统计：仅在卡片数组变化时重算（中文输入组合期不会触发，因为内容不进 state）。 */
-  const words = useMemo(() => countWords(cardsToText(cards)), [cards]);
-  useEffect(() => {
-    onWordsChange?.(words);
-  }, [words, onWordsChange]);
-
-  /**
-   * 打字机模式：把活动卡片滚到视口舒适线。
-   *
-   * 只在"活动卡片变了"时滚一次，而不是每次渲染都滚——否则用户
-   * 手动往上翻看前文时会被立刻拽回来。
-   */
-  const listRef = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (mode !== "typewriter") return;
-    if (editingIndex < 0) return;
-    const el = listRef.current?.querySelector<HTMLElement>(
-      `[data-card-index="${editingIndex}"]`
-    );
-    el?.scrollIntoView({ block: "center", behavior: "smooth" });
-  }, [mode, editingIndex]);
-
-  /*
-   * 专注模式下压暗非当前卡片。
-   *
-   * 只在"正在编辑某张卡"时压暗：追加新段时没有活动卡片，
-   * 若此时也压暗，用户会以为整页坏了。
-   */
-  const dimOthers = mode === "focus" && editingIndex >= 0;
-
-  /** 提交保存：防抖 800ms 后落盘。 */
-  const scheduleSave = useCallback(
-    (nextCards: Card[]) => {
-      pendingCards.current = nextCards;
-      setSaveState("dirty");
-      if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-      saveTimer.current = window.setTimeout(() => {
-        saveTimer.current = null;
-        void persistNow(nextCards);
-      }, AUTOSAVE_DELAY);
-    },
-    [persistNow]
-  );
-
-  /** chapter 的 ref 副本，避免 persistNow 随每次保存重建。 */
-  const chapterRef = useRef(chapter);
-  useEffect(() => {
-    chapterRef.current = chapter;
-  }, [chapter]);
-
-  /* editingIndex 的 ref 副本，供防抖回调读取最新值而不重建定时器。 */
-  const editingIndexRef = useRef(-1);
-  useEffect(() => {
-    editingIndexRef.current = editingIndex;
-  }, [editingIndex]);
-
-  /** 统一的卡片变更入口：更新 state、记历史、排保存。 */
-  const applyCards = useCallback(
-    (next: Card[], record = true) => {
-      setCards(next);
-      if (record) historyRef.current?.record(next);
-      scheduleSave(next);
-    },
-    [scheduleSave]
-  );
-
-  /**
-   * 手动保存：按钮任何时候都可点，落什么由保存函数自己判断。
-   *
-   * 不做"是否有未保存内容"的前置判断——防抖窗口内点击、或上次保存失败后
-   * 重试，都必须能真正写一次盘。没有待写内容时以当前卡片为准。
-   */
-  const saveNow = useCallback(() => {
-    if (saveTimer.current !== null) {
-      window.clearTimeout(saveTimer.current);
-      saveTimer.current = null;
-    }
-    void persistNow(pendingCards.current ?? cardsRef.current);
-  }, [persistNow]);
-
-  /* ---------- 卡片操作 ---------- */
-
-  /* ---------- 撤销 / 重做 ----------
-     放在合并操作之前：撤回合并在结构对不上时会退回到通用撤销。 */
-  const undo = useCallback(() => {
-    const prev = historyRef.current?.undo();
-    if (!prev) return;
-    setCards(prev);
-    scheduleSave(prev);
-  }, [scheduleSave]);
-
-  const redo = useCallback(() => {
-    const next = historyRef.current?.redo();
-    if (!next) return;
-    setCards(next);
-    scheduleSave(next);
-  }, [scheduleSave]);
-
-  /** 回车提交：editingIndex 为 -1 新建，否则更新该卡。 */
-  const handleSubmit = useCallback(
-    (text: string, index: number) => {
-      const now = Date.now();
-      if (index < 0) {
-        const card: Card = cardSchema.parse({
-          id: crypto.randomUUID(),
-          text,
-          createdAt: now,
-          updatedAt: now,
-        });
-        applyCards([...cards, card]);
-      } else {
-        const next = cards.map((c, i) =>
-          i === index ? cardSchema.parse({ ...c, text, updatedAt: now }) : c
-        );
-        applyCards(next);
-      }
-
-      /*
-       * 草稿只在"提交的就是它自己"时才作废。
-       *
-       * 携带暂存草稿去改旧段落时，index >= 0，提交的是那张卡的文本，
-       * 草稿本身还没写进去——此时必须把它放回输入框，否则刚写的那段
-       * 就在提交的一瞬间被清掉了。
-       */
-      const stashed = draftRef.current;
-      if (index >= 0 && stashed) {
-        /*
-         * 提交旧卡后回到追加模式，并把暂存段落放回输入框。
-         * 草稿此时"回到"了编辑框，因此上面的暂存卡片同步撤掉，
-         * 否则同一段文字会同时出现在卡片和输入框里。
-         */
-        setDraft(null);
-        setEditingIndex(-1);
-        requestAnimationFrame(() => composerRef.current?.load(stashed, "end", true));
-        return;
-      }
-
-      setDraft(null);
-      setEditingIndex(-1);
-    },
-    [cards, applyCards, setDraft]
-  );
-
-  /** 点击卡片：载入输入框编辑。 */
-  const handleCardClick = useCallback((index: number) => {
-    /*
-     * 正在写新段落时点开旧卡片，先把草稿暂存起来。
-     * load() 会覆盖 textarea.value，若不扣下草稿就直接被冲掉了。
-     * 已经在编辑某张卡时则不暂存——那时输入框里的内容属于那张卡。
-     */
-    if (editingIndexRef.current < 0) {
-      const pending = composerRef.current?.read().trim() ?? "";
-      if (pending) {
-        setDraft(pending);
-      }
-    }
-    setEditingIndex(index);
-    // 下一帧再 focus，确保 textarea 已渲染出 editing 提示。
-    requestAnimationFrame(() => {
-      const card = cardsRef.current[index];
-      if (card) composerRef.current?.load(card.text, "end");
-    });
-  }, [setDraft]);
-
-  /**
-   * 从"编辑已有卡片"退回"接着写新段落"。
-   *
-   * 输入框里此时可能已经打了字但没提交。这里不丢弃：先把内容交还给原卡片
-   * （与正常提交一致），再清空输入框回到追加模式。这样"回车"和"点返回"
-   * 两种放弃方式行为一致，不会静默吃掉用户输入。
-   */
-  const returnToNew = useCallback(() => {
-    const index = editingIndexRef.current;
-    const typed = composerRef.current?.read().trim() ?? "";
-    if (index >= 0 && typed) {
-      const now = Date.now();
-      const next = cardsRef.current.map((c, i) =>
-        i === index ? cardSchema.parse({ ...c, text: typed, updatedAt: now }) : c
-      );
-      setCards(next);
-      historyRef.current?.record(next);
-      scheduleSave(next);
-    }
-    /*
-     * 回到追加模式：若先前暂存过新段落，一并取回输入框。
-     * 否则会出现"点了回到最新段落，草稿却还孤零零挂在上面"的错位。
-     */
-    const stashed = draftRef.current;
-    setDraft(null);
-    setEditingIndex(-1);
-    composerRef.current?.clear();
-    requestAnimationFrame(() => composerRef.current?.load(stashed ?? "", "end", Boolean(stashed)));
-  }, [scheduleSave, setDraft]);
-
-  /** 取回暂存段落：清空输入框回到追加模式，并把草稿放回去。 */
-  const restoreDraft = useCallback(() => {
-    setEditingIndex(-1);
-    const text = draft ?? "";
-    setDraft(null);
-    requestAnimationFrame(() => composerRef.current?.load(text, "end", true));
-  }, [draft, setDraft]);
-
-  /**
-   * 丢弃暂存段落。
-   *
-   * 必须连 ref 一起清。只清 state 的话卡片照样消失，但 draftRef 还留着
-   * 文本：下一次点开旧卡片再提交，handleSubmit 会把这段"扣下"又放回
-   * 输入框，用户会发现刚丢掉的段落又回来了。setDraft 本身已同步 ref，
-   * 这里额外确认一次是因为这条路径语义上要求彻底作废。
-   */
-  const discardDraft = useCallback(() => {
-    draftRef.current = null;
-    setDraft(null);
-  }, [setDraft]);
-
-  /* cards 的 ref 副本，供回调读取最新值。 */
-  const cardsRef = useRef(cards);
-  useEffect(() => {
-    cardsRef.current = cards;
-  }, [cards]);
-
-  /** 上移：与前一张交换。 */
-  const moveUp = useCallback(
-    (index: number) => {
-      if (index <= 0) return;
-      const next = [...cards];
-      [next[index - 1], next[index]] = [next[index], next[index - 1]];
-      applyCards(next);
-    },
-    [cards, applyCards]
-  );
-
-  /** 下移：与后一张交换。 */
-  const moveDown = useCallback(
-    (index: number) => {
-      if (index >= cards.length - 1) return;
-      const next = [...cards];
-      [next[index + 1], next[index]] = [next[index], next[index + 1]];
-      applyCards(next);
-    },
-    [cards, applyCards]
-  );
-
-  /** 拆分：在光标处把一张卡分成两张。 */
-  const splitCard = useCallback(
-    (index: number) => {
-      if (!cards[index]?.text.trim()) return;
-      setSplitTarget(index);
-    },
-    [cards]
-  );
-
-  /** 在指定偏移处真正执行拆分。 */
-  const confirmSplit = useCallback(
-    (offset: number) => {
-      const index = splitTarget;
-      if (index === null) return;
-      const card = cards[index];
-      if (!card) return;
-      const head = card.text.slice(0, offset).trim();
-      const tail = card.text.slice(offset).trim();
-      if (!head || !tail) return;
-      const now = Date.now();
-      const nextCard: Card = cardSchema.parse({
-        id: crypto.randomUUID(),
-        text: tail,
-        createdAt: now,
-        updatedAt: now,
-      });
-      const next = [
-        ...cards.slice(0, index),
-        { ...card, text: head, updatedAt: now },
-        nextCard,
-        ...cards.slice(index + 1),
-      ];
-      applyCards(next);
-    },
-    [cards, splitTarget, applyCards]
-  );
-
-  /**
-   * 合并：当前卡与下一张合并为一张。
-   *
-   * 合并只在"上一段确实写完了"时才合理——段末没有句读说明话还没说完，
-   * 硬拼起来会变成一段没有内部停顿的长句。因此先检查段末标点，
-   * 不满足时给出提示而不是默默合并。
-   */
-  const mergeDown = useCallback(
-    (index: number) => {
-      if (index >= cards.length - 1) return;
-      const head = cards[index].text.trimEnd();
-      if (!isTerminated(head)) {
-        toast.warning("Editor.card.mergeUnfinished");
-        return;
-      }
-      /* 段末标点与下一段开头之间不再插入换行：既然是同段，标点后就该接续。 */
-      const merged = `${head}${cards[index + 1].text}`;
-      const next = [
-        ...cards.slice(0, index),
-        { ...cards[index], text: merged, updatedAt: Date.now() },
-        ...cards.slice(index + 2),
-      ];
-      applyCards(next);
-      /* 记住这次合并，便于一键撤回（撤销栈也会记，但撤回入口更直接）。 */
-      setLastMerge({
-        index,
-        text: head,
-        removedId: cards[index + 1].id,
-        removedText: cards[index + 1].text,
-      });
-    },
-    [cards, applyCards, toast]
-  );
-
-  /** 撤回上一次的合并：把被并进来的那张卡还原成独立一张。 */
-  const undoMerge = useCallback(() => {
-    const merge = lastMerge;
-    if (!merge) return;
-    /* 内容可能已经被再次编辑过，结构对不上时交给通用撤销处理。 */
-    const current = cards[merge.index];
-    if (!current || !current.text.includes(merge.removedText)) {
-      setLastMerge(null);
-      undo();
-      return;
-    }
-    const restored: Card = cardSchema.parse({
-      id: merge.removedId,
-      text: merge.removedText,
-      createdAt: current.createdAt,
-      updatedAt: Date.now(),
-    });
-    const next = [
-      ...cards.slice(0, merge.index),
-      { ...current, text: merge.text },
-      restored,
-      ...cards.slice(merge.index + 1),
-    ];
-    applyCards(next);
-    setLastMerge(null);
-  }, [lastMerge, cards, applyCards, undo]);
-
-  /** 删除一张卡。 */
-  const deleteCard = useCallback(
-    (index: number) => {
-      applyCards(cards.filter((_, i) => i !== index));
-      if (editingIndexRef.current === index) {
-        setEditingIndex(-1);
-        composerRef.current?.clear();
-      } else if (editingIndexRef.current > index) {
-        setEditingIndex(editingIndexRef.current - 1);
-      }
-    },
-    [cards, applyCards]
-  );
-
-  /* 全局快捷键：Ctrl+Z / Ctrl+Shift+Z。输入框内让位给原生 undo。 */
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      const inTextarea = (e.target as HTMLElement)?.tagName === "TEXTAREA";
-      if (inTextarea) return;
-      if (e.key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
-        e.preventDefault();
-        redo();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [undo, redo]);
-
-  /*
-   * 卸载时冲刷待保存内容。
-   *
-   * 这是数据可靠性的关键点：ChapterEditor 以 chapter.id 为 key，切换章节或
-   * 返回作品库都会立刻卸载本组件。仅 clearTimeout 会把防抖窗口内固化的
-   * 卡片直接丢掉——用户看到的是"已保存"，退出再进来却空章。
- */
-  useEffect(() => {
-    /*
-     * 卸载时的数据可能已经被 React 拆掉（ref 置空、DOM 卸载）。
-     * 因此这里先把输入框的值读出来存进闭包，cleanup 里再用——
-     * 直接在 cleanup 里读 composerRef.current，可能拿到 null 而静默丢稿。
-     */
-    const composer = composerRef.current;
-    return () => {
-      if (saveTimer.current !== null) {
-        window.clearTimeout(saveTimer.current);
-        saveTimer.current = null;
-      }
-      const cards = pendingCards.current;
-      if (cards) void persistNow(cards);
-      /*
-       * 输入框里的半成品同样要在这里存成草稿。
-       *
-       * 父级用 `key={chapter.id}` 渲染本组件，所以**切章走的是卸载，
-       * 不是 chapterId effect**——之前只在 effect 里补草稿的话根本不会触发。
-       * 卸载是"任何原因离开这一章"的唯一汇合点：切章、回作品库、关窗口，
-       * 三条路径都在这里收口。
-       */
-      const typed = composer?.read().trim() ?? "";
-      if (typed) {
-        writeDraft({
-          text: typed,
-          workId,
-          chapterId,
-          chapterTitle: chapter.title,
-        });
-      }
-    };
-    // chapterId / workId / chapter.title 在卸载时读取，均为本章的稳定值。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [persistNow]);
+  const c = useChapterController({
+    chapter,
+    root,
+    workId,
+    onWordsChange,
+    onSaved,
+    onWordsCommitted,
+  });
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <SplitDialog
-        open={splitTarget !== null}
-        cardIndex={splitTarget ?? -1}
-        text={splitTarget !== null ? (cards[splitTarget]?.text ?? "") : ""}
+        open={c.splitTarget !== null}
+        cardIndex={c.splitTarget ?? -1}
+        text={c.splitTarget !== null ? (c.cards[c.splitTarget]?.text ?? "") : ""}
         onOpenChange={(o) => {
-          if (!o) setSplitTarget(null);
+          if (!o) c.setSplitTarget(null);
         }}
-        onConfirm={confirmSplit}
+        onConfirm={c.confirmSplit}
       />
       <HistoryDialog
-        open={historyOpen}
-        chapter={chapterWithHistory}
-        onOpenChange={setHistoryOpen}
-        onRollback={(i) => void rollback(i)}
-        onDelete={(i) => void dropVersion(i)}
+        open={c.historyOpen}
+        chapter={c.chapterWithHistory}
+        onOpenChange={c.setHistoryOpen}
+        onRollback={(i) => void c.rollback(i)}
+        onDelete={(i) => void c.dropVersion(i)}
       />
 
-      {/* 章标题区 */}
-      <header className="flex items-center justify-between gap-3 border-b px-6 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <h2 className="truncate text-base font-semibold">
-            {chapter.title || t("Editor.title.placeholder")}
-          </h2>
-          {/*
-           * 章级操作放在标题栏而不是右栏：改名与删除作用于"当前这一章"，
-           * 标题栏就是它的位置指示器。放在右栏里，用户得先理解
-           * "右栏的按钮为什么改的是中间这章"。
-           */}
-          {onRename ? (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-7 shrink-0"
-              aria-label={t("Editor.chapter.rename")}
-              title={t("Editor.chapter.rename")}
-              onClick={onRename}
-            >
-              <Pencil className="icon-sm" />
-            </Button>
-          ) : null}
-          {onDelete ? (
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-7 shrink-0 text-destructive hover:text-destructive"
-              aria-label={t("Editor.chapter.delete")}
-              title={t("Editor.chapter.delete")}
-              onClick={onDelete}
-            >
-              <Trash2 className="icon-sm" />
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
-          <span className="tabular-nums">
-            {words} {t("Editor.chapter.words")}
-          </span>
-          <span className="flex items-center gap-1">
-            {saveState === "saving" ? (
-              <>
-                <Loader2 className="icon-sm animate-spin" />
-                {t("Editor.status.saving")}
-              </>
-            ) : saveState === "dirty" ? (
-              t("Editor.status.dirty")
-            ) : (
-              <>
-                <Check className="icon-sm" />
-                {t("Editor.status.saved")}
-              </>
-            )}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7"
-            disabled={saveState === "saving"}
-            onClick={saveNow}
-          >
-            <Save className="icon-sm" />
-            {t("Editor.save.manual")}
-          </Button>
-          {/* 历史版本：编辑器撤销栈退出即失效，这里是跨会话的唯一退路。 */}
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7"
-            onClick={() => setHistoryOpen(true)}
-          >
-            <History className="icon-sm" />
-            {t("Editor.history.open")}
-          </Button>
-          {/*
-           * 撤回合并：合并是"破坏性"的（少了一张卡），
-           * 因此在保存按钮旁给一个显式出口，而不只依赖 Ctrl+Z。
-           */}
-          {lastMerge ? (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7"
-              onClick={undoMerge}
-            >
-              <Undo2 className="icon-sm" />
-              {t("Editor.card.undoMerge")}
-            </Button>
-          ) : null}
-        </div>
-      </header>
+      <ChapterHeader
+        title={chapter.title}
+        words={c.words}
+        saveState={c.saveState}
+        hasLastMerge={Boolean(c.lastMerge)}
+        onRename={onRename}
+        onDelete={onDelete}
+        onSave={c.saveNow}
+        onOpenHistory={() => c.setHistoryOpen(true)}
+        onUndoMerge={c.undoMerge}
+      />
 
-      {/*
-       * 卡片区。
-       *
-       * `flex-1 min-h-0` + 自身滚动是关键：外层保持固定高度并把剩余空间
-       * 全给滚动区，底部输入框因此恒定贴底，不会被卡片高度顶走。
-       * 若这里少了 min-h-0，flex 子项会按内容撑开，输入框被推出可视区。
-       *
-       * 用原生滚动而非 ScrollArea：正文要跟随滚动条"读位置"，
-       * 自绘滚动容器会把滚动交给内部 viewport，联动（如跟随光标、滚动到底）
-       * 都得改成对内部元素操作，得不偿失。样式由 scrollbar-app 统一。
-       *
-       * embedded 时把滚动交还外层：连续章节流里一个屏幕装着好几章，
-       * 每章各自滚会让"往下看下一章"变成逐章翻页，流就断了。
-       * 这时本章按内容自然撑高，输入框仍由外层 flex 布局贴在屏幕底部。
-       */}
-      <div
-        className={[
-          "px-6 py-4",
-          embedded ? "" : "scrollbar-app min-h-0 flex-1 overflow-y-auto",
-        ].join(" ")}
-      >
-        {cards.length ? (
-          <div
-            ref={listRef}
-            className="article-body prose-article mx-auto flex flex-col pl-9"
-          >
-            {cards.map((card, index) => (
-              <CardItem
-                key={card.id}
-                card={card}
-                index={index}
-                total={cards.length}
-                dimmed={dimOthers && editingIndex !== index}
-                isActive={editingIndex === index}
-                onEdit={handleCardClick}
-                onMoveUp={moveUp}
-                onMoveDown={moveDown}
-                onSplit={splitCard}
-                onMergeDown={mergeDown}
-                onDelete={deleteCard}
-                onOpenCodexEntry={onOpenCodexEntry}
-              />
-            ))}
-          </div>
-        ) : (
-          <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-2 text-center">
-            <p className="text-sm text-muted-foreground">{t("Editor.empty")}</p>
-            <p className="text-xs text-muted-foreground/70">{t("Editor.empty.hint")}</p>
-          </div>
-        )}
-      </div>
+      <ChapterBody
+        cards={c.cards}
+        editingIndex={c.editingIndex}
+        dimOthers={mode === "focus" && c.editingIndex >= 0}
+        onEdit={c.handleCardClick}
+        onMoveUp={c.moveUp}
+        onMoveDown={c.moveDown}
+        onSplit={c.splitCard}
+        onMergeDown={c.mergeDown}
+        onDelete={c.deleteCard}
+        onOpenCodexEntry={onOpenCodexEntry}
+        listRef={c.listRef}
+      />
 
-      {/*
-       * 底部编辑区：分割线以下整块都是输入区。
-       *
-       * 刻意不做 max-width 居中：分割线以下整条都是编辑区，
-       * 输入框背景透明，透出应用底色；顶界由 ComposerInput 内那条
-       * 80% 宽的细线给出，因此这里不再画满宽 border-t。
-       *
-       * 底色必须透明：应用外壳用的是 neutral-50 / neutral-700，
-       * 而 bg-background 是另一套 token，直接铺会留下一块色差。
-       */}
       <div className="shrink-0">
         <ComposerInput
-          ref={composerRef}
-          editingIndex={editingIndex}
-          onSubmit={handleSubmit}
-          onReturnToNew={returnToNew}
-          pendingDraft={draft}
-          onRestoreDraft={restoreDraft}
-          onDiscardDraft={discardDraft}
+          ref={c.composerRef}
+          editingIndex={c.editingIndex}
+          onSubmit={c.handleSubmit}
+          onReturnToNew={c.returnToNew}
+          pendingDraft={c.draft}
+          onRestoreDraft={c.restoreDraft}
+          onDiscardDraft={c.discardDraft}
         />
       </div>
     </div>

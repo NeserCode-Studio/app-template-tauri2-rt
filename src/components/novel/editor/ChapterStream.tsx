@@ -2,25 +2,36 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useI18n } from "@/composables";
 import { useOutline } from "@/contexts/outline";
+import { useViewMode } from "@/contexts/viewmode";
 import { createLogger } from "@/lib/logger";
 import { loadChapter } from "@/services/chapter";
 import type { Chapter, OutlineNode } from "@/shared/schema";
-import ChapterEditor from "./ChapterEditor";
+import ChapterBody from "./ChapterBody";
+import ChapterHeader from "./ChapterHeader";
+import ComposerInput from "./ComposerInput";
+import HistoryDialog from "./HistoryDialog";
 import ReadonlyChapter from "./ReadonlyChapter";
+import SplitDialog from "./SplitDialog";
+import { useChapterController } from "./useChapterController";
 
 const log = createLogger("ChapterStream");
 
 /**
- * 连续章节流：把「一章一屏」变成「一章接一章往下滚」。
+ * 连续章节流。
  *
- * 为什么值得改：写长篇时要对照前文，旧模型是"记住第几章 → 切走 → 看 →
- * 切回"，三步里有两步在丢上下文。连续流里对照只是滚一下滚轮。
+ * 结构是一条竖向三段式：标题栏（固定）→ 正文（唯一滚动区）→ 输入框（固定）。
+ * 标题栏与输入框全应用只有一份，永远属于"当前正在写的那一章"；
+ * 中间的滚动区里，活动章的正文与前后邻章的正文连成一片往下滚。
  *
- * 代价与取舍：
- * - 只有活动章可写，邻章是只读渲染。编辑器的一切单章假设
- *   （保存、历史、撤销、草稿）因此都不用改，仍以活动章为唯一写入单元。
- * - 邻章只渲染 ±2 章并随滚动增删。长作品一次性全渲染会把 DOM 撑到
- *   几万节点，卡的是滑动本身。
+ * 为什么标题栏不能跟着章走：早期版本把整套编辑器嵌进每一章，结果
+ * 屏幕中间夹着"邻章正文 → 标题栏 → 活动章正文 → 输入框 → 邻章正文"，
+ * 用户分不清哪个标题栏在描述哪一章。固定 chrome 就是为消掉这个歧义。
+ *
+ * 切章判据（用户确认）：
+ *   已停在章尾 + 再向下滚一次 = 下一章
+ *   已停在章首 + 再向上滚一次 = 上一章
+ * 不用像素阈值：阈值在长章与短章之间手感不一致，而"贴边后再滚一下"
+ * 是一个明确的手势，也不会在临界位置来回抖。
  */
 
 /** 活动章前后各渲染几章。2 章约两屏，滚到边界时来得及补下一页。 */
@@ -55,19 +66,29 @@ export default function ChapterStream({
 }: ChapterStreamProps) {
   const { t } = useI18n();
   const { chapters, volumes, setReadingChapterId } = useOutline();
+  const { mode } = useViewMode();
+  const c = useChapterController({
+    chapter,
+    root,
+    workId,
+    onWordsChange,
+    onSaved,
+    onWordsCommitted,
+  });
 
-  /** 阅读顺序：与结构树的视觉顺序一致（游离章在前，再按卷展开）。 */
   /*
+   * 阅读顺序：与结构树的视觉顺序一致（游离章在前，再按卷展开）。
+   *
    * volumes 必须从 context 取，不能从 chapters 里过滤——context 的
    * chapters 只含 chapter 节点（见 outline.provider 的 filter），
    * 从它里面找 volume 永远得到空数组，卷内章会整批从序列里消失。
    */
   const sequence = useMemo<OutlineNode[]>(() => {
     const byParent = new Map<string | null, OutlineNode[]>();
-    for (const c of chapters) {
-      const list = byParent.get(c.parentId);
-      if (list) list.push(c);
-      else byParent.set(c.parentId, [c]);
+    for (const n of chapters) {
+      const list = byParent.get(n.parentId);
+      if (list) list.push(n);
+      else byParent.set(n.parentId, [n]);
     }
     const ordered = [...volumes].sort((a, b) => a.order - b.order);
     const seq = [
@@ -97,7 +118,7 @@ export default function ChapterStream({
     });
   }
 
-  /** 窗口内的章节节点（含活动章）。越界时自动收窄，作品末尾不会渲染空位。 */
+  /** 窗口内的章节节点（含活动章）。 */
   const windowNodes = useMemo<OutlineNode[]>(() => {
     /*
      * 活动章不在序列里时返回空窗口，而不是退回整条 sequence：
@@ -221,8 +242,15 @@ export default function ChapterStream({
    *
    * 用标题锚点而不是 scrollTo(0)：窗口滑动后活动章的位置本来就变了，
    * 锚点定位才对得上用户点的那一章。
+   *
+   * 同时清掉贴边记忆：刚切过来时正对章首，但那是"刚落地"的状态，
+   * 不是用户主动贴边的结果，不该立刻就能再滚一次切走。
    */
+  const atEdgeRef = useRef<"start" | "end" | null>(null);
+  const lastYRef = useRef<number | null>(null);
   useEffect(() => {
+    atEdgeRef.current = null;
+    lastYRef.current = null;
     const scroller = scrollRef.current;
     if (!scroller) return;
     const anchor = scroller.querySelector<HTMLElement>(
@@ -231,6 +259,63 @@ export default function ChapterStream({
     if (!anchor) return;
     anchor.scrollIntoView({ block: "start", behavior: "auto" });
   }, [activeId]);
+
+  /**
+   * 滚动监听：维护贴边状态，并在贴边后再滚一次时切章。
+   *
+   * 判据是"当前帧的滚动方向 + 上一帧留下的贴边记忆"：
+   * 只有先在章尾贴过边、再向下滚，才切下一章。单独一个向下滚动
+   * 手势（可能只是从章中往章尾滑）不会触发切换。
+   */
+  const handleScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const anchor = el.querySelector<HTMLElement>(
+      `[data-chapter-anchor="${activeId}"]`
+    );
+    if (!anchor) return;
+
+    /*
+     * 用活动章标题锚点与滚动容器的几何关系判断贴边，而不是看整个
+     * 滚动区是否到底：邻章在活动章下方，"滚动区到底"永远发生在最后一章，
+     * 用它判断会把"看到邻章末尾"误当成"当前章读完"。
+     */
+    const viewTop = el.getBoundingClientRect().top;
+    const viewBottom = el.getBoundingClientRect().bottom;
+    const anchorTop = anchor.getBoundingClientRect().top;
+    /*
+     * 章尾用锚点下方第一段的底部来判定：标题本身在章首，
+     * 单看标题位置只能判断"章首贴边"，判断不了"这一章读完了"。
+     */
+    const body = anchor.nextElementSibling as HTMLElement | null;
+    const bodyBottom = body ? body.getBoundingClientRect().bottom : anchorTop;
+
+    if (anchorTop <= viewTop + 1) atEdgeRef.current = "start";
+    else if (bodyBottom >= viewBottom - 1) atEdgeRef.current = "end";
+    else atEdgeRef.current = null;
+
+    /*
+     * 方向判定用 scrollTop 的累计变化，不用 event.deltaY：
+     * 触控板与鼠标的 delta 符号不一致，而位移是唯一不会骗人的量。
+     */
+    const y = el.scrollTop;
+    const prev = lastYRef.current;
+    lastYRef.current = y;
+    if (prev === null) return;
+    const dy = y - prev;
+    if (dy === 0) return;
+
+    const edge = atEdgeRef.current;
+    if (edge === "end" && dy > 0 && activeIndex < sequence.length - 1) {
+      const nextId = sequence[activeIndex + 1].id;
+      log.debug("scroll advances to next chapter", { nextId, activeIndex });
+      onSelectChapter(nextId);
+    } else if (edge === "start" && dy < 0 && activeIndex > 0) {
+      const prevId = sequence[activeIndex - 1].id;
+      log.debug("scroll returns to previous chapter", { prevId, activeIndex });
+      onSelectChapter(prevId);
+    }
+  }, [activeIndex, sequence, onSelectChapter, activeId]);
 
   /** 点击邻章标题：把编辑目标切过去。 */
   const handleSelect = useCallback(
@@ -241,52 +326,104 @@ export default function ChapterStream({
   );
 
   return (
-    <div
-      ref={scrollRef}
-      className="scrollbar-app min-h-0 flex-1 overflow-y-auto px-6 py-4"
-    >
-      {windowNodes.map((node) => {
-        const isActive = node.id === activeId;
-        const data = isActive ? chapter : loaded.get(node.id);
-        return (
-          <section key={node.id} className="mb-10">
-            <h2
-              data-chapter-anchor={node.id}
-              className="article-body prose-article mx-auto mb-3 flex items-baseline gap-2 border-b pb-1"
-            >
-              <button
-                type="button"
-                onClick={() => handleSelect(node.id)}
-                className="truncate text-base font-semibold hover:underline"
-                title={t("Editor.side.jump")}
+    <div className="flex min-h-0 flex-1 flex-col">
+      <SplitDialog
+        open={c.splitTarget !== null}
+        cardIndex={c.splitTarget ?? -1}
+        text={c.splitTarget !== null ? (c.cards[c.splitTarget]?.text ?? "") : ""}
+        onOpenChange={(o) => {
+          if (!o) c.setSplitTarget(null);
+        }}
+        onConfirm={c.confirmSplit}
+      />
+      <HistoryDialog
+        open={c.historyOpen}
+        chapter={c.chapterWithHistory}
+        onOpenChange={c.setHistoryOpen}
+        onRollback={(i) => void c.rollback(i)}
+        onDelete={(i) => void c.dropVersion(i)}
+      />
+
+      {/* 固定顶部：永远描述当前正在写的那一章。 */}
+      <ChapterHeader
+        title={chapter.title}
+        words={c.words}
+        saveState={c.saveState}
+        hasLastMerge={Boolean(c.lastMerge)}
+        onRename={onRename}
+        onDelete={onDelete}
+        onSave={c.saveNow}
+        onOpenHistory={() => c.setHistoryOpen(true)}
+        onUndoMerge={c.undoMerge}
+      />
+
+      {/* 唯一的滚动区：活动章与邻章正文连成一片。 */}
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="scrollbar-app min-h-0 flex-1 overflow-y-auto px-6 py-4"
+      >
+        {windowNodes.map((node) => {
+          const isActive = node.id === activeId;
+          const data = isActive ? chapter : loaded.get(node.id);
+          return (
+            <section key={node.id} className="mb-10">
+              <h2
+                data-chapter-anchor={node.id}
+                className="article-body prose-article mx-auto mb-3 flex items-baseline gap-2 border-b pb-1"
               >
-                {node.title || t("Editor.title.placeholder")}
-              </button>
-            </h2>
-            {data ? (
-              isActive ? (
-                <ChapterEditor
-                  embedded
-                  key={data.id}
-                  chapter={data}
-                  root={root}
-                  workId={workId}
-                  onWordsChange={onWordsChange}
-                  onSaved={onSaved}
-                  onWordsCommitted={onWordsCommitted}
-                  onRename={onRename}
-                  onDelete={onDelete}
-                  onOpenCodexEntry={onOpenCodexEntry}
-                />
+                <button
+                  type="button"
+                  onClick={() => handleSelect(node.id)}
+                  className="truncate text-base font-semibold hover:underline"
+                  title={t("Editor.side.jump")}
+                >
+                  {node.title || t("Editor.title.placeholder")}
+                </button>
+                {isActive ? (
+                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/60">
+                    {t("Editor.side.current")}
+                  </span>
+                ) : null}
+              </h2>
+              {data ? (
+                isActive ? (
+                  <ChapterBody
+                    cards={c.cards}
+                    editingIndex={c.editingIndex}
+                    dimOthers={mode === "focus" && c.editingIndex >= 0}
+                    onEdit={c.handleCardClick}
+                    onMoveUp={c.moveUp}
+                    onMoveDown={c.moveDown}
+                    onSplit={c.splitCard}
+                    onMergeDown={c.mergeDown}
+                    onDelete={c.deleteCard}
+                    onOpenCodexEntry={onOpenCodexEntry}
+                    listRef={c.listRef}
+                  />
+                ) : (
+                  <ReadonlyChapter chapter={data} onOpenCodexEntry={onOpenCodexEntry} />
+                )
               ) : (
-                <ReadonlyChapter chapter={data} onOpenCodexEntry={onOpenCodexEntry} />
-              )
-            ) : (
-              <p className="text-xs text-muted-foreground/60">{t("Editor.status.saving")}</p>
-            )}
-          </section>
-        );
-      })}
+                <p className="text-xs text-muted-foreground/60">{t("Editor.status.saving")}</p>
+              )}
+            </section>
+          );
+        })}
+      </div>
+
+      {/* 固定底部：输入框永远属于当前这一章。 */}
+      <div className="shrink-0">
+        <ComposerInput
+          ref={c.composerRef}
+          editingIndex={c.editingIndex}
+          onSubmit={c.handleSubmit}
+          onReturnToNew={c.returnToNew}
+          pendingDraft={c.draft}
+          onRestoreDraft={c.restoreDraft}
+          onDiscardDraft={c.discardDraft}
+        />
+      </div>
     </div>
   );
 }
