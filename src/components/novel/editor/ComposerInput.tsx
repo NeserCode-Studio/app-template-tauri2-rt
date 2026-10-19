@@ -105,7 +105,14 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
       focus(caret = "end") {
         const el = textareaRef.current;
         if (!el) return;
-        el.focus();
+        /*
+         * preventScroll：聚焦不该顺带把容器滚到输入框。
+         *
+         * 输入框本来就固定在屏幕底部、始终可见，浏览器这次"滚动到可见"
+         * 没有任何收益，却会把切章时刚落到章尾的视口拽走——它还是异步
+         * 布局行为，晚于调用方设置的 scrollTop 生效，事后根本拦不住。
+         */
+        el.focus({ preventScroll: true });
         if (caret === "start") el.setSelectionRange(0, 0);
         else el.setSelectionRange(el.value.length, el.value.length);
       },
@@ -114,7 +121,12 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
         if (!el) return;
         el.value = text;
         setHasText(text.trim().length > 0);
-        el.focus();
+        /*
+         * preventScroll：输入框固定在屏幕底部，永远可见，
+         * 不需要浏览器"把它滚进视口"。而默认行为会把正文滚动区
+         * 往上拽，冲掉切章时刚设好的落点（上滑回上一章要落在章尾）。
+         */
+        el.focus({ preventScroll: true });
         if (caret === "start") el.setSelectionRange(0, 0);
         else el.setSelectionRange(text.length, text.length);
         if (animate) {

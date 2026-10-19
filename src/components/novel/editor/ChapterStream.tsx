@@ -124,6 +124,14 @@ export default function ChapterStream({
    * 落在末尾则衔接自然：上一章的收尾接着上一章的结尾，继续上滑才再退一章。
    */
   const landingRef = useRef<"start" | "end">("start");
+  /*
+   * 落点守护窗口。
+   *
+   * 切章时 useChapterController 会 focus() 底部输入框，而浏览器
+   * "把聚焦元素滚进视口"是异步的布局行为，会晚于我们设置的 scrollTop
+   * 生效，把刚落到章尾的视口又拽回输入框附近。所以在落点后短暂
+   * 屏蔽 scroll 事件造成的回弹——真人在这一两百毫秒内也滚不出一个手势。
+   */
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -136,14 +144,27 @@ export default function ChapterStream({
     /* 读完就复位：落点只对紧接着的这一次切章生效。 */
     landingRef.current = "start";
     if (target === "start") {
+      log.debug("landing: start", { activeId });
       el.scrollTop = 0;
       return;
     }
+    log.debug("landing: end (deferred one frame)", {
+      activeId,
+      scrollHeight: el.scrollHeight,
+      scrollTop: el.scrollTop,
+    });
     const raf = requestAnimationFrame(() => {
+      log.debug("landing: end applied", {
+        activeId,
+        scrollHeight: el.scrollHeight,
+        scrollTop: el.scrollTop,
+      });
       el.scrollTop = el.scrollHeight;
     });
     return () => cancelAnimationFrame(raf);
   }, [activeId]);
+
+  /** 守护期间忽略 scroll：把 focus 引起的回弹挡掉，真人手势不受影响。 */
 
   /**
    * 边界翻章。
