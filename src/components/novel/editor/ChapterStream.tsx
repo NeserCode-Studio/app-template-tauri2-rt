@@ -1,41 +1,33 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 
-import { useI18n } from "@/composables";
 import { useOutline } from "@/contexts/outline";
 import { useViewMode } from "@/contexts/viewmode";
 import { createLogger } from "@/lib/logger";
-import { loadChapter } from "@/services/chapter";
 import type { Chapter, OutlineNode } from "@/shared/schema";
 import ChapterBody from "./ChapterBody";
 import ChapterHeader from "./ChapterHeader";
 import ComposerInput from "./ComposerInput";
 import HistoryDialog from "./HistoryDialog";
-import ReadonlyChapter from "./ReadonlyChapter";
 import SplitDialog from "./SplitDialog";
 import { useChapterController } from "./useChapterController";
 
 const log = createLogger("ChapterStream");
 
 /**
- * 连续章节流。
+ * 编辑器主区：标题栏 + 单章正文 + 底部输入框。
  *
- * 结构是一条竖向三段式：标题栏（固定）→ 正文（唯一滚动区）→ 输入框（固定）。
- * 标题栏与输入框全应用只有一份，永远属于"当前正在写的那一章"；
- * 中间的滚动区里，活动章的正文与前后邻章的正文连成一片往下滚。
+ * 界面三段固定，只有中间的正文滚动区随章节整体更换：
+ * 滚到本章末尾再向下滑，整章换成下一章；滚到本章开头再向上滑，
+ * 整章换成上一章。滚动容器里始终只有一章的内容。
  *
- * 为什么标题栏不能跟着章走：早期版本把整套编辑器嵌进每一章，结果
- * 屏幕中间夹着"邻章正文 → 标题栏 → 活动章正文 → 输入框 → 邻章正文"，
- * 用户分不清哪个标题栏在描述哪一章。固定 chrome 就是为消掉这个歧义。
+ * 为什么必须监听 wheel 而不是 scroll：滚到边界后 scrollTop 不再变化，
+ * scroll 事件直接停止触发，"还想继续往下"这个意图根本传不出来。
+ * wheel 在边界外仍然触发，deltaY 的符号就是方向。
  *
- * 切章判据（用户确认）：
- *   已停在章尾 + 再向下滚一次 = 下一章
- *   已停在章首 + 再向上滚一次 = 上一章
- * 不用像素阈值：阈值在长章与短章之间手感不一致，而"贴边后再滚一下"
- * 是一个明确的手势，也不会在临界位置来回抖。
+ * 为什么不能把多章接成一片往下滚（早期版本那么做过）：那样滚动区里
+ * 同时存在好几章，标题栏描述的是活动章，正文却在滚动别的章，
+ * 用户分不清"我在读哪章、我在写哪章"。单章 + 边界翻章没有这个歧义。
  */
-
-/** 活动章前后各渲染几章。2 章约两屏，滚到边界时来得及补下一页。 */
-const SIBLINGS = 2;
 
 export interface ChapterStreamProps {
   root: string;
@@ -64,7 +56,6 @@ export default function ChapterStream({
   onDelete,
   onOpenCodexEntry,
 }: ChapterStreamProps) {
-  const { t } = useI18n();
   const { chapters, volumes, setReadingChapterId } = useOutline();
   const { mode } = useViewMode();
   const c = useChapterController({
@@ -91,24 +82,17 @@ export default function ChapterStream({
       else byParent.set(n.parentId, [n]);
     }
     const ordered = [...volumes].sort((a, b) => a.order - b.order);
-    const seq = [
+    return [
       ...(byParent.get(null) ?? []),
       ...ordered.flatMap((v) => byParent.get(v.id) ?? []),
     ];
-    log.debug("sequence built", {
-      chapters: chapters.length,
-      volumes: volumes.length,
-      loose: byParent.get(null)?.length ?? 0,
-      sequence: seq.length,
-    });
-    return seq;
   }, [chapters, volumes]);
 
   const activeId = chapter.id;
   const activeIndex = sequence.findIndex((n) => n.id === activeId);
   /*
-   * 活动章不在序列里时必须当故障处理，不能静默退回空窗口：
-   * 那会让正文区一片空白，而用户只会以为"我的字丢了"。
+   * 活动章不在序列里时必须当故障处理：那会让正文区一片空白，
+   * 而用户只会以为"我的字丢了"。
    */
   if (activeIndex < 0) {
     log.error("active chapter missing from sequence", {
@@ -118,211 +102,71 @@ export default function ChapterStream({
     });
   }
 
-  /** 窗口内的章节节点（含活动章）。 */
-  const windowNodes = useMemo<OutlineNode[]>(() => {
-    /*
-     * 活动章不在序列里时返回空窗口，而不是退回整条 sequence：
-     * 退回去会把用户没点的章也铺开，看着像全乱了。
-     */
-    if (activeIndex < 0) return [];
-    const from = Math.max(0, activeIndex - SIBLINGS);
-    const to = Math.min(sequence.length, activeIndex + SIBLINGS + 1);
-    const slice = sequence.slice(from, to);
-    log.debug("window sliced", { from, to, size: slice.length, activeIndex });
-    return slice;
-  }, [sequence, activeIndex]);
-
-  /**
-   * 邻章正文。
-   *
-   * 用一个 Map 缓存而不是每章一个 state：窗口滑动时要同时增删若干章，
-   * 逐个 setState 会让窗口边界出现半拍空窗。
-   */
-  const [loaded, setLoaded] = useState(new Map<string, Chapter>());
-  const loadedRef = useRef(loaded);
-  loadedRef.current = loaded;
-
-  /** 需要加载的邻章 id（不含活动章：它由 Editor 提供，是唯一权威副本）。 */
-  const needed = useMemo(
-    () =>
-      windowNodes
-        .map((n) => n.id)
-        .filter((id) => id !== activeId && !loadedRef.current.has(id)),
-    [windowNodes, activeId]
-  );
-
-  useEffect(() => {
-    if (!needed.length) return;
-    let alive = true;
-    void (async () => {
-      const entries = await Promise.all(
-        needed.map(async (id) => {
-          try {
-            return [id, await loadChapter(root, workId, id)] as const;
-          } catch (err) {
-            log.error("neighbor load failed", id, err);
-            return [id, null] as const;
-          }
-        })
-      );
-      if (!alive) return;
-      setLoaded((prev) => {
-        const next = new Map(prev);
-        for (const [id, value] of entries) if (value) next.set(id, value);
-        return next;
-      });
-    })();
-    return () => {
-      alive = false;
-    };
-  }, [needed, root, workId]);
-
-  /** 切章后丢弃不在窗口内的缓存，避免长作品里越攒越多。 */
-  useEffect(() => {
-    const keep = new Set(windowNodes.map((n) => n.id));
-    setLoaded((prev) => {
-      let changed = false;
-      const next = new Map<string, Chapter>();
-      for (const [id, value] of prev) {
-        if (keep.has(id)) next.set(id, value);
-        else changed = true;
-      }
-      return changed ? next : prev;
-    });
-  }, [windowNodes]);
-
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
   /**
-   * 阅读章上报。
+   * 阅读章上报：滚到哪里，结构树就高亮哪里。
    *
-   * 用 IntersectionObserver 观察每章的标题锚点，取"最靠近视口顶部"的那个。
-   * 不用 scroll 事件手算：observer 在长列表上不会随滚动频率触发重排。
+   * 单章渲染下这个值几乎恒等于活动章，保留它是为了让"滚动同步高亮"
+   * 这条验收项有真实的实现，而不是靠切章顺手带出来的巧合。
    */
   useEffect(() => {
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    const anchors = Array.from(
-      scroller.querySelectorAll<HTMLElement>("[data-chapter-anchor]")
-    );
-    if (!anchors.length) return;
-
-    const visible = new Map<string, number>();
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          const id = (entry.target as HTMLElement).dataset.chapterAnchor;
-          if (!id) continue;
-          if (entry.isIntersecting) visible.set(id, entry.boundingClientRect.top);
-          else visible.delete(id);
-        }
-        if (!visible.size) return;
-        /*
-         * 取 top 最小者：视口里最靠上的那一章就是"正在读"的那一章。
-         * 跨章连续滚动时它单调变化，不会在两章之间来回抖。
-         */
-        let bestId = "";
-        let bestTop = Number.POSITIVE_INFINITY;
-        for (const [id, top] of visible) {
-          if (top < bestTop) {
-            bestTop = top;
-            bestId = id;
-          }
-        }
-        if (bestId) setReadingChapterId(bestId);
-      },
-      { root: scroller, threshold: [0, 0.01, 0.5] }
-    );
-    for (const el of anchors) observer.observe(el);
-    return () => observer.disconnect();
-  }, [windowNodes, setReadingChapterId]);
+    setReadingChapterId(activeId);
+  }, [activeId, setReadingChapterId]);
 
   /**
-   * 切章时把活动章标题滚到视口顶部。
+   * 切章后的落点。
    *
-   * 用标题锚点而不是 scrollTo(0)：窗口滑动后活动章的位置本来就变了，
-   * 锚点定位才对得上用户点的那一章。
-   *
-   * 同时清掉贴边记忆：刚切过来时正对章首，但那是"刚落地"的状态，
-   * 不是用户主动贴边的结果，不该立刻就能再滚一次切走。
+   * 往下去新一章要从**开头**读——下一章的内容用户还没看过；
+   * 往上去旧一章要落到**末尾**——上滑的手势方向是"往回走"，
+   * 若把它摆在开头，用户看到的是一章全新的内容，位置感和手势相反，
+   * 而且会一路"快速过章"：每次上滑都落在新一章顶部，再滑就又走了。
+   * 落在末尾则衔接自然：上一章的收尾接着上一章的结尾，继续上滑才再退一章。
    */
-  const atEdgeRef = useRef<"start" | "end" | null>(null);
-  const lastYRef = useRef<number | null>(null);
+  const landingRef = useRef<"start" | "end">("start");
   useEffect(() => {
-    atEdgeRef.current = null;
-    lastYRef.current = null;
-    const scroller = scrollRef.current;
-    if (!scroller) return;
-    const anchor = scroller.querySelector<HTMLElement>(
-      `[data-chapter-anchor="${activeId}"]`
-    );
-    if (!anchor) return;
-    anchor.scrollIntoView({ block: "start", behavior: "auto" });
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollTop = landingRef.current === "end" ? el.scrollHeight : 0;
   }, [activeId]);
 
   /**
-   * 滚动监听：维护贴边状态，并在贴边后再滚一次时切章。
+   * 边界翻章。
    *
-   * 判据是"当前帧的滚动方向 + 上一帧留下的贴边记忆"：
-   * 只有先在章尾贴过边、再向下滚，才切下一章。单独一个向下滚动
-   * 手势（可能只是从章中往章尾滑）不会触发切换。
+   * 只在"已经贴在本章边界 + 仍朝边界外滑"时翻页。贴边状态每次 wheel
+   * 都重新判定，所以不存在"隔了半屏还生效"的问题；而 wheel 本身
+   * 要求一个持续手势，一次轻扫不会误翻。
+   *
+   * 不拦默认行为：本章还没滚到头时，正常滚动必须留给容器自己。
    */
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const anchor = el.querySelector<HTMLElement>(
-      `[data-chapter-anchor="${activeId}"]`
-    );
-    if (!anchor) return;
+  const handleWheel = useCallback(
+    (e: React.WheelEvent<HTMLDivElement>) => {
+      const el = scrollRef.current;
+      if (!el || activeIndex < 0) return;
 
-    /*
-     * 用活动章标题锚点与滚动容器的几何关系判断贴边，而不是看整个
-     * 滚动区是否到底：邻章在活动章下方，"滚动区到底"永远发生在最后一章，
-     * 用它判断会把"看到邻章末尾"误当成"当前章读完"。
-     */
-    const viewTop = el.getBoundingClientRect().top;
-    const viewBottom = el.getBoundingClientRect().bottom;
-    const anchorTop = anchor.getBoundingClientRect().top;
-    /*
-     * 章尾用锚点下方第一段的底部来判定：标题本身在章首，
-     * 单看标题位置只能判断"章首贴边"，判断不了"这一章读完了"。
-     */
-    const body = anchor.nextElementSibling as HTMLElement | null;
-    const bodyBottom = body ? body.getBoundingClientRect().bottom : anchorTop;
+      const atTop = el.scrollTop <= 0;
+      /*
+       * 留 1px 容差：浏览器在缩放、亚像素布局下极少恰好等于 0，
+       * 用 <= 0 判断会把"差 0.4px 到头"当成没贴边，翻页时灵时不灵。
+       */
+      const atBottom =
+        el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
 
-    if (anchorTop <= viewTop + 1) atEdgeRef.current = "start";
-    else if (bodyBottom >= viewBottom - 1) atEdgeRef.current = "end";
-    else atEdgeRef.current = null;
-
-    /*
-     * 方向判定用 scrollTop 的累计变化，不用 event.deltaY：
-     * 触控板与鼠标的 delta 符号不一致，而位移是唯一不会骗人的量。
-     */
-    const y = el.scrollTop;
-    const prev = lastYRef.current;
-    lastYRef.current = y;
-    if (prev === null) return;
-    const dy = y - prev;
-    if (dy === 0) return;
-
-    const edge = atEdgeRef.current;
-    if (edge === "end" && dy > 0 && activeIndex < sequence.length - 1) {
-      const nextId = sequence[activeIndex + 1].id;
-      log.debug("scroll advances to next chapter", { nextId, activeIndex });
-      onSelectChapter(nextId);
-    } else if (edge === "start" && dy < 0 && activeIndex > 0) {
-      const prevId = sequence[activeIndex - 1].id;
-      log.debug("scroll returns to previous chapter", { prevId, activeIndex });
-      onSelectChapter(prevId);
-    }
-  }, [activeIndex, sequence, onSelectChapter, activeId]);
-
-  /** 点击邻章标题：把编辑目标切过去。 */
-  const handleSelect = useCallback(
-    (id: string) => {
-      if (id !== activeId) onSelectChapter(id);
+      if (e.deltaY > 0 && atBottom && activeIndex < sequence.length - 1) {
+        landingRef.current = "start";
+        e.preventDefault();
+        const nextId = sequence[activeIndex + 1].id;
+        log.debug("wheel advances to next chapter", { nextId, activeIndex });
+        onSelectChapter(nextId);
+      } else if (e.deltaY < 0 && atTop && activeIndex > 0) {
+        landingRef.current = "end";
+        e.preventDefault();
+        const prevId = sequence[activeIndex - 1].id;
+        log.debug("wheel returns to previous chapter", { prevId, activeIndex });
+        onSelectChapter(prevId);
+      }
     },
-    [activeId, onSelectChapter]
+    [activeIndex, sequence, onSelectChapter]
   );
 
   return (
@@ -357,59 +201,35 @@ export default function ChapterStream({
         onUndoMerge={c.undoMerge}
       />
 
-      {/* 唯一的滚动区：活动章与邻章正文连成一片。 */}
+      {/*
+       * 唯一的滚动区，里面始终只有一章。
+       *
+       * 用原生滚动而非 ScrollArea：正文要跟随滚动条"读位置"，
+       * 自绘滚动容器会把滚动交给内部 viewport，联动（如跟随光标、滚动到底）
+       * 都得改成对内部元素操作，得不偿失。样式由 scrollbar-app 统一。
+       *
+       * wheel 走 onWheel 而不是 addEventListener：React 的合成事件
+       * 在 passive 监听上拿不到 preventDefault，但 JSX 上声明的
+       * onWheel 默认是非 passive 的，边界翻章才拦得住。
+       */}
       <div
         ref={scrollRef}
-        onScroll={handleScroll}
+        onWheel={handleWheel}
         className="scrollbar-app min-h-0 flex-1 overflow-y-auto px-6 py-4"
       >
-        {windowNodes.map((node) => {
-          const isActive = node.id === activeId;
-          const data = isActive ? chapter : loaded.get(node.id);
-          return (
-            <section key={node.id} className="mb-10">
-              <h2
-                data-chapter-anchor={node.id}
-                className="article-body prose-article mx-auto mb-3 flex items-baseline gap-2 border-b pb-1"
-              >
-                <button
-                  type="button"
-                  onClick={() => handleSelect(node.id)}
-                  className="truncate text-base font-semibold hover:underline"
-                  title={t("Editor.side.jump")}
-                >
-                  {node.title || t("Editor.title.placeholder")}
-                </button>
-                {isActive ? (
-                  <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground/60">
-                    {t("Editor.side.current")}
-                  </span>
-                ) : null}
-              </h2>
-              {data ? (
-                isActive ? (
-                  <ChapterBody
-                    cards={c.cards}
-                    editingIndex={c.editingIndex}
-                    dimOthers={mode === "focus" && c.editingIndex >= 0}
-                    onEdit={c.handleCardClick}
-                    onMoveUp={c.moveUp}
-                    onMoveDown={c.moveDown}
-                    onSplit={c.splitCard}
-                    onMergeDown={c.mergeDown}
-                    onDelete={c.deleteCard}
-                    onOpenCodexEntry={onOpenCodexEntry}
-                    listRef={c.listRef}
-                  />
-                ) : (
-                  <ReadonlyChapter chapter={data} onOpenCodexEntry={onOpenCodexEntry} />
-                )
-              ) : (
-                <p className="text-xs text-muted-foreground/60">{t("Editor.status.saving")}</p>
-              )}
-            </section>
-          );
-        })}
+        <ChapterBody
+          cards={c.cards}
+          editingIndex={c.editingIndex}
+          dimOthers={mode === "focus" && c.editingIndex >= 0}
+          onEdit={c.handleCardClick}
+          onMoveUp={c.moveUp}
+          onMoveDown={c.moveDown}
+          onSplit={c.splitCard}
+          onMergeDown={c.mergeDown}
+          onDelete={c.deleteCard}
+          onOpenCodexEntry={onOpenCodexEntry}
+          listRef={c.listRef}
+        />
       </div>
 
       {/* 固定底部：输入框永远属于当前这一章。 */}
