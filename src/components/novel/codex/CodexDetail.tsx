@@ -19,13 +19,13 @@ import {
   Unlink,
   X,
 } from "lucide-react";
-import { useNavigate } from "react-router";
 
 import { useI18n, useToast } from "@/composables";
 import { useCodex } from "@/contexts/codex";
 import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useWorkspace } from "@/contexts/workspace";
+import { useAppNavigation } from "@/lib/navigation";
 import {
   loadMentionChapterTitles,
   typeLabel,
@@ -101,10 +101,7 @@ function patchField(
   return { ...draft, fields };
 }
 
-function valueText(
-  value: FieldValue | undefined,
-  field: FieldTemplate
-): string {
+function valueText(value: FieldValue | undefined): string {
   if (!value) return "";
   if (value.kind === "refs") return `${value.value.length}`;
   if (value.kind === "ref") return value.value ? "1" : "0";
@@ -260,7 +257,7 @@ function FieldEditor({
   if (field.kind === "longtext") {
     return (
       <Textarea
-        value={valueText(value, field)}
+        value={valueText(value)}
         rows={3}
         className="min-h-20 resize-y text-sm leading-relaxed"
         placeholder={field.hint}
@@ -273,7 +270,7 @@ function FieldEditor({
 
   if (field.kind === "select") {
     const current =
-      value?.kind === "select" ? value.value : valueText(value, field);
+      value?.kind === "select" ? value.value : valueText(value);
     return (
       <select
         value={current}
@@ -295,7 +292,7 @@ function FieldEditor({
   return (
     <Input
       type={field.kind === "number" ? "number" : "text"}
-      value={valueText(value, field)}
+      value={valueText(value)}
       className="h-8 text-sm"
       placeholder={field.hint}
       onChange={(event) => {
@@ -697,7 +694,7 @@ export function CodexDetail({
 }) {
   const { t } = useI18n();
   const toast = useToast();
-  const navigate = useNavigate();
+  const { go } = useAppNavigation();
   const { root } = useWorkspace();
   const { works } = useLibrary();
   const { openChapter } = useOutline();
@@ -882,7 +879,7 @@ export function CodexDetail({
 
   function jumpToMention(record: MentionRecord) {
     openChapter(record.workId, record.chapterId);
-    navigate("/editor");
+    go("editor");
   }
 
   function openRenameDialog() {

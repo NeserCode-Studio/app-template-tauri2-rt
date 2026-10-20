@@ -11,22 +11,66 @@ import {
 import TitlebarOperations, {
   ThemeIcon,
 } from "@/components/framework/TitlebarOperations";
+import {
+  ArrowLeft,
+  BookOpen,
+  Check,
+  ChevronDown,
+  Database,
+  Home,
+  PenLine,
+} from "lucide-react";
 import { useContext } from "react";
 import { ThemeContext } from "@/contexts/theme";
-import { NavigatorContext } from "@/contexts/navigator";
+import { useLibrary } from "@/contexts/library";
+import { useWorkspace } from "@/contexts/workspace";
 import TitlebarTitle from "./TitlebarTitle";
 import { useI18n } from "@/composables";
 import { useSettingsDialog } from "@/contexts/settings";
 import * as editorActions from "@/lib/editor.actions";
+import {
+  APP_PAGE_LABEL_KEYS,
+  useAppNavigation,
+  type AppPage,
+} from "@/lib/navigation";
 
 export default function Titlebar() {
   /* I18n */
   const { t } = useI18n();
   /* Theme */
   const { theme, setThemeMode } = useContext(ThemeContext);
-  /* Navigator */
-  const { navigator } = useContext(NavigatorContext);
+  /* Navigation */
+  const { currentPage, backPage, back, go } = useAppNavigation();
+  const { currentWorkId } = useLibrary();
+  const { root } = useWorkspace();
   const { openSettings, openAbout } = useSettingsDialog();
+
+  const destinations: Array<{
+    page: AppPage;
+    labelKey: string;
+    icon: typeof Home;
+    enabled: boolean;
+  }> = [
+    { page: "home", labelKey: APP_PAGE_LABEL_KEYS.home, icon: Home, enabled: true },
+    {
+      page: "library",
+      labelKey: APP_PAGE_LABEL_KEYS.library,
+      icon: BookOpen,
+      enabled: Boolean(root),
+    },
+    {
+      page: "editor",
+      labelKey: APP_PAGE_LABEL_KEYS.editor,
+      icon: PenLine,
+      enabled: Boolean(root && currentWorkId),
+    },
+    {
+      page: "codex",
+      labelKey: APP_PAGE_LABEL_KEYS.codex,
+      icon: Database,
+      enabled: Boolean(root),
+    },
+  ];
 
   function toggleTheme() {
     if (theme === "dark") {
@@ -43,17 +87,40 @@ export default function Titlebar() {
     >
       <Menubar className="h-6 w-fit gap-1 rounded-none border-0 bg-transparent p-0 text-neutral-600 shadow-none transition-colors duration-100 ease-in-out dark:text-neutral-200">
         <MenubarMenu>
-          <MenubarTrigger className="h-full w-fit px-2 text-sm">
-            {t("Titlebar.menu.turnto")}
+          <MenubarTrigger className="h-full w-fit gap-1.5 px-2 text-sm">
+            <ArrowLeft className="icon-sm" />
+            {t("Titlebar.navigation.menu")}
+            <ChevronDown className="size-3 opacity-60" />
           </MenubarTrigger>
-          <MenubarContent className="w-fit transition-all duration-100 ease-in-out">
-            <MenubarItem
-              onSelect={() => {
-                navigator("/");
-              }}
-            >
-              {t("Titlebar.menu.turnto.home")}
-            </MenubarItem>
+          <MenubarContent className="w-56">
+            {backPage ? (
+              <>
+                <MenubarItem onSelect={back}>
+                  <ArrowLeft className="icon-sm" />
+                  <span>{t("Titlebar.navigation.back")}</span>
+                  <span className="text-muted-foreground ml-auto truncate text-xs">
+                    {t(APP_PAGE_LABEL_KEYS[backPage])}
+                  </span>
+                </MenubarItem>
+                <MenubarSeparator />
+              </>
+            ) : null}
+            {destinations.map((item) => {
+              const current = item.page === currentPage;
+              const Icon = item.icon;
+              return (
+                <MenubarItem
+                  key={item.page}
+                  disabled={current || !item.enabled}
+                  onSelect={() => go(item.page)}
+                >
+                  <Icon className="icon-sm" />
+                  <span>{t(item.labelKey)}</span>
+                  {current ? <Check className="ml-auto size-3.5 opacity-60" /> : null}
+                </MenubarItem>
+              );
+            })}
+            <MenubarSeparator />
             <MenubarItem
               onSelect={() => {
                 openSettings();

@@ -2,8 +2,9 @@ import "./App.css";
 
 import Titlebar from "@/components/framework/Titlebar";
 import CommandDialog from "@/components/framework/CommandDialog";
+import PageTransition from "@/components/framework/PageTransition";
 import { Toaster } from "@/components/ui/sonner";
-import { Routes, Route, useNavigate } from "react-router";
+import { Routes, Route, useLocation, useNavigate } from "react-router";
 
 import { useTheme, useI18nLogic } from "@/composables";
 import { lazy, Suspense, useEffect, useMemo, useState, useCallback, useRef } from "react";
@@ -28,6 +29,11 @@ import { OutlineProvider } from "@/contexts/outline.provider";
 import { CodexProvider } from "@/contexts/codex.provider";
 import { SearchProvider } from "@/contexts/search.provider";
 import { ViewModeProvider } from "@/contexts/viewmode.provider";
+import {
+  defaultPageTransition,
+  pageFromPath,
+  type NavigationLocationState,
+} from "@/lib/navigation";
 
 const log = createLogger("App");
 
@@ -59,6 +65,20 @@ function App() {
   const { lang, t, setLanguage } = useI18nLogic();
   /* Navigator */
   const navigate = useNavigate();
+  const location = useLocation();
+  const navigator = useCallback(
+    (path: string) => {
+      const from = pageFromPath(location.pathname);
+      const to = pageFromPath(path);
+      navigate(path, {
+        state: {
+          from,
+          transition: defaultPageTransition(from, to),
+        } satisfies NavigationLocationState,
+      });
+    },
+    [location.pathname, navigate]
+  );
   /* Theme */
   const [theme, setThemeMode] = useTheme({
     localStorageKey: "theme-mode",
@@ -120,7 +140,7 @@ function App() {
       } else if (target === "/about") {
         openAbout();
       } else {
-        navigate(target);
+        navigator(target);
       }
     });
 
@@ -128,7 +148,7 @@ function App() {
       void unlistenPopup.then((fn) => fn());
       void unlistenNavigate.then((fn) => fn());
     };
-  }, [navigate, currentLabel, openSettings, openAbout]);
+  }, [navigator, currentLabel, openSettings, openAbout]);
 
   /* 固定 Context value 引用，避免任意状态变化导致所有消费者全量重渲染 */
   const i18nValue = useMemo(
@@ -140,7 +160,7 @@ function App() {
     [theme, setThemeMode]
   );
   const titleValue = useMemo(() => ({ title, setTitle }), [title, setTitle]);
-  const navigatorValue = useMemo(() => ({ navigator: navigate }), [navigate]);
+  const navigatorValue = useMemo(() => ({ navigator }), [navigator]);
   const settingsValue = useMemo(
     () => ({ openSettings, openAbout }),
     [openSettings, openAbout]
@@ -177,28 +197,31 @@ function App() {
 
                   <div id="container" className="app-body">
                     <Suspense fallback={null}>
-                      <Routes>
-                        <Route path="/" index element={<Library />} />
-                        <Route
-                          path="/codex"
-                          element={
-                            <div className="h-[calc(100vh-2rem)] w-full">
-                              <CodexLibrary />
-                            </div>
-                          }
-                        />
-                        <Route
-                          path="/editor"
-                          element={
-                            // 编辑器自带三栏可拖拽布局，需要确定高度，
-                            // 不能套在 ScrollArea 里（radix 滚动视口会让
-                            // react-resizable-panels 读到 0 高度而崩溃）。
-                            <div className="h-[calc(100vh-2rem)] w-full">
-                              <Editor />
-                            </div>
-                          }
-                        />
-                      </Routes>
+                      <PageTransition>
+                        <Routes>
+                          <Route path="/" index element={<Library />} />
+                          <Route path="/library" element={<Library />} />
+                          <Route
+                            path="/codex"
+                            element={
+                              <div className="h-full w-full">
+                                <CodexLibrary />
+                              </div>
+                            }
+                          />
+                          <Route
+                            path="/editor"
+                            element={
+                              // 编辑器自带三栏可拖拽布局，需要确定高度，
+                              // 不能套在 ScrollArea 里（radix 滚动视口会让
+                              // react-resizable-panels 读到 0 高度而崩溃）。
+                              <div className="h-full w-full">
+                                <Editor />
+                              </div>
+                            }
+                          />
+                        </Routes>
+                      </PageTransition>
                     </Suspense>
                   </div>
                 </main>

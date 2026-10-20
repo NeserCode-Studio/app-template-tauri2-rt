@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { FileText, Loader2, Search } from "lucide-react";
-import { useNavigate } from "react-router";
 
 import {
   Dialog,
@@ -16,6 +15,7 @@ import { useSearch } from "@/contexts/search";
 import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useCodex } from "@/contexts/codex";
+import { useAppNavigation } from "@/lib/navigation";
 import { MAX_HITS, type SearchHit } from "@/services/search";
 
 /** 搜索防抖：每次按键都全盘扫章的话，输入中文会明显卡。 */
@@ -34,7 +34,7 @@ export interface SearchDialogProps {
  */
 export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) {
   const { t } = useI18n();
-  const navigate = useNavigate();
+  const { go } = useAppNavigation();
   const { search } = useSearch();
   const { setCurrentWorkId } = useLibrary();
   const { setCurrentChapterId } = useOutline();
@@ -95,11 +95,11 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
   function pick(hit: SearchHit) {
     if (hit.kind === "codex") {
       setCurrentEntryId(hit.id);
-      navigate("/codex");
+      go("codex");
     } else {
       setCurrentWorkId(hit.workId);
       setCurrentChapterId(hit.id);
-      navigate("/editor");
+      go("editor");
     }
     onOpenChange(false);
   }

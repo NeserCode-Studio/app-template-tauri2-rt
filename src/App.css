@@ -309,6 +309,13 @@
     @apply fixed bottom-0 flex h-[calc(100vh-2rem)] w-screen flex-col items-center justify-center bg-neutral-50 transition-colors duration-100 ease-in-out dark:bg-neutral-700;
   }
 
+  .page-transition[data-direction="forward"] {
+    animation: page-enter-forward 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .page-transition[data-direction="back"] {
+    animation: page-enter-back 180ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
   /* ===== 作品库 ===== */
   .view-library {
     @apply relative z-0 h-full w-full transition-colors duration-100 ease-in-out;
@@ -387,6 +394,28 @@
   }
   .titlebar-op.is-pinned .titlebar-op-icon {
     @apply rotate-135 fill-green-500;
+  }
+}
+
+@keyframes page-enter-forward {
+  from {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes page-enter-back {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
   }
 }
 
@@ -473,6 +502,9 @@ html.dark {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .page-transition {
+    animation: none;
+  }
   .article-paragraph.is-editing::after {
     animation: none;
   }

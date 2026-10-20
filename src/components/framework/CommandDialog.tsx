@@ -1,5 +1,12 @@
 import * as React from "react";
-import { Home, Settings, RefreshCcw, Search, Sparkles } from "lucide-react";
+import {
+  BookOpen,
+  Home,
+  RefreshCcw,
+  Search,
+  Settings,
+  Sparkles,
+} from "lucide-react";
 import { useMemoizedFn } from "ahooks";
 
 import {
@@ -125,6 +132,12 @@ export default function CommandMenu() {
       label: t("Command.turnto.home"),
       shortcut: "⌘H",
       keywords: ["home", "index", "首页", "主页"],
+    },
+    {
+      value: "navigate::/library",
+      icon: BookOpen,
+      label: t("Library.title"),
+      keywords: ["library", "works", "作品库", "作品", "书架"],
     },
     {
       value: "settings::open",

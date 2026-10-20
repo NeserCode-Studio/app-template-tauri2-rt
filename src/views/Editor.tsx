@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ArrowLeft,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -13,7 +12,6 @@ import {
   PanelRightOpen,
   Plus,
 } from "lucide-react";
-import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -91,6 +89,7 @@ import { moveToTrash } from "@/services/trash";
 import { useCodex } from "@/contexts/codex";
 import { recordWorkWords } from "@/services/stats";
 import { createLogger } from "@/lib/logger";
+import { useAppNavigation } from "@/lib/navigation";
 import type { Chapter, OutlineNode } from "@/shared/schema";
 
 const log = createLogger("Editor");
@@ -104,7 +103,7 @@ const log = createLogger("Editor");
 export default function Editor() {
   const { t } = useI18n();
   const toast = useToast();
-  const navigate = useNavigate();
+  const { go } = useAppNavigation();
   const { root } = useWorkspace();
   const { setCurrentEntryId } = useCodex();
   const { currentWorkId, works } = useLibrary();
@@ -219,8 +218,10 @@ export default function Editor() {
 
   /* 作品切换后回到作品库，避免空编辑器。 */
   useEffect(() => {
-    if (!currentWorkId) navigate("/");
-  }, [currentWorkId, navigate]);
+    if (!currentWorkId) {
+      go("library", { replace: true, transition: "back" });
+    }
+  }, [currentWorkId, go]);
 
   /* 打开作品时若尚未选中章节，选第一张；后续切换由 OutlineContext 驱动。 */
   const chapterIdsKey = chapters.map((c) => c.id).join(",");
@@ -540,10 +541,6 @@ export default function Editor() {
 
       {/* 顶部作品条 */}
       <div className="flex items-center gap-3 border-b px-4 py-2">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
-          <ArrowLeft className="icon-md" />
-          {t("Command.turnto.home")}
-        </Button>
         {!zen ? (
           <Button
             variant="ghost"
@@ -707,7 +704,7 @@ export default function Editor() {
                 onDelete={() => setPendingDelete(chapter.id)}
                 onOpenCodexEntry={(entryId) => {
                   setCurrentEntryId(entryId);
-                  navigate("/codex");
+                  go("codex");
                 }}
               />
             ) : (

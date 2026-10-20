@@ -58,9 +58,9 @@ export function createBuiltinCommands(ctx: {
     },
     {
       id: "navigate.library",
-      keywords: ["作品库", "library", "首页", "home"],
+      keywords: ["作品库", "library", "作品", "书架"],
       action: () => {
-        navigate("/");
+        navigate("/library");
         return { success: true, message: "Navigated to library" };
       },
     },

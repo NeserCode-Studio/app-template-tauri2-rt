@@ -9,7 +9,6 @@ import {
   Settings2,
   Trash2,
 } from "lucide-react";
-import { useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -49,6 +48,7 @@ import {
 } from "@/services/import";
 import { addNode as addOutlineNode } from "@/services/outline";
 import { createLogger } from "@/lib/logger";
+import { useAppNavigation } from "@/lib/navigation";
 import type { Work } from "@/shared/schema";
 
 const log = createLogger("Library");
@@ -62,7 +62,7 @@ type DialogMode =
 export default function Library() {
   const { t } = useI18n();
   const toast = useToast();
-  const navigate = useNavigate();
+  const { go } = useAppNavigation();
   const { root, recent, isOpen, pick, open, reveal, deleteWorkspace } = useWorkspace();
   const {
     workspace,
@@ -221,7 +221,7 @@ export default function Library() {
     bumpDataVersion();
 
     toast.success("Import.toast.imported");
-    void navigate("/editor");
+    go("editor");
   }
 
   /**
@@ -316,7 +316,7 @@ export default function Library() {
             {t("Library.action.workspaceSettings")}
           </Button>
           {/* 素材库属于工作区，不是某一部作品，所以入口在作品库这一层。 */}
-          <Button variant="outline" size="sm" onClick={() => navigate("/codex")}>
+          <Button variant="outline" size="sm" onClick={() => go("codex")}>
             <Database className="icon-md" />
             {t("Codex.library.title")}
           </Button>
@@ -346,7 +346,7 @@ export default function Library() {
                 isCurrent={currentWorkId === work.id}
                 onOpen={(id) => {
                   setCurrentWorkId(id);
-                  void navigate("/editor");
+                  go("editor");
                 }}
                 onRename={openRename}
                 onArchive={setPendingArchive}

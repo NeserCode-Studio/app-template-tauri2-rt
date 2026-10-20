@@ -6,7 +6,6 @@ import {
   Plus,
   Search,
 } from "lucide-react";
-import { useNavigate } from "react-router";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -34,6 +33,7 @@ import { useI18n, useToast } from "@/composables";
 import { useCodex } from "@/contexts/codex";
 import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
+import { useAppNavigation } from "@/lib/navigation";
 import { typeLabel } from "@/services/codex";
 
 function parseList(value: string): string[] {
@@ -61,7 +61,7 @@ interface CodexPaneProps {
 export default function CodexPane({ onAppendToText }: CodexPaneProps) {
   const { t } = useI18n();
   const toast = useToast();
-  const navigate = useNavigate();
+  const { go } = useAppNavigation();
   const { currentWorkId } = useLibrary();
   const { currentChapterId } = useOutline();
   const {
@@ -219,7 +219,7 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
           className="size-8 shrink-0"
           aria-label={t("Codex.library.title")}
           title={t("Codex.library.title")}
-          onClick={() => navigate("/codex")}
+          onClick={() => go("codex")}
         >
           <ExternalLink className="icon-sm" />
         </Button>

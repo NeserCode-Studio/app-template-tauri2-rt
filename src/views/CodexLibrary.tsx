@@ -7,7 +7,6 @@ import {
 import {
   AlertTriangle,
   ArrowDown,
-  ArrowLeft,
   ArrowUp,
   ArrowUpDown,
   BookOpen,
@@ -21,7 +20,6 @@ import {
   Settings2,
   X,
 } from "lucide-react";
-import { useNavigate } from "react-router";
 
 import { useI18n, useToast } from "@/composables";
 import { useCodex } from "@/contexts/codex";
@@ -601,7 +599,6 @@ function EmptyState({
 export default function CodexLibrary() {
   const { t } = useI18n();
   const toast = useToast();
-  const navigate = useNavigate();
   const narrow = useNarrowLayout();
   const {
     entries,
@@ -1100,17 +1097,6 @@ export default function CodexLibrary() {
 
   const libraryHeading = (
     <>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon"
-        className="size-8 shrink-0"
-        aria-label={t("Codex.library.back")}
-        title={t("Codex.library.back")}
-        onClick={() => navigate("/")}
-      >
-        <ArrowLeft className="size-4" />
-      </Button>
       <div
         className={[
           "flex min-w-0 items-center gap-2",
