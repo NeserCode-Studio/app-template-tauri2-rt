@@ -5,8 +5,11 @@ import {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 
+import { useI18n } from "@/composables";
 import { useOutline } from "@/contexts/outline";
 import { useViewMode } from "@/contexts/viewmode";
 import { createLogger } from "@/lib/logger";
@@ -19,6 +22,17 @@ import SplitDialog from "./SplitDialog";
 import { useChapterController } from "./useChapterController";
 
 const log = createLogger("ChapterStream");
+
+/**
+ * 边界翻章需要连续、明确的滚动意图。
+ *
+ * 单次滚轮事件的 delta 在不同设备上差异很大：鼠标一格可能超过 100px，
+ * 触控板则是一串很小的增量。因此累计值限制单次贡献，既避免鼠标动量
+ * 一帧直接翻章，也让触控板能自然累积到同一门槛。
+ */
+const TURN_THRESHOLD = 96;
+const MAX_TURN_STEP = 72;
+const TURN_IDLE_MS = 320;
 
 /**
  * 编辑器主区：标题栏 + 单章正文 + 底部输入框。
@@ -85,6 +99,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
     },
     ref
   ) {
+  const { t } = useI18n();
   const { chapters, volumes, setReadingChapterId } = useOutline();
   const { mode } = useViewMode();
   const c = useChapterController({
@@ -132,6 +147,33 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
   }
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const [turnCue, setTurnCue] = useState<{
+    side: "start" | "end";
+    progress: number;
+  } | null>(null);
+  const turnDistanceRef = useRef<{ direction: -1 | 1; distance: number }>({
+    direction: 1,
+    distance: 0,
+  });
+  const turnResetTimer = useRef<number | null>(null);
+
+  const resetTurnCue = useCallback(() => {
+    if (turnResetTimer.current !== null) {
+      window.clearTimeout(turnResetTimer.current);
+      turnResetTimer.current = null;
+    }
+    turnDistanceRef.current = { direction: 1, distance: 0 };
+    setTurnCue(null);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (turnResetTimer.current !== null) {
+        window.clearTimeout(turnResetTimer.current);
+      }
+    },
+    []
+  );
 
   /**
    * 阅读章上报：滚到哪里，结构树就高亮哪里。
@@ -207,12 +249,13 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
    * 都重新判定，所以不存在"隔了半屏还生效"的问题；而 wheel 本身
    * 要求一个持续手势，一次轻扫不会误翻。
    *
-   * 不拦默认行为：本章还没滚到头时，正常滚动必须留给容器自己。
+   * 本章还没滚到头时不拦默认行为；贴边且确有目标章时才接管滚轮，
+   * 让累计进度和最终翻章都由同一个手势决定。
    */
   const handleWheel = useCallback(
     (e: React.WheelEvent<HTMLDivElement>) => {
       const el = scrollRef.current;
-      if (!el || activeIndex < 0) return;
+      if (!el || activeIndex < 0 || e.deltaY === 0) return;
 
       const atTop = el.scrollTop <= 0;
       /*
@@ -221,20 +264,58 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
        */
       const atBottom =
         el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      const direction = e.deltaY > 0 ? 1 : -1;
+      const canTurn =
+        direction > 0
+          ? atBottom && activeIndex < sequence.length - 1
+          : atTop && activeIndex > 0;
 
-      if (e.deltaY > 0 && atBottom && activeIndex < sequence.length - 1) {
-        e.preventDefault();
-        const nextId = sequence[activeIndex + 1].id;
-        log.debug("wheel advances to next chapter", { nextId, activeIndex });
-        onSelectChapter(nextId, "start");
-      } else if (e.deltaY < 0 && atTop && activeIndex > 0) {
-        e.preventDefault();
-        const prevId = sequence[activeIndex - 1].id;
-        log.debug("wheel returns to previous chapter", { prevId, activeIndex });
-        onSelectChapter(prevId, "end");
+      if (!canTurn) {
+        resetTurnCue();
+        return;
       }
+
+      e.preventDefault();
+      const unit =
+        e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1;
+      const step = Math.min(
+        Math.abs(e.deltaY * unit),
+        MAX_TURN_STEP
+      );
+      const previous = turnDistanceRef.current;
+      const distance =
+        previous.direction === direction ? previous.distance + step : step;
+      const side = direction > 0 ? "end" : "start";
+      const progress = Math.min(1, distance / TURN_THRESHOLD);
+
+      turnDistanceRef.current = { direction, distance };
+      setTurnCue({ side, progress });
+      if (turnResetTimer.current !== null) {
+        window.clearTimeout(turnResetTimer.current);
+      }
+
+      if (distance >= TURN_THRESHOLD) {
+        turnResetTimer.current = null;
+        turnDistanceRef.current = { direction, distance: 0 };
+        if (direction > 0) {
+          const nextId = sequence[activeIndex + 1].id;
+          log.debug("wheel advances to next chapter", { nextId, activeIndex });
+          onSelectChapter(nextId, "start");
+        } else {
+          const prevId = sequence[activeIndex - 1].id;
+          log.debug("wheel returns to previous chapter", { prevId, activeIndex });
+          onSelectChapter(prevId, "end");
+        }
+        return;
+      }
+
+      turnResetTimer.current = window.setTimeout(() => {
+        turnResetTimer.current = null;
+        turnDistanceRef.current = { direction, distance: 0 };
+        setTurnCue(null);
+      }, TURN_IDLE_MS);
     },
-    [activeIndex, sequence, onSelectChapter]
+    [activeIndex, sequence, onSelectChapter, resetTurnCue]
   );
 
   const appendText = useCallback(
@@ -302,24 +383,57 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
        * 在 passive 监听上拿不到 preventDefault，但 JSX 上声明的
        * onWheel 默认是非 passive 的，边界翻章才拦得住。
        */}
-      <div
-        ref={scrollRef}
-        onWheel={handleWheel}
-        className="scrollbar-app min-h-0 flex-1 overflow-y-auto px-6 py-4"
-      >
-        <ChapterBody
-          cards={c.cards}
-          editingIndex={c.editingIndex}
-          dimOthers={mode === "focus" && c.editingIndex >= 0}
-          onEdit={c.handleCardClick}
-          onMoveUp={c.moveUp}
-          onMoveDown={c.moveDown}
-          onSplit={c.splitCard}
-          onMergeDown={c.mergeDown}
-          onDelete={c.deleteCard}
-          onOpenCodexEntry={onOpenCodexEntry}
-          listRef={c.listRef}
-        />
+      <div className="relative min-h-0 flex-1">
+        <div
+          ref={scrollRef}
+          onWheel={handleWheel}
+          className="scrollbar-app h-full overflow-y-auto px-6 py-4"
+        >
+          <ChapterBody
+            cards={c.cards}
+            editingIndex={c.editingIndex}
+            dimOthers={mode === "focus" && c.editingIndex >= 0}
+            onEdit={c.handleCardClick}
+            onMoveUp={c.moveUp}
+            onMoveDown={c.moveDown}
+            onSplit={c.splitCard}
+            onMergeDown={c.mergeDown}
+            onDelete={c.deleteCard}
+            onOpenCodexEntry={onOpenCodexEntry}
+            listRef={c.listRef}
+          />
+        </div>
+
+        {turnCue ? (
+          <div
+            aria-hidden="true"
+            className={[
+              "pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4",
+              turnCue.side === "start" ? "top-3" : "bottom-3",
+            ].join(" ")}
+          >
+            <div className="animate-in fade-in flex max-w-full min-w-0 items-center gap-2.5 rounded-full border border-[var(--editor-selection-border)] bg-background/95 px-3 py-1.5 text-xs shadow-sm backdrop-blur-sm duration-150">
+              {turnCue.side === "start" ? (
+                <ChevronUp className="icon-sm shrink-0 text-[var(--editor-selection-border)]" />
+              ) : (
+                <ChevronDown className="icon-sm shrink-0 text-[var(--editor-selection-border)]" />
+              )}
+              <span className="min-w-0 truncate">
+                {t(
+                  turnCue.side === "start"
+                    ? "Editor.scroll.previous"
+                    : "Editor.scroll.next"
+                )}
+              </span>
+              <span className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
+                <span
+                  className="block h-full rounded-full bg-[var(--editor-selection-border)] transition-[width] duration-100 ease-out"
+                  style={{ width: `${turnCue.progress * 100}%` }}
+                />
+              </span>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       {/* 固定底部：输入框永远属于当前这一章。 */}
