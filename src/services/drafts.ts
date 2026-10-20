@@ -145,6 +145,18 @@ export function writeDraft(draft: Omit<Draft, "updatedAt">): void {
     }
     return;
   }
+  const current = store[key];
+  if (
+    current &&
+    current.text === draft.text &&
+    current.workId === draft.workId &&
+    current.chapterId === draft.chapterId &&
+    current.chapterTitle === draft.chapterTitle &&
+    current.editingCardId === draft.editingCardId &&
+    current.stashedText === draft.stashedText
+  ) {
+    return;
+  }
   store[key] = { ...draft, updatedAt: Date.now() };
   writeDrafts(store);
   broadcast();
@@ -153,7 +165,9 @@ export function writeDraft(draft: Omit<Draft, "updatedAt">): void {
 /** 删除单条草稿。 */
 export function removeDraft(workId: string, chapterId: string): void {
   const store = readDrafts();
-  delete store[draftKey(workId, chapterId)];
+  const key = draftKey(workId, chapterId);
+  if (!(key in store)) return;
+  delete store[key];
   writeDrafts(store);
   broadcast();
   window.dispatchEvent(
