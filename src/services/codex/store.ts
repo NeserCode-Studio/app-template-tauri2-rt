@@ -99,8 +99,8 @@ export async function loadTypes(root: string): Promise<TypeConfig[]> {
       ...hit,
       color: usesLegacyDefaultColor(d.id, hit.color) ? d.color : hit.color,
       builtin: true,
-      /* 出厂模板是字段的"全集下限"：用户删掉的字段不再回来，
-       * 但 types.json 里没写过的新增字段要补上，否则升级后字段凭空消失。 */
+      /* 出厂模板是字段的"全集下限"：内置字段受保护，缺失时补回；
+       * 用户在 types.json 里新增的自定义字段原样保留。 */
       fields: mergeTemplates(d.fields, hit.fields),
       relationVocab: hit.relationVocab.length
         ? hit.relationVocab
@@ -123,9 +123,21 @@ function mergeTemplates(
   defaults: TypeConfig["fields"],
   stored: TypeConfig["fields"]
 ): TypeConfig["fields"] {
+  const defaultsByKey = new Map(defaults.map((field) => [field.key, field]));
+  const normalized = stored.map((field) => {
+    const fromFactory = defaultsByKey.get(field.key);
+    return fromFactory
+      ? { ...field, builtin: true }
+      : { ...field, builtin: false };
+  });
   const seen = new Set(stored.map((f) => f.key));
-  const extra = defaults.filter((f) => !seen.has(f.key));
-  return [...stored, ...extra].map((f, i) => ({ ...f, order: i }));
+  const extra = defaults
+    .filter((field) => !seen.has(field.key))
+    .map((field) => ({ ...field, builtin: true }));
+  return [...normalized, ...extra].map((field, index) => ({
+    ...field,
+    order: index,
+  }));
 }
 
 /** 保存类型配置。 */

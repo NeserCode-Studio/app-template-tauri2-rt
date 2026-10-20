@@ -356,6 +356,8 @@ export const I18nTexts = {
     "Codex.type.colorDark": "Dark theme",
     "Codex.type.identity": "Type identity",
     "Codex.type.fields": "Field template",
+    "Codex.type.fieldsOrderHint":
+      "Field order controls how fields appear in the material details.",
     "Codex.type.addField": "Add field",
     "Codex.type.newField": "New field",
     "Codex.type.fieldLabel": "Field label",
@@ -377,6 +379,8 @@ export const I18nTexts = {
     "Codex.type.moveUp": "Move up",
     "Codex.type.moveDown": "Move down",
     "Codex.type.deleteField": "Delete field",
+    "Codex.type.builtinFieldLocked":
+      "Built-in field. It can be edited but not deleted.",
     "Codex.type.new": "New custom type",
     "Codex.type.noCustom":
       "Your own types appear here, separate from the nine built-ins.",
@@ -963,6 +967,7 @@ export const I18nTexts = {
     "Codex.type.colorDark": "暗色主题",
     "Codex.type.identity": "类型标识",
     "Codex.type.fields": "字段模板",
+    "Codex.type.fieldsOrderHint": "字段顺序决定素材详情中的展示顺序。",
     "Codex.type.addField": "添加字段",
     "Codex.type.newField": "新字段",
     "Codex.type.fieldLabel": "字段名称",
@@ -981,6 +986,7 @@ export const I18nTexts = {
     "Codex.type.moveUp": "上移",
     "Codex.type.moveDown": "下移",
     "Codex.type.deleteField": "删除字段",
+    "Codex.type.builtinFieldLocked": "内置字段可编辑，但不能删除。",
     "Codex.type.new": "新建自定义类型",
     "Codex.type.noCustom": "自建类型会单独列在这里，不与九类内置类型混在一起。",
     "Codex.type.labelRequired": "请输入显示名称",

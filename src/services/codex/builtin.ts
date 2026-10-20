@@ -111,7 +111,15 @@ function f(
   order: number,
   extra?: Partial<FieldTemplate>
 ): FieldTemplate {
-  return { key, label, kind, order, options: [], ...extra };
+  return {
+    key,
+    label,
+    kind,
+    order,
+    options: [],
+    builtin: true,
+    ...extra,
+  };
 }
 
 const FIELDS: Record<BuiltinTypeId, FieldTemplate[]> = {

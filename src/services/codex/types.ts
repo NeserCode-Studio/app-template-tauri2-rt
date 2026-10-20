@@ -54,6 +54,13 @@ export const fieldTemplateSchema = z.object({
   order: z.number().int().default(0),
   /** 填写提示，显示在字段下方。 */
   hint: z.string().optional(),
+  /**
+   * 由出厂模板提供的内置字段。
+   *
+   * 内置字段允许调整名称、提示、类型和顺序，但不能从类型中删除；
+   * 条目数据仍以字段 key 关联，删掉模板会让已有值失去解释。
+   */
+  builtin: z.boolean().default(false),
 });
 
 export type FieldTemplate = z.infer<typeof fieldTemplateSchema>;

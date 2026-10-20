@@ -16,6 +16,9 @@ import { useI18n, useToast } from "@/composables";
 import { useCodex } from "@/contexts/codex";
 import {
   FIELD_KINDS,
+  fieldHint,
+  fieldLabel,
+  relationLabel,
   typeLabel,
   type FieldKind,
   type FieldTemplate,
@@ -68,6 +71,7 @@ function reorder<T>(items: T[], index: number, offset: number): T[] {
 }
 
 function FieldRow({
+  typeId,
   field,
   index,
   total,
@@ -76,6 +80,7 @@ function FieldRow({
   onMove,
   onDelete,
 }: {
+  typeId: string;
   field: FieldTemplate;
   index: number;
   total: number;
@@ -84,12 +89,14 @@ function FieldRow({
   onMove: (offset: number) => void;
   onDelete: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
+  const label = fieldLabel(typeId, field, lang);
+  const hint = fieldHint(typeId, field, lang);
   return (
     <div className="bg-muted/15 grid grid-cols-[minmax(0,1fr)_6rem_auto] items-start gap-2 rounded-md border px-2.5 py-2 sm:grid-cols-[minmax(0,1fr)_7rem_auto]">
       <div className="flex min-w-0 flex-col gap-1.5">
         <Input
-          value={field.label}
+          value={label}
           className="h-8 text-sm"
           placeholder={t("Codex.type.fieldLabel")}
           onChange={(event) =>
@@ -135,7 +142,7 @@ function FieldRow({
           />
         ) : null}
         <Input
-          value={field.hint ?? ""}
+          value={hint}
           className="h-8 text-xs"
           placeholder={t("Codex.type.fieldHint")}
           onChange={(event) =>
@@ -195,10 +202,24 @@ function FieldRow({
           variant="ghost"
           size="icon"
           className="text-muted-foreground hover:text-destructive size-7"
+          disabled={field.builtin}
           onClick={onDelete}
-          aria-label={t("Codex.type.deleteField")}
+          title={
+            field.builtin
+              ? t("Codex.type.builtinFieldLocked")
+              : t("Codex.type.deleteField")
+          }
+          aria-label={
+            field.builtin
+              ? t("Codex.type.builtinFieldLocked")
+              : t("Codex.type.deleteField")
+          }
         >
-          <X className="size-3" />
+          {field.builtin ? (
+            <LockKeyhole className="size-3" />
+          ) : (
+            <X className="size-3" />
+          )}
         </Button>
       </div>
     </div>
@@ -216,7 +237,7 @@ function RelationGroupEditor({
   onChange: (vocab: RelationVocab) => void;
   onDelete: () => void;
 }) {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const targetType = typeConfigs.find((type) => type.id === vocab.targetTypeId);
   return (
     <div className="bg-muted/15 flex flex-col gap-1.5 rounded-md border p-2.5">
@@ -241,7 +262,7 @@ function RelationGroupEditor({
           className="grid grid-cols-[1fr_1fr_auto] gap-1.5"
         >
           <Input
-            value={pair.kind}
+            value={relationLabel(pair.kind, lang)}
             className="h-8 text-xs"
             placeholder={t("Codex.relation.forward")}
             onChange={(event) => {
@@ -254,7 +275,7 @@ function RelationGroupEditor({
             }}
           />
           <Input
-            value={pair.inverseKind}
+            value={relationLabel(pair.inverseKind, lang)}
             className="h-8 text-xs"
             placeholder={t("Codex.relation.inverse")}
             onChange={(event) => {
@@ -380,6 +401,7 @@ export function CodexTypeManager({
       kind: "text",
       options: [],
       order: draft.fields.length,
+      builtin: false,
     };
     setDraft({ ...draft, fields: [...draft.fields, field] });
   }
@@ -678,10 +700,15 @@ export function CodexTypeManager({
                 </section>
 
                 <section className="flex flex-col gap-2 border-b px-4 py-2.5">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-muted-foreground text-xs font-semibold">
-                      {t("Codex.type.fields")}
-                    </h4>
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-muted-foreground text-xs font-semibold">
+                        {t("Codex.type.fields")}
+                      </h4>
+                      <p className="text-muted-foreground/60 mt-1 text-[11px]">
+                        {t("Codex.type.fieldsOrderHint")}
+                      </p>
+                    </div>
                     <Button
                       type="button"
                       variant="outline"
@@ -696,6 +723,7 @@ export function CodexTypeManager({
                   {draft.fields.map((field, index) => (
                     <FieldRow
                       key={field.key}
+                      typeId={draft.id}
                       field={field}
                       index={index}
                       total={draft.fields.length}
