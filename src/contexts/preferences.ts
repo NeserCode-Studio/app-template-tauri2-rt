@@ -12,6 +12,12 @@ export type UiFont = "system-sans" | "system-serif" | "system-mono";
 /** 正文字体（文章排版）。 */
 export type ArticleFont = "songti" | "source-han-serif" | "lxgw-wenkai" | "system-sans";
 
+/** 贴边翻章所需累计滚动距离（像素）。 */
+export const CHAPTER_TURN_THRESHOLD_MIN = 120;
+export const CHAPTER_TURN_THRESHOLD_MAX = 600;
+export const CHAPTER_TURN_THRESHOLD_STEP = 24;
+export const DEFAULT_CHAPTER_TURN_THRESHOLD = 240;
+
 export interface WritingPreferences {
   /* ---- 段落约定（计划书 §3.2）---- */
   /** 首行缩进：0 / 2 / 4 个全角空格。 */
@@ -38,6 +44,8 @@ export interface WritingPreferences {
   highlightMentions: boolean;
   /** 搜索是否独占 Ctrl+Shift+F（开关在命令面板里）。 */
   searchHotkeyEnabled: boolean;
+  /** 贴边继续滚动多少距离后翻章。 */
+  chapterTurnThreshold: number;
 }
 
 export const DEFAULT_PREFERENCES: WritingPreferences = {
@@ -51,6 +59,7 @@ export const DEFAULT_PREFERENCES: WritingPreferences = {
   uiFontSize: 14,
   highlightMentions: true,
   searchHotkeyEnabled: true,
+  chapterTurnThreshold: DEFAULT_CHAPTER_TURN_THRESHOLD,
 };
 
 export interface PreferencesContextValue {

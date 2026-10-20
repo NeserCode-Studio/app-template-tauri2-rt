@@ -11,6 +11,12 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 
 import { useI18n } from "@/composables";
 import { useOutline } from "@/contexts/outline";
+import {
+  CHAPTER_TURN_THRESHOLD_MAX,
+  CHAPTER_TURN_THRESHOLD_MIN,
+  DEFAULT_CHAPTER_TURN_THRESHOLD,
+  usePreferences,
+} from "@/contexts/preferences";
 import { useViewMode } from "@/contexts/viewmode";
 import { createLogger } from "@/lib/logger";
 import type { Card, Chapter, OutlineNode } from "@/shared/schema";
@@ -30,7 +36,6 @@ const log = createLogger("ChapterStream");
  * 触控板则是一串很小的增量。因此累计值限制单次贡献，既避免鼠标动量
  * 一帧直接翻章，也让触控板能自然累积到同一门槛。
  */
-const TURN_THRESHOLD = 96;
 const MAX_TURN_STEP = 72;
 const TURN_IDLE_MS = 320;
 
@@ -101,7 +106,14 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
   ) {
   const { t } = useI18n();
   const { chapters, volumes, setReadingChapterId } = useOutline();
+  const { prefs } = usePreferences();
   const { mode } = useViewMode();
+  const turnThreshold = Number.isFinite(prefs.chapterTurnThreshold)
+    ? Math.max(
+        CHAPTER_TURN_THRESHOLD_MIN,
+        Math.min(CHAPTER_TURN_THRESHOLD_MAX, prefs.chapterTurnThreshold)
+      )
+    : DEFAULT_CHAPTER_TURN_THRESHOLD;
   const c = useChapterController({
     chapter,
     root,
@@ -286,7 +298,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
       const distance =
         previous.direction === direction ? previous.distance + step : step;
       const side = direction > 0 ? "end" : "start";
-      const progress = Math.min(1, distance / TURN_THRESHOLD);
+      const progress = Math.min(1, distance / turnThreshold);
 
       turnDistanceRef.current = { direction, distance };
       setTurnCue({ side, progress });
@@ -294,7 +306,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
         window.clearTimeout(turnResetTimer.current);
       }
 
-      if (distance >= TURN_THRESHOLD) {
+      if (distance >= turnThreshold) {
         turnResetTimer.current = null;
         turnDistanceRef.current = { direction, distance: 0 };
         if (direction > 0) {
@@ -315,7 +327,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
         setTurnCue(null);
       }, TURN_IDLE_MS);
     },
-    [activeIndex, sequence, onSelectChapter, resetTurnCue]
+    [activeIndex, sequence, onSelectChapter, resetTurnCue, turnThreshold]
   );
 
   const appendText = useCallback(

@@ -10,15 +10,21 @@ import {
 } from "@/components/ui/select";
 
 import { useI18n } from "@/composables";
-import { usePreferences } from "@/contexts/preferences";
 import {
   ARTICLE_FONT_LABELS,
   UI_FONT_LABELS,
 } from "@/contexts/preferences.provider";
-import type { ArticleFont, UiFont } from "@/contexts/preferences";
+import {
+  CHAPTER_TURN_THRESHOLD_MAX,
+  CHAPTER_TURN_THRESHOLD_MIN,
+  CHAPTER_TURN_THRESHOLD_STEP,
+  type ArticleFont,
+  type UiFont,
+  usePreferences,
+} from "@/contexts/preferences";
 
 /**
- * 写作偏好面板：计划书 §3.2 的段落约定 + 两级字体设置。
+ * 写作偏好面板：段落约定、排版、两级字体与翻章交互。
  *
  * 字体分两级：
  * - 软件字体：作用于界面 UI（侧栏、按钮、菜单）
@@ -166,6 +172,23 @@ export default function WritingPrefs() {
         </PrefsRow>
       </PrefsGroup>
 
+      <PrefsGroup title={t("Prefs.navigation.section")}>
+        <PrefsRow
+          label={t("Prefs.navigation.turnThreshold")}
+          value={`${prefs.chapterTurnThreshold}px`}
+          description={t("Prefs.navigation.turnThresholdHint")}
+        >
+          <Slider
+            value={[prefs.chapterTurnThreshold]}
+            min={CHAPTER_TURN_THRESHOLD_MIN}
+            max={CHAPTER_TURN_THRESHOLD_MAX}
+            step={CHAPTER_TURN_THRESHOLD_STEP}
+            aria-label={t("Prefs.navigation.turnThreshold")}
+            onValueChange={([v]) => setPref("chapterTurnThreshold", v)}
+          />
+        </PrefsRow>
+      </PrefsGroup>
+
       {/* ---------- 预览 ---------- */}
       <section className="flex flex-col gap-2">
         <h3 className="row-label">{t("Prefs.article.preview")}</h3>
@@ -203,18 +226,27 @@ function PrefsGroup({ title, children }: { title: string; children: React.ReactN
 function PrefsRow({
   label,
   value,
+  description,
   children,
 }: {
   label: string;
   value?: string;
+  description?: string;
   children: React.ReactNode;
 }) {
   return (
     <div className="flex min-h-11 items-center gap-4 px-3 py-2">
-      <div className="flex min-w-0 flex-1 items-baseline gap-2">
-        <Label className="text-sm">{label}</Label>
-        {value ? (
-          <span className="text-xs text-muted-foreground tabular-nums">{value}</span>
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <div className="flex min-w-0 items-baseline gap-2">
+          <Label className="text-sm">{label}</Label>
+          {value ? (
+            <span className="text-xs text-muted-foreground tabular-nums">{value}</span>
+          ) : null}
+        </div>
+        {description ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            {description}
+          </p>
         ) : null}
       </div>
       <div className="flex w-44 shrink-0 items-center justify-end">{children}</div>

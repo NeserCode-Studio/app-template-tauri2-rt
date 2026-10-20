@@ -93,6 +93,21 @@ const SETTING_INDEX: SettingIndexItem[] = [
     labelKey: "Prefs.article.gap",
     keywords: ["gap", "blank", "空行", "段落"],
   },
+  {
+    id: "chapter-turn-threshold",
+    group: "writing",
+    labelKey: "Prefs.navigation.turnThreshold",
+    keywords: [
+      "scroll",
+      "chapter",
+      "threshold",
+      "翻章",
+      "滚动",
+      "阈值",
+      "上一章",
+      "下一章",
+    ],
+  },
 ];
 
 interface ChangedRecord {

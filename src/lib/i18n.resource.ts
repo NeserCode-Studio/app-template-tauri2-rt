@@ -103,6 +103,10 @@ export const I18nTexts = {
     "Prefs.article.gap": "Blank line between paragraphs",
     "Prefs.article.mentions": "Highlight material mentions",
     "Prefs.article.preview": "Preview",
+    "Prefs.navigation.section": "Chapter navigation",
+    "Prefs.navigation.turnThreshold": "Turn threshold",
+    "Prefs.navigation.turnThresholdHint":
+      "Keep scrolling at the chapter edge. The chapter turns only after the accumulated distance reaches this value; larger values reduce accidental turns.",
     "Prefs.indent.none": "No indent",
     "Prefs.indent.two": "2 spaces",
     "Prefs.indent.four": "4 spaces",
@@ -694,6 +698,10 @@ export const I18nTexts = {
     "Prefs.article.gap": "段间空行",
     "Prefs.article.mentions": "高亮正文中的素材提及",
     "Prefs.article.preview": "预览",
+    "Prefs.navigation.section": "翻章",
+    "Prefs.navigation.turnThreshold": "翻章阈值",
+    "Prefs.navigation.turnThresholdHint":
+      "在章节边缘继续滚动时，累计距离达到该值才会翻章。数值越大，越不容易误触。",
     "Prefs.indent.none": "不缩进",
     "Prefs.indent.two": "2 空格",
     "Prefs.indent.four": "4 空格",
