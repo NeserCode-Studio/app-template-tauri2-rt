@@ -1,11 +1,11 @@
 /**
- * 导入既有文稿：把外部 txt 拆成卡片写进某一章。
+ * 导入既有文稿：把外部 txt / md 拆成卡片写进某一章。
  *
  * 编码探测放在 Rust 侧（`fs_read_text_auto`）：JS 侧无 BOM 解码
  * GBK 需要整张映射表，自实现既容易错也不可能比 Rust 侧快。
  *
- * 切分规则：空行分段，其次按行。中文小说的段落几乎都用空行分隔，
- * 只按 `\n` 切会把排版换行误当成段落边界，正文被切得稀碎。
+ * txt 与 md 的段落语义不同：txt 优先按空行分段、无空行时退回逐行；
+ * md 的标题单独成卡，其余按空行分段，并保留段内显式换行。
  */
 
 import { invoke } from "@tauri-apps/api/core";
@@ -37,7 +37,7 @@ export async function appendCardsToChapter(
 
 export interface AutoReadResult {
   content: string;
-  /** `utf-8` / `utf-8-bom`；GBK 等需先转码，见 .agent/findings.md F6。 */
+  /** `utf-8` / `utf-8-bom` / `gb18030`。 */
   encoding: string;
   hadBom: boolean;
 }
@@ -48,17 +48,33 @@ export async function readTextAuto(path: string): Promise<AutoReadResult> {
 }
 
 /**
- * 把纯文本切成段落卡片。
- *
- * 连续空行视为一个分隔（`\n\s*\n`），行尾空白与行首缩进去掉——
- * 源文件里的空格缩进不该原样变成正文内容。
+ * 可导入格式。doc / docx / rtf 不做伪支持：拿不到结构化正文时明确拒绝，
+ * 比把乱码写进作品目录更安全。
  */
-export function textToCards(text: string): Card[] {
+export type ImportFormat = "txt" | "md";
+
+export class ImportFileError extends Error {
+  constructor(
+    public readonly code: "unsupported" | "empty",
+    public readonly detail?: string
+  ) {
+    super(code);
+    this.name = "ImportFileError";
+  }
+}
+
+function importFormat(path: string): ImportFormat {
+  const fileName = path.split(/[\\/]/).pop() ?? path;
+  const dot = fileName.lastIndexOf(".");
+  const extension = dot >= 0 ? fileName.slice(dot + 1).toLowerCase() : "";
+  if (extension === "txt" || extension === "md") return extension;
+  throw new ImportFileError("unsupported", extension || fileName);
+}
+
+function cardsFromBlocks(blocks: string[]): Card[] {
   const now = Date.now();
-  return text
-    .replace(/\r\n?/g, "\n")
-    .split(/\n\s*\n/)
-    .map((p) => p.replace(/\n/g, "").trim())
+  return blocks
+    .map((block) => block.trim())
     .filter(Boolean)
     .map((p, i) =>
       cardSchema.parse({
@@ -68,4 +84,83 @@ export function textToCards(text: string): Card[] {
         updatedAt: now + i,
       })
     );
+}
+
+function normalizeLines(text: string): string[] {
+  return text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n").split("\n");
+}
+
+function txtBlocks(text: string): string[] {
+  const normalized = text.replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+  const paragraphs = normalized.split(/\n[ \t]*\n+/);
+  /*
+   * 没有任何空行时按单行切。中文 txt 常见的两种排版分别是
+   * “一段一行”和“段落之间空行”，这个兜底比把整本书塞进一张卡可靠。
+   */
+  if (paragraphs.length === 1) {
+    return normalized.split("\n");
+  }
+  return paragraphs;
+}
+
+/**
+ * Markdown 只实现文稿导入需要的结构：
+ * - ATX 标题独立成卡；
+ * - 空行分段；
+ * - 段内换行保留，避免硬换行或中文排版被静默吞掉。
+ */
+function markdownBlocks(text: string): string[] {
+  const blocks: string[] = [];
+  let current: string[] = [];
+
+  const flush = () => {
+    const block = current.join("\n").trim();
+    if (block) blocks.push(block);
+    current = [];
+  };
+
+  for (const rawLine of normalizeLines(text)) {
+    const line = rawLine.trimEnd();
+    const heading = line.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
+    if (heading) {
+      flush();
+      const title = heading[1]?.trim();
+      if (title) blocks.push(title);
+      continue;
+    }
+    if (!line.trim()) {
+      flush();
+      continue;
+    }
+    if (/^\s*([-*_])(?:\s*\1){2,}\s*$/.test(line)) {
+      flush();
+      continue;
+    }
+    current.push(line.trimStart());
+  }
+  flush();
+  return blocks;
+}
+
+export interface ParsedImport {
+  format: ImportFormat;
+  cards: Card[];
+}
+
+/** 按扩展名选择切分规则；不支持的类型会抛出可本地化的错误码。 */
+export function parseImportText(path: string, text: string): ParsedImport {
+  const format = importFormat(path);
+  const blocks = format === "md" ? markdownBlocks(text) : txtBlocks(text);
+  const cards = cardsFromBlocks(blocks);
+  if (!cards.length) throw new ImportFileError("empty");
+  return { format, cards };
+}
+
+/**
+ * 兼容旧调用：按 txt 规则把纯文本切成卡片。
+ *
+ * 新导入流程应使用 `parseImportText`，避免 Markdown 被套用 txt 规则。
+ */
+export function textToCards(text: string): Card[] {
+  return cardsFromBlocks(txtBlocks(text));
 }

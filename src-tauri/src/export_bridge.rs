@@ -13,8 +13,6 @@
 use std::fs;
 use std::path::PathBuf;
 
-use serde::Serialize;
-
 /// 写入单个导出文件。成功返回实际字节数。
 #[tauri::command]
 pub fn fs_write_export(path: String, content: String) -> Result<u64, String> {
@@ -57,6 +55,7 @@ pub fn fs_read_text_auto(path: String) -> Result<AutoReadResult, String> {
 }
 
 #[derive(serde::Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct AutoReadResult {
     pub content: String,
     /// 实际编码：`utf-8` / `utf-8-bom` / `gb18030`。
@@ -78,27 +77,49 @@ fn read_bytes_auto(bytes: Vec<u8>) -> Result<AutoReadResult, String> {
         });
     }
     // 2) 严格 UTF-8
-    if let Ok(content) = String::from_utf8(bytes.clone()) {
+    if let Ok(content) = std::str::from_utf8(&bytes) {
         return Ok(AutoReadResult {
-            content,
+            content: content.to_string(),
             encoding: "utf-8".into(),
             had_bom: false,
         });
     }
     /*
-     * 3) 不是 UTF-8。此时**不猜着解码**，只做辅助判断。
+     * 3) GB18030。它是 GBK / GB2312 的超集，能覆盖国内旧文稿的常见编码。
      *
-     * 真正的 GB18030 转码需要 encoding_rs，它目前只是 Cargo.lock 里的
-     * 传递依赖、未在本 crate 声明。按项目规则（未获准不新增依赖）这里不引入。
-     *
-     * 但"文件不是 UTF-8"这句话对用户没有任何帮助——他不知道该怎么办。
-     * 所以做一层启发式判断：按 GBK/GB18030 的字节结构统计合法双字节比例，
-     * 若比例高就明确告诉他"这看起来是 GB18030/GBK 编码"，并给出可执行的
-     * 下一步。这比笼统报"不是 UTF-8"有用得多，同时仍然不擅自按错编码落盘。
+     * 解码前先挡掉明显的二进制文件：GB18030 的码位空间很大，若直接喂给
+     * 解码器，很多二进制流也会被"成功"解成一串无意义字符。NUL 与高频控制
+     * 字符是比编码启发式更可靠的边界。
      */
+    if looks_binary(&bytes) {
+        return Err(
+            "file looks like binary data; convert it to utf-8 or gb18030 text before importing"
+                .into(),
+        );
+    }
+    let (content, had_errors) = encoding_rs::GB18030.decode_without_bom_handling(&bytes);
+    if !had_errors {
+        return Ok(AutoReadResult {
+            content: content.into_owned(),
+            encoding: "gb18030".into(),
+            had_bom: false,
+        });
+    }
+    /* 解码失败才使用启发式提示，避免把"无法识别"说成确定的 GBK。 */
     let hint = detect_cjk_legacy(&bytes);
-    /* 路径由调用方 fs_read_text_auto 附加，这里不重复拼。 */
     Err(hint.into())
+}
+
+/** 明显的二进制内容：含 NUL，或不可打印控制字符比例过高。 */
+fn looks_binary(bytes: &[u8]) -> bool {
+    if bytes.contains(&0) {
+        return true;
+    }
+    let controls = bytes
+        .iter()
+        .filter(|&&b| b < 0x20 && !matches!(b, b'\n' | b'\r' | b'\t' | 0x0C))
+        .count();
+    controls * 100 > bytes.len() * 2
 }
 
 /**
@@ -151,9 +172,9 @@ fn detect_cjk_legacy(bytes: &[u8]) -> &'static str {
      */
     let ratio = (pairs * 2) as f64 / consumed as f64;
     if ratio > 0.7 {
-        "file looks like GBK/GB18030 encoded; please convert it to utf-8 before importing"
+        "file could not be decoded as utf-8 or gb18030; please convert it to utf-8 before importing"
     } else {
-        "file is not valid utf-8; please convert it to utf-8 before importing"
+        "file could not be decoded as utf-8 or gb18030; please convert it to utf-8 before importing"
     }
 }
 
@@ -232,10 +253,18 @@ mod tests {
     }
 
     #[test]
-    fn auto_read_rejects_gbk_without_panicking() {
+    fn auto_read_decodes_gbk_as_gb18030() {
         // "中文"的 GBK 编码：非法 UTF-8 序列。
         let gbk = vec![0xD6u8, 0xD0, 0xCE, 0xC4];
-        let err = read_bytes_auto(gbk).unwrap_err();
-        assert!(err.contains("utf-8"), "error should mention utf-8: {}", err);
+        let r = read_bytes_auto(gbk).unwrap();
+        assert_eq!(r.content, "\u{4e2d}\u{6587}");
+        assert_eq!(r.encoding, "gb18030");
+        assert!(!r.had_bom);
+    }
+
+    #[test]
+    fn auto_read_rejects_binary_instead_of_decoding_noise() {
+        let err = read_bytes_auto(vec![0x00, 0x01, 0x02, 0xFF]).unwrap_err();
+        assert!(err.contains("binary"), "unexpected error: {}", err);
     }
 }
