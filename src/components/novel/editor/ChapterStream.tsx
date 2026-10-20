@@ -108,17 +108,17 @@ function ChapterTurnCue({
         side === "start" ? "top-3" : "bottom-3",
       ].join(" ")}
     >
-      <div className="animate-in fade-in flex max-w-full min-w-0 items-center gap-2.5 rounded-full border border-[var(--editor-selection-border)] bg-background/95 px-3 py-1.5 text-xs shadow-sm backdrop-blur-sm duration-150">
+      <div className="animate-in fade-in flex max-w-full min-w-0 items-center gap-2.5 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground shadow-none backdrop-blur-sm duration-150">
         {side === "start" ? (
-          <ChevronUp className="icon-sm shrink-0 text-[var(--editor-selection-border)]" />
+          <ChevronUp className="icon-sm shrink-0 text-muted-foreground/60" />
         ) : (
-          <ChevronDown className="icon-sm shrink-0 text-[var(--editor-selection-border)]" />
+          <ChevronDown className="icon-sm shrink-0 text-muted-foreground/60" />
         )}
         <span className="min-w-0 truncate">{label}</span>
         {showProgress ? (
           <span className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
             <span
-              className="block h-full rounded-full bg-[var(--editor-selection-border)] transition-[width] duration-100 ease-out"
+              className="block h-full rounded-full bg-muted-foreground/35 transition-[width] duration-100 ease-out"
               style={{ width: `${percent}%` }}
             />
           </span>
