@@ -587,11 +587,7 @@ function EmptyState({
   );
 }
 
-export default function CodexLibrary({
-  embedded = false,
-}: {
-  embedded?: boolean;
-}) {
+export default function CodexLibrary() {
   const { t } = useI18n();
   const toast = useToast();
   const narrow = useNarrowLayout();
@@ -1098,12 +1094,7 @@ export default function CodexLibrary({
           narrow ? "flex-1" : "",
         ].join(" ")}
       >
-        <h1
-          className={[
-            "truncate font-semibold",
-            embedded ? "text-base" : "text-lg",
-          ].join(" ")}
-        >
+        <h1 className="truncate text-lg font-semibold">
           {t("Codex.library.title")}
         </h1>
         <span className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[11px] tabular-nums">

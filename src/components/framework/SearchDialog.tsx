@@ -95,7 +95,7 @@ export default function SearchDialog({ open, onOpenChange }: SearchDialogProps) 
   function pick(hit: SearchHit) {
     if (hit.kind === "codex") {
       setCurrentEntryId(hit.id);
-      go("library", { workspaceView: "materials" });
+      go("codex");
     } else {
       setCurrentWorkId(hit.workId);
       setCurrentChapterId(hit.id);

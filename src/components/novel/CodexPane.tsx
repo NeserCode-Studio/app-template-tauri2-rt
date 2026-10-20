@@ -219,7 +219,7 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
           className="size-8 shrink-0"
           aria-label={t("Codex.library.title")}
           title={t("Codex.library.title")}
-          onClick={() => go("library", { workspaceView: "materials" })}
+          onClick={() => go("codex")}
         >
           <ExternalLink className="icon-sm" />
         </Button>

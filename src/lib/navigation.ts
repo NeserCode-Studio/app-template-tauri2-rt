@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from "react-router";
 
 export type AppPage = "home" | "library" | "editor" | "codex";
 export type PageTransitionDirection = "forward" | "back";
-export type WorkspaceView = "works" | "materials";
 
 export interface NavigationLocationState {
   from?: AppPage;
@@ -15,7 +14,7 @@ export const APP_PAGE_PATHS: Record<AppPage, string> = {
   home: "/",
   library: "/library",
   editor: "/editor",
-  codex: "/library?view=materials",
+  codex: "/codex",
 };
 
 export const APP_PAGE_LABEL_KEYS: Record<AppPage, string> = {
@@ -83,7 +82,6 @@ export interface NavigatePageOptions {
   replace?: boolean;
   transition?: PageTransitionDirection;
   intent?: NavigationLocationState["intent"];
-  workspaceView?: WorkspaceView;
 }
 
 export function useAppNavigation() {
@@ -99,18 +97,8 @@ export function useAppNavigation() {
 
   const go = useCallback(
     (page: AppPage, options: NavigatePageOptions = {}) => {
-      const path =
-        page === "library" && options.workspaceView
-          ? `${APP_PAGE_PATHS.library}?view=${options.workspaceView}`
-          : APP_PAGE_PATHS[page];
-      if (
-        page === currentPage &&
-        !options.replace &&
-        path === `${location.pathname}${location.search}`
-      ) {
-        return;
-      }
-      navigate(path, {
+      if (page === currentPage && !options.replace) return;
+      navigate(APP_PAGE_PATHS[page], {
         replace: options.replace,
         state: {
           from: currentPage,
@@ -120,7 +108,7 @@ export function useAppNavigation() {
         } satisfies NavigationLocationState,
       });
     },
-    [currentPage, location.pathname, location.search, navigate]
+    [currentPage, navigate]
   );
 
   const back = useCallback(() => {

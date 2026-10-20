@@ -27,6 +27,7 @@ import { useOutline } from "@/contexts/outline";
 import { useWorkspace } from "@/contexts/workspace";
 import { useAppNavigation } from "@/lib/navigation";
 import {
+  fieldHint,
   fieldLabel,
   loadMentionChapterTitles,
   relationLabel,
@@ -238,10 +239,12 @@ function ReferenceField({
 
 function FieldEditor({
   field,
+  hint,
   value,
   onChange,
 }: {
   field: FieldTemplate;
+  hint: string;
   value: FieldValue | undefined;
   onChange: (value: FieldValue | undefined) => void;
 }) {
@@ -262,7 +265,7 @@ function FieldEditor({
         value={valueText(value)}
         rows={3}
         className="min-h-20 resize-y text-sm leading-relaxed"
-        placeholder={field.hint}
+        placeholder={hint || undefined}
         onChange={(event) =>
           onChange({ kind: "longtext", value: event.target.value })
         }
@@ -296,7 +299,7 @@ function FieldEditor({
       type={field.kind === "number" ? "number" : "text"}
       value={valueText(value)}
       className="h-8 text-sm"
-      placeholder={field.hint}
+      placeholder={hint || undefined}
       onChange={(event) => {
         if (field.kind === "number") {
           onChange(
@@ -324,6 +327,7 @@ function FieldItem({
   onChange: (value: FieldValue | undefined) => void;
 }) {
   const { lang, t } = useI18n();
+  const hint = fieldHint(typeId, field, lang);
   return (
     <label className="flex min-w-0 flex-col gap-1">
       <span className="text-muted-foreground flex items-center justify-between gap-2 text-xs font-medium">
@@ -336,10 +340,10 @@ function FieldItem({
           </span>
         ) : null}
       </span>
-      <FieldEditor field={field} value={value} onChange={onChange} />
-      {field.hint ? (
+      <FieldEditor field={field} hint={hint} value={value} onChange={onChange} />
+      {hint ? (
         <span className="text-muted-foreground/60 text-[11px]">
-          {field.hint}
+          {hint}
         </span>
       ) : null}
     </label>

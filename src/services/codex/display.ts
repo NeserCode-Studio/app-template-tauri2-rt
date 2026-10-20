@@ -78,6 +78,15 @@ const FIELD_LABELS_EN: Record<string, Record<string, string>> = {
   },
 };
 
+const FIELD_HINTS_EN: Record<string, Record<string, string>> = {
+  event: {
+    order: "Used for timeline ordering; lower numbers appear earlier.",
+  },
+  timeline: {
+    order: "Used for era ordering; lower numbers appear earlier.",
+  },
+};
+
 const RELATION_LABELS_EN: Record<string, string> = {
   亲属: "kin",
   师承: "mentor",
@@ -188,9 +197,12 @@ const RELATION_LABELS_EN: Record<string, string> = {
 };
 
 const DEFAULT_FIELD_LABELS = new Map<string, string>();
+const DEFAULT_FIELD_HINTS = new Map<string, string>();
 for (const type of defaultBuiltinTypes()) {
   for (const field of type.fields) {
-    DEFAULT_FIELD_LABELS.set(`${type.id}.${field.key}`, field.label.trim());
+    const key = `${type.id}.${field.key}`;
+    DEFAULT_FIELD_LABELS.set(key, field.label.trim());
+    if (field.hint) DEFAULT_FIELD_HINTS.set(key, field.hint.trim());
   }
 }
 
@@ -246,6 +258,26 @@ export function fieldLabel(
     return current;
   }
   return FIELD_LABELS_EN[typeId]?.[field.key] ?? current;
+}
+
+/**
+ * 字段提示的显示口径。
+ *
+ * builtin.ts 里的 hint 会写进 types.json，因此同样需要区分出厂提示与
+ * 用户自定义提示；后者不参与翻译。
+ */
+export function fieldHint(
+  typeId: string,
+  field: Pick<FieldTemplate, "key" | "hint">,
+  lang: string
+): string {
+  const current = field.hint?.trim() ?? "";
+  if (!current || lang !== "en-US") return current;
+
+  const key = `${typeId}.${field.key}`;
+  const defaultHint = DEFAULT_FIELD_HINTS.get(key);
+  if (current !== defaultHint) return current;
+  return FIELD_HINTS_EN[typeId]?.[field.key] ?? current;
 }
 
 /** 内置关系词的英文映射；自定义关系文本原样返回。 */

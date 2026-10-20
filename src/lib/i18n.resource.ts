@@ -2,6 +2,9 @@ export const I18nTexts = {
   "en-US": {
     "Titlebar.default.title": "App Template",
     "Home.title": "Home",
+    "Home.workspacePicker": "Workspaces",
+    "Home.workspacePickerHint":
+      "Choose another workspace or continue with the current one",
     "Home.studio": "Writing desk",
     "Home.continue": "Continue writing",
     "Home.updated": "Updated",
@@ -487,6 +490,7 @@ export const I18nTexts = {
     "Trash.title": "Trash",
     "Trash.empty": "Trash is empty",
     "Trash.restore": "Restore",
+    "Trash.preview": "Preview",
     "Trash.purge": "Delete permanently",
     "Trash.purgeConfirm": "Delete permanently? This cannot be undone.",
     "Trash.restored": "Restored",
@@ -629,6 +633,8 @@ export const I18nTexts = {
   "zh-CN": {
     "Titlebar.default.title": "应用模板",
     "Home.title": "首页",
+    "Home.workspacePicker": "工作区",
+    "Home.workspacePickerHint": "选择其他工作区，或继续当前工作区",
     "Home.studio": "写作台",
     "Home.continue": "继续写作",
     "Home.updated": "更新于",
@@ -1085,6 +1091,7 @@ export const I18nTexts = {
     "Trash.title": "回收站",
     "Trash.empty": "回收站是空的",
     "Trash.restore": "恢复",
+    "Trash.preview": "预览",
     "Trash.purge": "彻底删除",
     "Trash.purgeConfirm": "彻底删除？此操作不可撤销。",
     "Trash.restored": "已恢复",

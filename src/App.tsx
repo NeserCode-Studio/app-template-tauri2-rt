@@ -40,6 +40,7 @@ const log = createLogger("App");
 const Home = lazy(() => import("@/views/Home"));
 const Library = lazy(() => import("@/views/Library"));
 const Editor = lazy(() => import("@/views/Editor"));
+const CodexLibrary = lazy(() => import("@/views/CodexLibrary"));
 const TrayMenu = lazy(() => import("@/views/TrayMenu"));
 
 /**
@@ -204,10 +205,9 @@ function App() {
                           <Route
                             path="/codex"
                             element={
-                              <Navigate
-                                to="/library?view=materials"
-                                replace
-                              />
+                              <div className="h-full w-full">
+                                <CodexLibrary />
+                              </div>
                             }
                           />
                           <Route

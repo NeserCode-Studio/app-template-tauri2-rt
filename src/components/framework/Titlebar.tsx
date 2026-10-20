@@ -59,14 +59,18 @@ export default function Titlebar() {
       page: "home",
       labelKey: APP_PAGE_LABEL_KEYS.home,
       icon: Home,
-      enabled: canOpenPage("home"),
+      enabled: true,
     },
-    {
-      page: "library",
-      labelKey: APP_PAGE_LABEL_KEYS.library,
-      icon: BookOpen,
-      enabled: canOpenPage("library"),
-    },
+    ...(root
+      ? [
+          {
+            page: "library" as const,
+            labelKey: APP_PAGE_LABEL_KEYS.library,
+            icon: BookOpen,
+            enabled: true,
+          },
+        ]
+      : []),
   ];
 
   function toggleTheme() {

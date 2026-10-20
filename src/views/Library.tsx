@@ -1,12 +1,14 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BookMarked,
+  BookOpen,
   Clock3,
   Database,
   FileText,
   FileUp,
   Folder,
   FolderOpen,
+  PenLine,
   Plus,
   Settings2,
   Trash2,
@@ -51,15 +53,10 @@ import {
 } from "@/services/import";
 import { addNode as addOutlineNode } from "@/services/outline";
 import { createLogger } from "@/lib/logger";
-import {
-  navigationStateOf,
-  useAppNavigation,
-  type WorkspaceView,
-} from "@/lib/navigation";
+import { navigationStateOf, useAppNavigation } from "@/lib/navigation";
 import type { Work } from "@/shared/schema";
 
 const log = createLogger("Library");
-const CodexLibrary = lazy(() => import("@/views/CodexLibrary"));
 
 function formatDate(timestamp: number): string {
   const date = new Date(timestamp);
@@ -114,6 +111,8 @@ export default function Library() {
   const [importOpen, setImportOpen] = useState(false);
   const createRequested =
     navigationStateOf(location.state).intent === "create-work";
+  const legacyMaterialsView =
+    new URLSearchParams(location.search).get("view") === "materials";
 
   /** 统计字数：阶段 2 先从 stats.json 读取，阶段 6 再做实时更新。 */
   const loadWordCounts = useCallback(async () => {
@@ -152,6 +151,10 @@ export default function Library() {
       go("home", { replace: true, transition: "back" });
     }
   }, [go, isOpen, root]);
+
+  useEffect(() => {
+    if (legacyMaterialsView) go("codex", { replace: true });
+  }, [go, legacyMaterialsView]);
 
   useEffect(() => {
     if (!createRequested) return;
@@ -202,6 +205,14 @@ export default function Library() {
   const lastUpdatedAt = useMemo(
     () => active.reduce((latest, work) => Math.max(latest, work.updatedAt), 0),
     [active]
+  );
+
+  const focusWork = useMemo(
+    () =>
+      active.find((work) => work.id === currentWorkId) ??
+      [...active].sort((a, b) => b.updatedAt - a.updatedAt)[0] ??
+      null,
+    [active, currentWorkId]
   );
 
   /** 提交新建 / 重命名。 */
@@ -298,35 +309,11 @@ export default function Library() {
 
   if (!isOpen || !root) return null;
 
-  const workspaceView =
-    new URLSearchParams(location.search).get("view") === "materials"
-      ? "materials"
-      : "works";
-
-  function switchWorkspaceView(next: WorkspaceView) {
-    const params = new URLSearchParams(location.search);
-    if (next === "materials") params.set("view", "materials");
-    else params.delete("view");
-    const search = params.toString();
-    navigate(
-      { pathname: location.pathname, search: search ? `?${search}` : "" },
-      {
-        replace: true,
-        state: navigationStateOf(location.state),
-      }
-    );
-  }
-
   /* ---------- 已选择工作区 ---------- */
   return (
-    <div className="view-library bg-background h-full min-h-0 overflow-hidden">
-      <div
-        className={[
-          "mx-auto flex h-full min-h-0 w-full flex-col px-6 py-7 sm:px-8",
-          workspaceView === "materials" ? "max-w-[1500px]" : "max-w-5xl",
-        ].join(" ")}
-      >
-        <header className="border-border/70 shrink-0 border-b pb-5">
+    <div className="view-library scrollbar-app bg-background h-full overflow-y-auto">
+      <div className="mx-auto w-full max-w-5xl px-6 py-9 sm:px-8">
+        <header className="border-border/70 border-b pb-7">
           <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0">
               <div className="row-label">
@@ -377,51 +364,14 @@ export default function Library() {
           </div>
         </header>
 
-        <div className="border-border/70 flex shrink-0 flex-wrap items-center gap-2 border-b py-3">
-          <nav
-            className="flex items-center gap-1"
-            role="tablist"
-            aria-label={t("Library.title")}
-          >
-            <button
-              type="button"
-              role="tab"
-              aria-selected={workspaceView === "works"}
-              onClick={() => switchWorkspaceView("works")}
-              className={[
-                "flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm transition-colors",
-                workspaceView === "works"
-                  ? "border-primary/35 bg-accent font-medium text-accent-foreground"
-                  : "border-transparent text-muted-foreground hover:bg-accent/55 hover:text-foreground",
-              ].join(" ")}
-            >
-              <BookMarked className="size-3.5" />
-              {t("Library.section.works")}
-            </button>
-            <button
-              type="button"
-              role="tab"
-              aria-selected={workspaceView === "materials"}
-              onClick={() => switchWorkspaceView("materials")}
-              className={[
-                "flex h-8 items-center gap-1.5 rounded-md border px-3 text-sm transition-colors",
-                workspaceView === "materials"
-                  ? "border-primary/35 bg-accent font-medium text-accent-foreground"
-                  : "border-transparent text-muted-foreground hover:bg-accent/55 hover:text-foreground",
-              ].join(" ")}
-            >
-              <Database className="size-3.5" />
-              {t("Codex.library.title")}
-            </button>
-          </nav>
-          <Button
-            className="ml-auto"
-            variant="ghost"
-            size="sm"
-            onClick={() => setSettingsOpen(true)}
-          >
+        <div className="border-border/70 flex flex-wrap items-center gap-2 border-b py-4">
+          <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)}>
             <Settings2 className="icon-md" />
             {t("Library.action.workspaceSettings")}
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => go("codex")}>
+            <Database className="icon-md" />
+            {t("Codex.library.title")}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setTrashOpen(true)}>
             <Trash2 className="icon-md" />
@@ -431,20 +381,49 @@ export default function Library() {
             <FileUp className="icon-md" />
             {t("Import.action")}
           </Button>
-          <Button size="sm" onClick={openCreate}>
+          <Button className="sm:ml-auto" size="sm" onClick={openCreate}>
             <Plus className="icon-md" />
             {t("Library.action.new")}
           </Button>
         </div>
 
-        {workspaceView === "materials" ? (
-          <div className="min-h-0 flex-1 pt-3">
-            <Suspense fallback={null}>
-              <CodexLibrary embedded />
-            </Suspense>
-          </div>
-        ) : (
-          <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto">
+        {focusWork ? (
+          <section className="mt-7 flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="min-w-0">
+              <div className="row-label">
+                <PenLine className="icon-sm" />
+                {t("Home.continue")}
+              </div>
+              <h2 className="mt-3 truncate text-xl font-semibold">
+                {focusWork.title}
+              </h2>
+              <div className="text-muted-foreground mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
+                {focusWork.type ? <span>{focusWork.type}</span> : null}
+                {focusWork.type ? <span aria-hidden>·</span> : null}
+                <span className="inline-flex items-center gap-1">
+                  <Clock3 className="size-3" />
+                  {t("Home.updated")} {formatDate(focusWork.updatedAt)}
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                onClick={() => {
+                  setCurrentWorkId(focusWork.id);
+                  go("editor");
+                }}
+              >
+                <BookOpen className="icon-md" />
+                {t("Library.action.continue")}
+              </Button>
+              <Button variant="outline" onClick={() => go("codex")}>
+                <Database className="icon-md" />
+                {t("Codex.library.title")}
+              </Button>
+            </div>
+          </section>
+        ) : null}
+
         {active.length ? (
           <section className="mt-8 w-full">
             <div className="mb-3 flex items-center justify-between">
@@ -512,8 +491,6 @@ export default function Library() {
             </div>
           </section>
         ) : null}
-          </div>
-        )}
 
       {/* 新建 / 重命名对话框 */}
       <ImportDialog
