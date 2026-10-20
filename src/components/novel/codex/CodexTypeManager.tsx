@@ -52,6 +52,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { ColorSwatchPicker } from "./ColorSwatchPicker";
 import { TYPE_ICON_OPTIONS, TypeGlyph } from "./TypeGlyph";
 
 function replaceField(
@@ -671,43 +672,39 @@ export function CodexTypeManager({
                         </SelectContent>
                       </Select>
                     </label>
-                    <label className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1.5">
                       <span className="text-muted-foreground text-xs whitespace-nowrap">
                         {t("Codex.type.colorLight")}
                       </span>
-                      <input
-                        type="color"
+                      <ColorSwatchPicker
+                        label={t("Codex.type.colorLight")}
                         value={draft.color.light}
-                        aria-label={t("Codex.type.colorLight")}
-                        className="size-8 cursor-pointer appearance-none overflow-hidden rounded-md border-0 bg-transparent p-0 [&::-moz-color-swatch]:rounded-md [&::-moz-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0"
-                        onChange={(event) =>
+                        onChange={(light) =>
                           setDraft({
                             ...draft,
                             color: {
                               ...draft.color,
-                              light: event.target.value,
+                              light,
                             },
                           })
                         }
                       />
-                    </label>
-                    <label className="flex flex-col gap-1.5">
+                    </div>
+                    <div className="flex flex-col gap-1.5">
                       <span className="text-muted-foreground text-xs whitespace-nowrap">
                         {t("Codex.type.colorDark")}
                       </span>
-                      <input
-                        type="color"
+                      <ColorSwatchPicker
+                        label={t("Codex.type.colorDark")}
                         value={draft.color.dark}
-                        aria-label={t("Codex.type.colorDark")}
-                        className="size-8 cursor-pointer appearance-none overflow-hidden rounded-md border-0 bg-transparent p-0 [&::-moz-color-swatch]:rounded-md [&::-moz-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0"
-                        onChange={(event) =>
+                        onChange={(dark) =>
                           setDraft({
                             ...draft,
-                            color: { ...draft.color, dark: event.target.value },
+                            color: { ...draft.color, dark },
                           })
                         }
                       />
-                    </label>
+                    </div>
                   </div>
                 </section>
 
