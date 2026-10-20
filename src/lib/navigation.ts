@@ -1,6 +1,9 @@
 import { useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { interceptWorkspaceNavigation } from "@/lib/workspace-open";
+import {
+  interceptWorkspaceNavigation,
+  requestWorkspaceEntry,
+} from "@/lib/workspace-open";
 
 export type AppPage = "home" | "library" | "editor" | "codex";
 export type PageTransitionDirection = "forward" | "back";
@@ -96,11 +99,16 @@ export function useAppNavigation() {
       : null;
   const backPage = priorPage ?? defaultBackPage(currentPage);
 
-  const go = useCallback(
-    (page: AppPage, options: NavigatePageOptions = {}) => {
-      if (interceptWorkspaceNavigation(APP_PAGE_PATHS[page])) return;
-      if (page === currentPage && !options.replace) return;
-      navigate(APP_PAGE_PATHS[page], {
+  const navigateDirect = useCallback(
+    (path: string, options: NavigatePageOptions = {}) => {
+      const page = pageFromPath(path);
+      if (
+        page === currentPage &&
+        path === location.pathname &&
+        !options.replace
+      )
+        return;
+      navigate(path, {
         replace: options.replace,
         state: {
           from: currentPage,
@@ -110,12 +118,24 @@ export function useAppNavigation() {
         } satisfies NavigationLocationState,
       });
     },
-    [currentPage, navigate]
+    [currentPage, location.pathname, navigate]
+  );
+
+  const go = useCallback(
+    (page: AppPage, options: NavigatePageOptions = {}) => {
+      const path = APP_PAGE_PATHS[page];
+      if (interceptWorkspaceNavigation(path)) return;
+      if (requestWorkspaceEntry(path)) return;
+      navigateDirect(path, options);
+    },
+    [navigateDirect]
   );
 
   const back = useCallback(() => {
     if (!backPage) return;
-    if (interceptWorkspaceNavigation(APP_PAGE_PATHS[backPage])) return;
+    const path = APP_PAGE_PATHS[backPage];
+    if (interceptWorkspaceNavigation(path)) return;
+    if (requestWorkspaceEntry(path)) return;
     if (priorPage) {
       navigate(-1);
       return;
@@ -129,7 +149,8 @@ export function useAppNavigation() {
       backPage,
       go,
       back,
+      navigateDirect,
     }),
-    [back, backPage, currentPage, go]
+    [back, backPage, currentPage, go, navigateDirect]
   );
 }

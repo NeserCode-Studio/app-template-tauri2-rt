@@ -10,10 +10,9 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/composables";
-import { useNavigatorContext } from "@/contexts/navigator";
 import { useSettingsDialog } from "@/contexts/settings";
 import { useWorkspace } from "@/contexts/workspace";
-import { useAppNavigation } from "@/lib/navigation";
+import { pageFromPath, useAppNavigation } from "@/lib/navigation";
 import {
   WORKSPACE_OPEN_INTERCEPT_EVENT,
   type WorkspaceOpenAction,
@@ -21,11 +20,12 @@ import {
 
 const OPEN_DELAY_MS = 2500;
 
-type WorkspaceOpenIntent = "create" | "change" | "recent";
+type WorkspaceOpenIntent = "create" | "change" | "menu" | "recent";
 
 interface PendingWorkspaceOpen {
   path: string;
   intent: WorkspaceOpenIntent;
+  targetPath: string | null;
 }
 
 function workspaceName(path: string): string {
@@ -134,8 +134,7 @@ function WorkspaceRow({
 
 export default function Home() {
   const { t } = useI18n();
-  const { go } = useAppNavigation();
-  const { navigator } = useNavigatorContext();
+  const { navigateDirect } = useAppNavigation();
   const { openSettings, openAbout } = useSettingsDialog();
   const {
     root,
@@ -148,35 +147,57 @@ export default function Home() {
     useState<PendingWorkspaceOpen | null>(null);
   const [progress, setProgress] = useState(0);
   const openingRef = useRef(false);
+  const rootRef = useRef(root);
   const queuedNavigationRef = useRef<string | null>(null);
   const queuedDialogRef = useRef<"settings" | "about" | null>(null);
+  rootRef.current = root;
   const selectedRoot = pendingOpen?.path ?? root;
   const hasSelection = Boolean(selectedRoot);
   const otherRecent = recent.filter((path) => path !== selectedRoot);
 
-  function queueWorkspaceOpen(path: string, intent: WorkspaceOpenIntent) {
+  function queueWorkspaceOpen(
+    path: string,
+    intent: WorkspaceOpenIntent,
+    targetPath: string | null = null
+  ) {
     if (openingRef.current) return;
     openingRef.current = true;
     queuedNavigationRef.current = null;
     queuedDialogRef.current = null;
     setProgress(0);
-    setPendingOpen({ path, intent });
+    setPendingOpen({ path, intent, targetPath });
   }
 
-  async function chooseWorkspace(intent: Exclude<WorkspaceOpenIntent, "recent">) {
+  async function chooseWorkspace(
+    intent: Exclude<WorkspaceOpenIntent, "menu" | "recent">
+  ) {
     const selected = await pickPath();
     if (selected) queueWorkspaceOpen(selected, intent);
   }
 
   useEffect(() => {
     const onIntercept = (event: Event) => {
-      if (!openingRef.current) return;
       const action = (event as CustomEvent<WorkspaceOpenAction>).detail;
-      event.preventDefault();
-      if (action.kind === "navigate") {
-        queuedNavigationRef.current = action.path;
-      } else {
-        queuedDialogRef.current = action.dialog;
+
+      if (openingRef.current && action.kind !== "entry") {
+        event.preventDefault();
+        if (action.kind === "navigate") {
+          queuedNavigationRef.current = action.path;
+        } else {
+          queuedDialogRef.current = action.dialog;
+        }
+        return;
+      }
+
+      if (
+        action.kind === "entry" &&
+        !openingRef.current &&
+        rootRef.current &&
+        pageFromPath(action.path) !== "home"
+      ) {
+        /* 菜单直接进入工作区时，也复用首页的进度效果作为唯一入口。 */
+        event.preventDefault();
+        queueWorkspaceOpen(rootRef.current, "menu", action.path);
       }
     };
 
@@ -195,25 +216,21 @@ export default function Home() {
 
     const finish = () => {
       if (cancelled) return;
-      const navigation = queuedNavigationRef.current;
+      const navigation =
+        queuedNavigationRef.current ??
+        pendingOpen.targetPath ??
+        "/library";
       const dialog = queuedDialogRef.current;
       openingRef.current = false;
       setPendingOpen(null);
       open(pendingOpen.path);
-      if (navigation) {
-        navigator(navigation);
-      } else {
-        go("library");
-      }
+      navigateDirect(navigation);
       if (dialog === "settings") openSettings();
       if (dialog === "about") openAbout();
     };
 
     const tick = (now: number) => {
-      const value = Math.min(
-        100,
-        ((now - startedAt) / OPEN_DELAY_MS) * 100
-      );
+      const value = Math.min(100, ((now - startedAt) / OPEN_DELAY_MS) * 100);
       setProgress(value);
       if (value < 100) {
         frame = requestAnimationFrame(tick);
@@ -229,7 +246,7 @@ export default function Home() {
       cancelAnimationFrame(frame);
       openingRef.current = false;
     };
-  }, [go, navigator, open, openAbout, openSettings, pendingOpen]);
+  }, [navigateDirect, open, openAbout, openSettings, pendingOpen]);
 
   return (
     <div className="view scrollbar-app bg-background h-full w-full overflow-y-auto">

@@ -38,6 +38,7 @@ import {
 import {
   interceptWorkspaceDialog,
   interceptWorkspaceNavigation,
+  requestWorkspaceEntry,
 } from "@/lib/workspace-open";
 
 const log = createLogger("App");
@@ -75,6 +76,7 @@ function App() {
   const navigator = useCallback(
     (path: string) => {
       if (interceptWorkspaceNavigation(path)) return;
+      if (requestWorkspaceEntry(path)) return;
       const from = pageFromPath(location.pathname);
       const to = pageFromPath(path);
       navigate(path, {
