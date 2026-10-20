@@ -293,7 +293,13 @@ function RelationGroupEditor({
         onClick={() =>
           onChange({
             ...vocab,
-            kinds: [...vocab.kinds, { kind: "关联", inverseKind: "相关" }],
+            kinds: [
+              ...vocab.kinds,
+              {
+                kind: t("Codex.relation.defaultForward"),
+                inverseKind: t("Codex.relation.defaultInverse"),
+              },
+            ],
           })
         }
       >
@@ -783,7 +789,14 @@ export function CodexTypeManager({
                               ...draft.relationVocab,
                               {
                                 targetTypeId: newTargetTypeId,
-                                kinds: [{ kind: "关联", inverseKind: "相关" }],
+                                kinds: [
+                                  {
+                                    kind: t("Codex.relation.defaultForward"),
+                                    inverseKind: t(
+                                      "Codex.relation.defaultInverse"
+                                    ),
+                                  },
+                                ],
                               },
                             ],
                           });

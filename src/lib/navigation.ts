@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router";
 
 export type AppPage = "home" | "library" | "editor" | "codex";
 export type PageTransitionDirection = "forward" | "back";
+export type WorkspaceView = "works" | "materials";
 
 export interface NavigationLocationState {
   from?: AppPage;
@@ -14,7 +15,7 @@ export const APP_PAGE_PATHS: Record<AppPage, string> = {
   home: "/",
   library: "/library",
   editor: "/editor",
-  codex: "/codex",
+  codex: "/library?view=materials",
 };
 
 export const APP_PAGE_LABEL_KEYS: Record<AppPage, string> = {
@@ -53,7 +54,8 @@ export function defaultPageTransition(
   to: AppPage
 ): PageTransitionDirection {
   if (to === "home") return from === "home" ? "forward" : "back";
-  if (to === "library" && (from === "editor" || from === "codex")) return "back";
+  if (to === "library" && (from === "editor" || from === "codex"))
+    return "back";
   if (to === "editor" && from === "codex") return "back";
   return "forward";
 }
@@ -81,6 +83,7 @@ export interface NavigatePageOptions {
   replace?: boolean;
   transition?: PageTransitionDirection;
   intent?: NavigationLocationState["intent"];
+  workspaceView?: WorkspaceView;
 }
 
 export function useAppNavigation() {
@@ -96,8 +99,18 @@ export function useAppNavigation() {
 
   const go = useCallback(
     (page: AppPage, options: NavigatePageOptions = {}) => {
-      if (page === currentPage && !options.replace) return;
-      navigate(APP_PAGE_PATHS[page], {
+      const path =
+        page === "library" && options.workspaceView
+          ? `${APP_PAGE_PATHS.library}?view=${options.workspaceView}`
+          : APP_PAGE_PATHS[page];
+      if (
+        page === currentPage &&
+        !options.replace &&
+        path === `${location.pathname}${location.search}`
+      ) {
+        return;
+      }
+      navigate(path, {
         replace: options.replace,
         state: {
           from: currentPage,
@@ -107,7 +120,7 @@ export function useAppNavigation() {
         } satisfies NavigationLocationState,
       });
     },
-    [currentPage, navigate]
+    [currentPage, location.pathname, location.search, navigate]
   );
 
   const back = useCallback(() => {

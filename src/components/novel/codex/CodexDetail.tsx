@@ -27,7 +27,9 @@ import { useOutline } from "@/contexts/outline";
 import { useWorkspace } from "@/contexts/workspace";
 import { useAppNavigation } from "@/lib/navigation";
 import {
+  fieldLabel,
   loadMentionChapterTitles,
+  relationLabel,
   typeLabel,
   type Entry,
   type FieldTemplate,
@@ -312,18 +314,20 @@ function FieldEditor({
 
 function FieldItem({
   field,
+  typeId,
   value,
   onChange,
 }: {
   field: FieldTemplate;
+  typeId: string;
   value: FieldValue | undefined;
   onChange: (value: FieldValue | undefined) => void;
 }) {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   return (
     <label className="flex min-w-0 flex-col gap-1">
       <span className="text-muted-foreground flex items-center justify-between gap-2 text-xs font-medium">
-        <span>{field.label || field.key}</span>
+        <span>{fieldLabel(typeId, field, lang)}</span>
         {field.kind === "ref" || field.kind === "refs" ? (
           <span className="text-muted-foreground/60 text-[11px]">
             {field.kind === "refs"
@@ -433,7 +437,7 @@ function ScopePicker({
 }
 
 function RelationComposer({ entry }: { entry: Entry }) {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const toast = useToast();
   const { entries, relations, typeConfigs, colorOf, addRelation } = useCodex();
   const [open, setOpen] = useState(false);
@@ -608,10 +612,10 @@ function RelationComposer({ entry }: { entry: Entry }) {
                       void submit(pair);
                     }}
                   >
-                    <span>{pair.kind}</span>
+                    <span>{relationLabel(pair.kind, lang)}</span>
                     <span className="text-muted-foreground">/</span>
                     <span className="text-muted-foreground">
-                      {pair.inverseKind}
+                      {relationLabel(pair.inverseKind, lang)}
                     </span>
                   </button>
                 ))}
@@ -692,7 +696,7 @@ export function CodexDetail({
   entry: Entry;
   onClose: () => void;
 }) {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const toast = useToast();
   const { go } = useAppNavigation();
   const { root } = useWorkspace();
@@ -908,8 +912,8 @@ export function CodexDetail({
   }
 
   return (
-    <div className="bg-neutral-50 dark:bg-neutral-700 flex h-full min-h-0 flex-col">
-      <header className="bg-neutral-50 dark:bg-neutral-700 flex shrink-0 items-center gap-2 border-b px-3 py-2">
+    <div className="bg-background flex h-full min-h-0 flex-col">
+      <header className="bg-background flex shrink-0 items-center gap-2 border-b px-3 py-2">
         <span
           className="bg-muted flex size-7 shrink-0 items-center justify-center rounded-md"
           style={{ color: colorOf(draft.typeId) }}
@@ -918,7 +922,10 @@ export function CodexDetail({
           <TypeGlyph icon={type?.icon} className="size-3.5" />
         </span>
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <h2 className="min-w-0 truncate text-base font-semibold">
+          <h2
+            className="min-w-0 truncate text-base font-semibold"
+            style={{ color: colorOf(draft.typeId) }}
+          >
             {draft.name || "-"}
           </h2>
           <span
@@ -1028,6 +1035,7 @@ export function CodexDetail({
                     >
                       <FieldItem
                         field={field}
+                        typeId={draft.typeId}
                         value={draft.fields[field.key]}
                         onChange={(value) =>
                           updateDraft(patchField(draft, field.key, value))
@@ -1091,6 +1099,7 @@ export function CodexDetail({
                     <FieldItem
                       key={field.key}
                       field={field}
+                      typeId={draft.typeId}
                       value={draft.fields[field.key]}
                       onChange={(value) =>
                         updateDraft(patchField(draft, field.key, value))
@@ -1117,11 +1126,12 @@ export function CodexDetail({
                         style={{ backgroundColor: colorOf(other!.typeId) }}
                       />
                       <span className="text-muted-foreground w-14 shrink-0 truncate text-[11px]">
-                        {kind}
+                        {relationLabel(kind, lang)}
                       </span>
                       <button
                         type="button"
                         className="min-w-0 flex-1 truncate text-left text-sm hover:underline"
+                        style={{ color: colorOf(other!.typeId) }}
                         onClick={() => {
                           setCurrentEntryId(other!.id);
                         }}

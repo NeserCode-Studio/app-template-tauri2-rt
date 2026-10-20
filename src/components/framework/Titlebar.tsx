@@ -16,9 +16,7 @@ import {
   BookOpen,
   Check,
   ChevronDown,
-  Database,
   Home,
-  PenLine,
 } from "lucide-react";
 import { useContext } from "react";
 import { ThemeContext } from "@/contexts/theme";
@@ -68,18 +66,6 @@ export default function Titlebar() {
       labelKey: APP_PAGE_LABEL_KEYS.library,
       icon: BookOpen,
       enabled: canOpenPage("library"),
-    },
-    {
-      page: "editor",
-      labelKey: APP_PAGE_LABEL_KEYS.editor,
-      icon: PenLine,
-      enabled: canOpenPage("editor"),
-    },
-    {
-      page: "codex",
-      labelKey: APP_PAGE_LABEL_KEYS.codex,
-      icon: Database,
-      enabled: canOpenPage("codex"),
     },
   ];
 

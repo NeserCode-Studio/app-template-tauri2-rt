@@ -54,7 +54,7 @@ interface CodexPaneProps {
 /**
  * 编辑器右栏的素材面板：只做写作时的查阅与快速新增。
  *
- * 全量内容、关联关系、类型配色都在工作区素材库页面（`/codex`）里维护。
+ * 全量内容、关联关系、类型配色都在工作区素材库视图里维护。
  * 右栏宽度只有 300px 左右，条目一多塞不下搜索也塞不下关系，
  * 所以这里给一个跳转按钮而不是复制一套编辑表单。
  */
@@ -219,7 +219,7 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
           className="size-8 shrink-0"
           aria-label={t("Codex.library.title")}
           title={t("Codex.library.title")}
-          onClick={() => go("codex")}
+          onClick={() => go("library", { workspaceView: "materials" })}
         >
           <ExternalLink className="icon-sm" />
         </Button>
@@ -354,7 +354,12 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
                       className="size-2 shrink-0 rounded-full"
                       style={{ backgroundColor: colorOf(e.typeId) }}
                     />
-                    <span className="truncate">{e.name}</span>
+                    <span
+                      className="truncate"
+                      style={{ color: colorOf(e.typeId) }}
+                    >
+                      {e.name}
+                    </span>
                     {e.aliases[0] ? (
                       <span className="text-muted-foreground/60 ml-1 shrink-0 truncate text-[10px]">
                         / {e.aliases[0]}
@@ -397,7 +402,12 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
               className="size-2 shrink-0 rounded-full"
               style={{ backgroundColor: colorOf(current.typeId) }}
             />
-            <span className="truncate text-sm font-medium">{current.name}</span>
+            <span
+              className="truncate text-sm font-medium"
+              style={{ color: colorOf(current.typeId) }}
+            >
+              {current.name}
+            </span>
             <span className="text-muted-foreground/60 ml-auto shrink-0 text-[10px]">
               {typeLabel(
                 typeConfigs.find((type) => type.id === current.typeId),

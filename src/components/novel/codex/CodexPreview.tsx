@@ -5,6 +5,8 @@ import { useI18n } from "@/composables";
 import { useCodex } from "@/contexts/codex";
 import { useLibrary } from "@/contexts/library";
 import {
+  fieldLabel,
+  relationLabel,
   typeLabel,
   type Entry,
   type FieldTemplate,
@@ -63,7 +65,7 @@ export function CodexPreview({
   onEdit: () => void;
   onSelectEntry: (entryId: string) => void;
 }) {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const { works } = useLibrary();
   const { entries, relations, mentions, typeConfigs, colorOf } = useCodex();
 
@@ -149,7 +151,10 @@ export function CodexPreview({
             <Pencil className="size-3.5" />
           </Button>
         </div>
-        <h2 className="mt-2 text-base leading-tight font-semibold">
+        <h2
+          className="mt-2 text-base leading-tight font-semibold"
+          style={{ color: colorOf(entry.typeId) }}
+        >
           {entry.name}
         </h2>
       </header>
@@ -185,7 +190,7 @@ export function CodexPreview({
               {fields.map((field: FieldTemplate) => (
                 <div key={field.key} className="grid grid-cols-[5.5rem_1fr] gap-2">
                   <dt className="text-muted-foreground truncate text-[11px]">
-                    {field.label || field.key}
+                    {fieldLabel(entry.typeId, field, lang)}
                   </dt>
                   <dd className="line-clamp-3 text-[13px] leading-relaxed">
                     {fieldValueText(entry.fields[field.key], entries)}
@@ -219,9 +224,12 @@ export function CodexPreview({
                     style={{ backgroundColor: colorOf(other.typeId) }}
                   />
                   <span className="text-muted-foreground w-14 shrink-0 truncate text-[11px]">
-                    {kind}
+                    {relationLabel(kind, lang)}
                   </span>
-                  <span className="min-w-0 flex-1 truncate text-xs">
+                  <span
+                    className="min-w-0 flex-1 truncate text-xs"
+                    style={{ color: colorOf(other.typeId) }}
+                  >
                     {other.name}
                   </span>
                 </button>

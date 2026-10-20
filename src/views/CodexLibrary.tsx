@@ -212,7 +212,7 @@ function TimelineView({
               ].join(" ")}
             />
             <span
-              className="bg-neutral-50 dark:bg-neutral-700 absolute top-[15px] left-[3px] size-2.5 rounded-full border-2"
+              className="bg-background absolute top-[15px] left-[3px] size-2.5 rounded-full border-2"
               style={{ borderColor: color }}
             />
             <button
@@ -250,7 +250,12 @@ function TimelineView({
                   style={{ backgroundColor: color }}
                 />
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{event.name}</p>
+                  <p
+                    className="truncate text-sm font-medium"
+                    style={{ color }}
+                  >
+                    {event.name}
+                  </p>
                   <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
                     {event.summary || event.body || t("Codex.summaryEmpty")}
                   </p>
@@ -364,7 +369,10 @@ function EntryCard({
         <span className="shrink-0" style={{ color }}>
           <TypeGlyph icon={type?.icon} className="size-4" />
         </span>
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+        <span
+          className="min-w-0 flex-1 truncate text-sm font-medium"
+          style={{ color }}
+        >
           {entry.name || "-"}
         </span>
         {conflict ? (
@@ -431,7 +439,12 @@ function EntryRow({
           className="size-2 shrink-0 rounded-full"
           style={{ backgroundColor: colorOf(entry.typeId) }}
         />
-        <span className="truncate font-medium">{entry.name}</span>
+        <span
+          className="truncate font-medium"
+          style={{ color: colorOf(entry.typeId) }}
+        >
+          {entry.name}
+        </span>
         {conflict ? (
           <AlertTriangle className="size-3 shrink-0 text-amber-500" />
         ) : null}
@@ -574,7 +587,11 @@ function EmptyState({
   );
 }
 
-export default function CodexLibrary() {
+export default function CodexLibrary({
+  embedded = false,
+}: {
+  embedded?: boolean;
+}) {
   const { t } = useI18n();
   const toast = useToast();
   const narrow = useNarrowLayout();
@@ -1081,7 +1098,12 @@ export default function CodexLibrary() {
           narrow ? "flex-1" : "",
         ].join(" ")}
       >
-        <h1 className="truncate text-lg font-semibold">
+        <h1
+          className={[
+            "truncate font-semibold",
+            embedded ? "text-base" : "text-lg",
+          ].join(" ")}
+        >
           {t("Codex.library.title")}
         </h1>
         <span className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[11px] tabular-nums">
@@ -1222,8 +1244,8 @@ export default function CodexLibrary() {
   );
 
   return (
-    <div className="bg-neutral-50 dark:bg-neutral-700 flex h-full min-h-0 w-full flex-col overflow-hidden">
-      <header className="bg-neutral-50 dark:bg-neutral-700 shrink-0 border-b">
+    <div className="bg-background flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <header className="bg-background shrink-0 border-b">
         {narrow ? (
           <>
             <div className="flex h-12 items-center gap-1.5 px-3">
@@ -1292,7 +1314,7 @@ export default function CodexLibrary() {
       >
         <DialogContent
           showCloseButton={false}
-          className="bg-neutral-50 dark:bg-neutral-700 flex h-[min(82vh,780px)] w-[min(1080px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
+          className="bg-background flex h-[min(82vh,780px)] w-[min(1080px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none"
         >
           <DialogTitle className="sr-only">
             {current?.name || t("Codex.library.title")}

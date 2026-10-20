@@ -812,7 +812,7 @@ export default function Editor() {
                 onDelete={() => setPendingDelete(chapter.id)}
                 onOpenCodexEntry={(entryId) => {
                   setCurrentEntryId(entryId);
-                  go("codex");
+                  go("library", { workspaceView: "materials" });
                 }}
               />
             ) : (

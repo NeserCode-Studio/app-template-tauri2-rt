@@ -129,7 +129,7 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="border-border/70 border-y py-7">
+        <section className="py-7">
           <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
             <div className="min-w-0">
               <div className="row-label">
@@ -154,7 +154,12 @@ export default function Home() {
                       <BookOpen className="icon-md" />
                       {t("Library.action.continue")}
                     </Button>
-                    <Button variant="outline" onClick={() => go("codex")}>
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        go("library", { workspaceView: "materials" })
+                      }
+                    >
                       <Database className="icon-md" />
                       {t("Codex.library.title")}
                     </Button>
