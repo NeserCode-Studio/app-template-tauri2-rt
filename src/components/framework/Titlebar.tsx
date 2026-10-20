@@ -83,7 +83,7 @@ export default function Titlebar() {
 
   return (
     <div
-      className="fixed top-0 z-50 flex h-8 w-screen flex-row items-center justify-between border-b border-neutral-400 bg-white pl-2 shadow-sm transition-colors duration-100 ease-in-out dark:border-neutral-600 dark:bg-black"
+      className="bg-background fixed top-0 z-50 flex h-8 w-screen flex-row items-center justify-between border-b border-neutral-400 pl-2 shadow-sm transition-colors duration-100 ease-in-out dark:border-neutral-600"
       data-tauri-drag-region
     >
       <Menubar className="h-6 w-fit gap-1 rounded-none border-0 bg-transparent p-0 text-neutral-600 shadow-none transition-colors duration-100 ease-in-out dark:text-neutral-200">

@@ -71,7 +71,7 @@ export default function Home() {
   }, [go, open, pendingOpen]);
 
   return (
-    <div className="view scrollbar-app bg-neutral-50 h-full w-full overflow-y-auto dark:bg-neutral-700">
+    <div className="view scrollbar-app bg-background h-full w-full overflow-y-auto">
       <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center px-6 py-12 sm:px-8">
         <div className="row-label">
           <BookMarked className="icon-sm" />
