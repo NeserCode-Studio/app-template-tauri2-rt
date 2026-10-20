@@ -543,7 +543,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
         <div
           ref={scrollRef}
           onWheel={turnEnabled ? handleWheel : undefined}
-          className="scrollbar-app h-full overflow-y-auto px-6 py-4"
+          className="scrollbar-app h-full overflow-y-auto px-6 py-12"
         >
           <ChapterBody
             cards={c.cards}
