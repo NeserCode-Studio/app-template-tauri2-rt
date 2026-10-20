@@ -12,6 +12,8 @@ export interface WorkspaceContextValue {
   root: string | null;
   /** 最近使用的工作区路径列表（localStorage 持久化）。 */
   recent: string[];
+  /** 最近一次打开各工作区的时间，按路径索引。 */
+  recentOpenedAt: Record<string, number>;
   /** 是否已选择工作区。 */
   isOpen: boolean;
   /** 打开工作区（写入 root 与最近列表）。 */
@@ -31,6 +33,7 @@ export interface WorkspaceContextValue {
 export const WorkspaceContext = createContext<WorkspaceContextValue>({
   root: null,
   recent: [],
+  recentOpenedAt: {},
   isOpen: false,
   open: () => {},
   close: () => {},

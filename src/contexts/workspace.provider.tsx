@@ -12,6 +12,7 @@ import { moveWorkspaceToTrash } from "@/services/trash";
 const log = createLogger("WorkspaceProvider");
 
 const RECENT_KEY = "novels-yes:recent-workspaces";
+const RECENT_OPENED_KEY = "novels-yes:recent-workspace-opened";
 const CURRENT_KEY = "novels-yes:current-workspace";
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
@@ -25,14 +26,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const [recent, setRecent] = useLocalStorageState<string[]>(RECENT_KEY, {
     defaultValue: [],
   });
+  const [recentOpenedAt, setRecentOpenedAt] = useLocalStorageState<
+    Record<string, number>
+  >(RECENT_OPENED_KEY, { defaultValue: {} });
 
   const open = useCallback(
     (path: string) => {
+      const openedAt = Date.now();
       setRoot(path);
       setRecent((prev) => [path, ...(prev ?? []).filter((p) => p !== path)].slice(0, 10));
+      setRecentOpenedAt((prev) => ({ ...(prev ?? {}), [path]: openedAt }));
       log.info("workspace opened", path);
     },
-    [setRecent, setRoot]
+    [setRecent, setRecentOpenedAt, setRoot]
   );
 
   const close = useCallback(() => setRoot(null), [setRoot]);
@@ -64,9 +70,14 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     await moveWorkspaceToTrash(root, root);
     /* 从最近列表里摘掉：它已经不在"最近用过"的状态下了。 */
     setRecent((prev) => (prev ?? []).filter((p) => p !== root));
+    setRecentOpenedAt((prev) => {
+      const next = { ...(prev ?? {}) };
+      delete next[root];
+      return next;
+    });
     setRoot(null);
     log.info("workspace moved to trash", root);
-  }, [root, setRecent, setRoot]);
+  }, [root, setRecent, setRecentOpenedAt, setRoot]);
 
   /** 弹出选择框并打开；用户取消则返回 null。 */
   const pickPath = useCallback(async (): Promise<string | null> => {
@@ -83,6 +94,7 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     () => ({
       root,
       recent: recent ?? [],
+      recentOpenedAt: recentOpenedAt ?? {},
       isOpen: root !== null,
       open,
       close,
@@ -91,7 +103,17 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       reveal,
       deleteWorkspace,
     }),
-    [root, recent, open, close, pick, pickPath, reveal, deleteWorkspace]
+    [
+      root,
+      recent,
+      recentOpenedAt,
+      open,
+      close,
+      pick,
+      pickPath,
+      reveal,
+      deleteWorkspace,
+    ]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

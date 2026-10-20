@@ -9,12 +9,11 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { useI18n } from "@/composables";
 import { useWorkspace } from "@/contexts/workspace";
 import { useAppNavigation } from "@/lib/navigation";
 
-const OPEN_DELAY_MS = 1500;
+const OPEN_DELAY_MS = 2500;
 
 type WorkspaceOpenIntent = "create" | "change" | "recent";
 
@@ -23,10 +22,49 @@ interface PendingWorkspaceOpen {
   intent: WorkspaceOpenIntent;
 }
 
+function workspaceName(path: string): string {
+  const normalized = path.replace(/[\\/]+$/, "");
+  return normalized.split(/[\\/]/).pop() || path;
+}
+
+function openedAtLabel(
+  timestamp: number | undefined,
+  lang: string,
+  fallback: string
+): string {
+  if (!timestamp) return fallback;
+  const formatter = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
+  const elapsed = timestamp - Date.now();
+  const minute = 60_000;
+  const hour = minute * 60;
+  const day = hour * 24;
+  if (Math.abs(elapsed) < hour) {
+    return formatter.format(Math.round(elapsed / minute), "minute");
+  }
+  if (Math.abs(elapsed) < day) {
+    return formatter.format(Math.round(elapsed / hour), "hour");
+  }
+  if (Math.abs(elapsed) < day * 30) {
+    return formatter.format(Math.round(elapsed / day), "day");
+  }
+  return new Intl.DateTimeFormat(lang, {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  }).format(timestamp);
+}
+
 export default function Home() {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const { go } = useAppNavigation();
-  const { root, recent, isOpen, pickPath, open } = useWorkspace();
+  const {
+    root,
+    recent,
+    recentOpenedAt,
+    isOpen,
+    pickPath,
+    open,
+  } = useWorkspace();
   const hasWorkspace = Boolean(isOpen && root);
   const [pendingOpen, setPendingOpen] =
     useState<PendingWorkspaceOpen | null>(null);
@@ -62,8 +100,11 @@ export default function Home() {
         frame = requestAnimationFrame(tick);
         return;
       }
-      open(pendingOpen.path);
-      go("library");
+      setProgress(100);
+      frame = requestAnimationFrame(() => {
+        open(pendingOpen.path);
+        go("library");
+      });
     };
 
     frame = requestAnimationFrame(tick);
@@ -91,8 +132,18 @@ export default function Home() {
         <div className="border-border/70 mt-8 border-y py-7">
           <div className="flex flex-wrap gap-2">
             {hasWorkspace ? (
-              <Button size="lg" onClick={() => go("library")}>
-                <BookOpen className="icon-md" />
+              <Button
+                size="lg"
+                disabled={Boolean(pendingOpen)}
+                onClick={() => {
+                  if (root) queueWorkspaceOpen(root, "recent");
+                }}
+              >
+                {pendingOpen?.path === root ? (
+                  <LoaderCircle className="icon-md animate-spin" />
+                ) : (
+                  <BookOpen className="icon-md" />
+                )}
                 {t("Home.openLibrary")}
               </Button>
             ) : null}
@@ -126,9 +177,14 @@ export default function Home() {
             <div
               role="status"
               aria-live="polite"
-              className="bg-muted/30 mt-5 rounded-md border px-3 py-2.5"
+              className="relative mt-5 overflow-hidden rounded-md border px-3 py-2.5"
             >
-              <div className="flex items-center gap-3">
+              <span
+                aria-hidden="true"
+                className="bg-primary/10 absolute inset-y-0 left-0 w-full origin-left"
+                style={{ transform: `scaleX(${progress / 100})` }}
+              />
+              <div className="relative z-10 flex items-center gap-3">
                 <LoaderCircle className="text-muted-foreground size-4 shrink-0 animate-spin" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">
@@ -145,11 +201,6 @@ export default function Home() {
                   {Math.round(progress)}%
                 </span>
               </div>
-              <Progress
-                value={progress}
-                className="mt-2.5 h-1.5"
-                aria-label={t("Home.openingWorkspace")}
-              />
             </div>
           ) : null}
 
@@ -157,26 +208,62 @@ export default function Home() {
             <section className="mt-7">
               <h2 className="row-label">{t("Library.workspace.recent")}</h2>
               <div className="mt-3 flex flex-col gap-1">
-                {recent.map((path) => (
-                  <button
-                    key={path}
-                    type="button"
-                    disabled={Boolean(pendingOpen)}
-                    onClick={() => queueWorkspaceOpen(path, "recent")}
-                    className="group hover:bg-accent/55 flex w-full items-center gap-3 rounded-md border border-transparent px-2.5 py-2 text-left transition-colors disabled:pointer-events-none disabled:opacity-55 aria-busy:border-primary/25 aria-busy:bg-accent/45"
-                    aria-busy={pendingOpen?.path === path}
-                  >
-                    <FolderOpen className="icon-sm text-muted-foreground/60 shrink-0" />
-                    <span className="text-muted-foreground group-hover:text-foreground min-w-0 flex-1 truncate text-sm">
-                      {path}
-                    </span>
-                    {pendingOpen?.path === path ? (
-                      <LoaderCircle className="text-muted-foreground size-3.5 shrink-0 animate-spin" />
-                    ) : (
-                      <ChevronRight className="text-muted-foreground/40 size-3.5 shrink-0" />
-                    )}
-                  </button>
-                ))}
+                {recent.map((path) => {
+                  const current = isOpen && root === path;
+                  const busy = pendingOpen?.path === path;
+                  return (
+                    <button
+                      key={path}
+                      type="button"
+                      disabled={Boolean(pendingOpen)}
+                      onClick={() => queueWorkspaceOpen(path, "recent")}
+                      className="group hover:bg-accent/55 relative flex w-full items-start gap-3 overflow-hidden rounded-md border border-transparent px-2.5 py-2.5 text-left transition-colors disabled:pointer-events-none disabled:opacity-55 aria-busy:border-primary/25"
+                      aria-busy={busy}
+                    >
+                      {busy ? (
+                        <span
+                          aria-hidden="true"
+                          className="bg-primary/10 absolute inset-y-0 left-0 w-full origin-left"
+                          style={{ transform: `scaleX(${progress / 100})` }}
+                        />
+                      ) : null}
+                      <FolderOpen className="text-muted-foreground/60 relative z-10 mt-0.5 size-4 shrink-0" />
+                      <span className="relative z-10 min-w-0 flex-1">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="group-hover:text-foreground truncate text-sm font-medium">
+                            {workspaceName(path)}
+                          </span>
+                          {current ? (
+                            <span className="bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 shrink-0 rounded border border-emerald-600/20 px-1.5 py-0.5 text-[10px] font-medium">
+                              {t("Home.currentWorkspace")}
+                            </span>
+                          ) : null}
+                        </span>
+                        <span
+                          className="text-muted-foreground/70 mt-0.5 block truncate text-[11px]"
+                          title={path}
+                        >
+                          {path}
+                        </span>
+                        <span className="text-muted-foreground/55 mt-1 block text-[11px]">
+                          {t("Home.openedAt").replace(
+                            "{time}",
+                            openedAtLabel(
+                              recentOpenedAt[path],
+                              lang,
+                              t("Home.openedUnknown")
+                            )
+                          )}
+                        </span>
+                      </span>
+                      {busy ? (
+                        <LoaderCircle className="text-muted-foreground relative z-10 mt-1 size-3.5 shrink-0 animate-spin" />
+                      ) : (
+                        <ChevronRight className="text-muted-foreground/40 relative z-10 mt-1 size-3.5 shrink-0" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </section>
           ) : null}
