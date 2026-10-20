@@ -744,8 +744,8 @@ export function CodexDetail({
         </div>
       </header>
       <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto">
-        <div className="grid lg:grid-cols-[minmax(0,1fr)_22rem]">
-          <div className="min-w-0">
+        <div className="grid min-h-full lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="min-h-full min-w-0">
             <Section title={t("Codex.overview")}>
               <div className="flex flex-col gap-2.5">
                 <label className="flex flex-col gap-1">
@@ -805,7 +805,7 @@ export function CodexDetail({
             ) : null}
           </div>
 
-          <div className="min-w-0 lg:border-l">
+          <div className="min-h-full min-w-0 lg:border-l">
             {conflicts.length ? (
               <div className="m-3 flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/8 px-2.5 py-2 text-xs text-amber-800 dark:text-amber-300">
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />

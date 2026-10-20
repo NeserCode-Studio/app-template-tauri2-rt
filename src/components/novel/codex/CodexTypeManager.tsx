@@ -568,9 +568,9 @@ export function CodexTypeManager({
             </div>
           </aside>
 
-          <div className="scrollbar-app min-w-0 flex-1 overflow-y-auto">
+          <div className="scrollbar-app flex min-w-0 flex-1 flex-col overflow-y-auto">
             {draft ? (
-              <div className="flex flex-col">
+              <div className="flex min-h-full flex-col">
                 <div className="flex items-center gap-3 border-b px-4 py-2.5">
                   <span
                     className="bg-muted flex size-9 items-center justify-center rounded-lg"
