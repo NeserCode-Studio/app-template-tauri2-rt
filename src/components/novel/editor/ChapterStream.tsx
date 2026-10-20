@@ -108,21 +108,22 @@ function ChapterTurnCue({
         side === "start" ? "top-3" : "bottom-3",
       ].join(" ")}
     >
-      <div className="animate-in fade-in flex max-w-full min-w-0 items-center gap-2.5 rounded-full border border-border/60 bg-muted/45 px-3 py-1.5 text-xs text-muted-foreground shadow-none backdrop-blur-sm duration-150">
-        {side === "start" ? (
-          <ChevronUp className="icon-sm shrink-0 text-muted-foreground/60" />
-        ) : (
-          <ChevronDown className="icon-sm shrink-0 text-muted-foreground/60" />
-        )}
-        <span className="min-w-0 truncate">{label}</span>
+      <div className="animate-in fade-in relative max-w-full min-w-0 overflow-hidden rounded-full border border-border/60 bg-muted/45 text-xs text-muted-foreground shadow-none backdrop-blur-sm duration-150">
         {showProgress ? (
-          <span className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
-            <span
-              className="block h-full rounded-full bg-muted-foreground/35 transition-[width] duration-100 ease-out"
-              style={{ width: `${percent}%` }}
-            />
-          </span>
+          <span
+            aria-hidden="true"
+            className="absolute inset-0 origin-left bg-muted-foreground/15 transition-transform duration-100 ease-out"
+            style={{ transform: `scaleX(${percent / 100})` }}
+          />
         ) : null}
+        <div className="relative z-10 flex min-w-0 items-center gap-2.5 px-3 py-1.5">
+          {side === "start" ? (
+            <ChevronUp className="icon-sm shrink-0 text-muted-foreground/60" />
+          ) : (
+            <ChevronDown className="icon-sm shrink-0 text-muted-foreground/60" />
+          )}
+          <span className="min-w-0 truncate">{label}</span>
+        </div>
       </div>
     </div>
   );
