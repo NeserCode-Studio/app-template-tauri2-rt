@@ -38,6 +38,33 @@ const log = createLogger("ChapterStream");
  */
 const MAX_TURN_STEP = 72;
 const TURN_IDLE_MS = 320;
+const SCROLL_SAVE_DELAY_MS = 180;
+
+function scrollMemoryKey(workId: string, chapterId: string): string {
+  return `novels-yes:editor:scroll:${workId}:${chapterId}`;
+}
+
+function readScrollRatio(key: string): number | null {
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (raw === null) return null;
+    const value = Number(raw);
+    return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeScrollRatio(key: string, ratio: number): void {
+  try {
+    window.localStorage.setItem(
+      key,
+      String(Math.min(1, Math.max(0, ratio)))
+    );
+  } catch {
+    /* 存储被禁用或已满时，滚动记忆退化为本次会话内不可用。 */
+  }
+}
 
 /**
  * 编辑器主区：标题栏 + 单章正文 + 底部输入框。
@@ -79,7 +106,8 @@ export interface ChapterStreamProps {
   onOpenCodexEntry: (entryId: string) => void;
 }
 
-export type ChapterLanding = "start" | "end";
+export type ChapterLanding = "remember" | "start" | "end";
+type ChapterCueSide = "start" | "end";
 
 export interface ChapterStreamHandle {
   appendText: (text: string) => boolean;
@@ -94,7 +122,7 @@ function ChapterTurnCue({
   label,
   showProgress,
 }: {
-  side: ChapterLanding;
+  side: ChapterCueSide;
   progress: number;
   label: string;
   showProgress: boolean;
@@ -135,7 +163,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
       root,
       workId,
       chapter,
-      landing: landingProp = "start",
+      landing: landingProp = "remember",
       onSelectChapter,
       onWordsChange,
       onSaved,
@@ -217,6 +245,9 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
   });
   const turnResetTimer = useRef<number | null>(null);
   const boundarySyncFrame = useRef<number | null>(null);
+  const scrollSaveTimer = useRef<number | null>(null);
+  const lastScrollRatio = useRef(0);
+  const scrollStorageKey = scrollMemoryKey(workId, activeId);
 
   const resetTurnProgress = useCallback(() => {
     if (turnResetTimer.current !== null) {
@@ -286,47 +317,85 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
    * 落点只在这次挂载时取一次。
    *
    * 父级完成导航后会清掉“待落点”标记，后续普通重渲染会把 landing
-   * 改回 start。若 effect 继续监听 landing，它会把刚落到章尾的页面
-   * 再拉回章首；组件本身以 chapter.id 为 key，挂载时捕获一次即可。
+   * 改回 remember。若 effect 继续监听 landing，它会把刚落到章尾的页面
+   * 再拉回旧位置；组件本身以 chapter.id 为 key，挂载时捕获一次即可。
    */
   const initialLanding = useRef(landingProp);
-  /*
-   * 落点守护窗口。
-   *
-   * 切章时 useChapterController 会 focus() 底部输入框，而浏览器
-   * "把聚焦元素滚进视口"是异步的布局行为，会晚于我们设置的 scrollTop
-   * 生效，把刚落到章尾的视口又拽回输入框附近。所以在落点后短暂
-   * 屏蔽 scroll 事件造成的回弹——真人在这一两百毫秒内也滚不出一个手势。
-   */
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
     /*
-     * 必须延一帧：activeId 变化的同一帧里 DOM 还是上一章的内容，
-     * 此刻读 scrollHeight 拿到的是旧章高度，落点会停在中途。
-     * 等 rAF 之后新章已挂入，scrollHeight 才是这一章的。
+     * 必须等新章完成布局：activeId 变化的同一帧里 DOM 仍可能保留旧章的
+     * 内容高度。两帧后再应用落点，章尾与按比例恢复才不会被旧尺寸带偏。
      */
     const target = initialLanding.current;
-    if (target === "start") {
-      log.debug("landing: start", { activeId });
-      el.scrollTop = 0;
-      return;
-    }
-    log.debug("landing: end (deferred one frame)", {
-      activeId,
-      scrollHeight: el.scrollHeight,
-      scrollTop: el.scrollTop,
-    });
-    const raf = requestAnimationFrame(() => {
-      log.debug("landing: end applied", {
-        activeId,
-        scrollHeight: el.scrollHeight,
-        scrollTop: el.scrollTop,
+    let secondFrame = 0;
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+        if (target === "end") {
+          el.scrollTop = maxScroll;
+          lastScrollRatio.current = 1;
+        } else if (target === "start") {
+          el.scrollTop = 0;
+          lastScrollRatio.current = 0;
+        } else {
+          const ratio = readScrollRatio(scrollStorageKey) ?? 0;
+          el.scrollTop = maxScroll * ratio;
+          lastScrollRatio.current = ratio;
+        }
+        log.debug("landing applied", {
+          activeId,
+          target,
+          scrollHeight: el.scrollHeight,
+          scrollTop: el.scrollTop,
+        });
       });
-      el.scrollTop = el.scrollHeight;
     });
-    return () => cancelAnimationFrame(raf);
-  }, [activeId]);
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame !== 0) cancelAnimationFrame(secondFrame);
+    };
+  }, [activeId, scrollStorageKey]);
+
+  /*
+   * 普通阅读位置的记忆与被动的翻章提示相互独立：
+   * 即使关闭边缘提示，切去素材库再回来也应回到原来的段落附近。
+   * 存归一化比例而不是像素值，窗口尺寸或栏宽变化后仍能落在大致同一行。
+   */
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const flush = () => {
+      const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+      const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
+      lastScrollRatio.current = Math.min(1, Math.max(0, ratio));
+      writeScrollRatio(scrollStorageKey, lastScrollRatio.current);
+    };
+
+    const onScroll = () => {
+      if (scrollSaveTimer.current !== null) {
+        window.clearTimeout(scrollSaveTimer.current);
+      }
+      scrollSaveTimer.current = window.setTimeout(() => {
+        scrollSaveTimer.current = null;
+        flush();
+      }, SCROLL_SAVE_DELAY_MS);
+    };
+
+    el.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("pagehide", flush);
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      window.removeEventListener("pagehide", flush);
+      if (scrollSaveTimer.current !== null) {
+        window.clearTimeout(scrollSaveTimer.current);
+        scrollSaveTimer.current = null;
+      }
+      flush();
+    };
+  }, [scrollStorageKey]);
 
   const hasPrevious = activeIndex > 0;
   const hasNext = activeIndex >= 0 && activeIndex < sequence.length - 1;

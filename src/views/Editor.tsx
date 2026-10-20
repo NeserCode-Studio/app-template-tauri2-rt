@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocalStorageState } from "ahooks";
 import {
   ChevronLeft,
   ChevronRight,
@@ -94,11 +95,31 @@ import type { Chapter, OutlineNode } from "@/shared/schema";
 
 const log = createLogger("Editor");
 
+type SideTab = "chapter" | "codex" | "progress";
+
+const OUTLINE_WIDTH_MIN = 12;
+const OUTLINE_WIDTH_MAX = 24;
+const OUTLINE_WIDTH_DEFAULT = 18;
+const SIDE_WIDTH_MIN = 16;
+const SIDE_WIDTH_MAX = 39;
+const SIDE_WIDTH_DEFAULT = 24;
+const CENTER_WIDTH_MIN = 36;
+
+function clampPanelWidth(
+  value: number,
+  min: number,
+  max: number,
+  fallback: number
+): number {
+  if (!Number.isFinite(value)) return fallback;
+  return Math.min(max, Math.max(min, value));
+}
+
 /**
  * 编辑器主视图：三栏布局（结构树 / 卡片区 / 右栏）。
  *
- * 宽度：左栏 240px（180~360 可拖），右栏 300px（240~480 可拖），
- * 分隔沿用模板已依赖的 react-resizable-panels。
+ * 宽度按面板比例持久化：左栏 12%~24%，右栏 16%~39%。
+ * 分隔沿用模板已依赖的 react-resizable-panels，中栏保留至少 36%。
  */
 export default function Editor() {
   const { t } = useI18n();
@@ -130,7 +151,14 @@ export default function Editor() {
   /** 待确认删除的卷 id（连同其下所有章进回收站）。 */
   const [pendingVolumeDelete, setPendingVolumeDelete] = useState<string | null>(null);
   /** 右栏页签：章节信息 / 素材库。 */
-  const [sideTab, setSideTab] = useState<"chapter" | "codex" | "progress">("chapter");
+  const [storedSideTab, setSideTab] = useLocalStorageState<SideTab>(
+    "novels-yes:editor:side-tab",
+    { defaultValue: "chapter" }
+  );
+  const sideTab: SideTab =
+    storedSideTab === "codex" || storedSideTab === "progress"
+      ? storedSideTab
+      : "chapter";
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   /** 视图模式（普通 / 专注 / 打字机 / 禅）。 */
@@ -155,32 +183,120 @@ export default function Editor() {
     chapterId: string;
     landing: ChapterLanding;
   } | null>(null);
-  const [outlineCollapsed, setOutlineCollapsed] = useState(false);
-  const [sideCollapsed, setSideCollapsed] = useState(false);
+  const [outlineCollapsed, setOutlineCollapsed] = useLocalStorageState<boolean>(
+    "novels-yes:editor:outline-collapsed",
+    { defaultValue: false }
+  );
+  const [sideCollapsed, setSideCollapsed] = useLocalStorageState<boolean>(
+    "novels-yes:editor:side-collapsed",
+    { defaultValue: false }
+  );
+  const [storedOutlineWidth, setOutlineWidth] = useLocalStorageState<number>(
+    "novels-yes:editor:outline-width",
+    { defaultValue: OUTLINE_WIDTH_DEFAULT }
+  );
+  const [storedSideWidth, setSideWidth] = useLocalStorageState<number>(
+    "novels-yes:editor:side-width",
+    { defaultValue: SIDE_WIDTH_DEFAULT }
+  );
+  const outlineWidth = clampPanelWidth(
+    storedOutlineWidth,
+    OUTLINE_WIDTH_MIN,
+    OUTLINE_WIDTH_MAX,
+    OUTLINE_WIDTH_DEFAULT
+  );
+  const sideWidth = clampPanelWidth(
+    storedSideWidth,
+    SIDE_WIDTH_MIN,
+    SIDE_WIDTH_MAX,
+    SIDE_WIDTH_DEFAULT
+  );
+  const outlineDefaultSize = outlineCollapsed ? 0 : outlineWidth;
+  const sideDefaultSize = sideCollapsed ? 0 : sideWidth;
+  const centerDefaultSize = Math.max(
+    CENTER_WIDTH_MIN,
+    100 - outlineDefaultSize - sideDefaultSize
+  );
+  const outlineWidthTimer = useRef<number | null>(null);
+  const sideWidthTimer = useRef<number | null>(null);
+  const pendingOutlineWidth = useRef<number | null>(null);
+  const pendingSideWidth = useRef<number | null>(null);
 
   const toggleOutline = useCallback(() => {
     const panel = outlinePanelRef.current;
     if (!panel) return;
     if (panel.isCollapsed()) {
-      panel.expand(12);
+      panel.expand(outlineWidth);
       setOutlineCollapsed(false);
     } else {
       panel.collapse();
       setOutlineCollapsed(true);
     }
-  }, []);
+  }, [outlineWidth, setOutlineCollapsed]);
 
   const toggleSide = useCallback(() => {
     const panel = sidePanelRef.current;
     if (!panel) return;
     if (panel.isCollapsed()) {
-      panel.expand(16);
+      panel.expand(sideWidth);
       setSideCollapsed(false);
     } else {
       panel.collapse();
       setSideCollapsed(true);
     }
-  }, []);
+  }, [setSideCollapsed, sideWidth]);
+
+  const persistOutlineWidth = useCallback(
+    (size: number) => {
+      if (size < OUTLINE_WIDTH_MIN || size > OUTLINE_WIDTH_MAX) return;
+      pendingOutlineWidth.current = size;
+      if (outlineWidthTimer.current !== null) {
+        window.clearTimeout(outlineWidthTimer.current);
+      }
+      outlineWidthTimer.current = window.setTimeout(() => {
+        outlineWidthTimer.current = null;
+        const next = pendingOutlineWidth.current;
+        pendingOutlineWidth.current = null;
+        if (next !== null) setOutlineWidth(Math.round(next * 10) / 10);
+      }, 180);
+    },
+    [setOutlineWidth]
+  );
+
+  const persistSideWidth = useCallback(
+    (size: number) => {
+      if (size < SIDE_WIDTH_MIN || size > SIDE_WIDTH_MAX) return;
+      pendingSideWidth.current = size;
+      if (sideWidthTimer.current !== null) {
+        window.clearTimeout(sideWidthTimer.current);
+      }
+      sideWidthTimer.current = window.setTimeout(() => {
+        sideWidthTimer.current = null;
+        const next = pendingSideWidth.current;
+        pendingSideWidth.current = null;
+        if (next !== null) setSideWidth(Math.round(next * 10) / 10);
+      }, 180);
+    },
+    [setSideWidth]
+  );
+
+  useEffect(
+    () => () => {
+      if (outlineWidthTimer.current !== null) {
+        window.clearTimeout(outlineWidthTimer.current);
+      }
+      if (sideWidthTimer.current !== null) {
+        window.clearTimeout(sideWidthTimer.current);
+      }
+      if (pendingOutlineWidth.current !== null) {
+        setOutlineWidth(Math.round(pendingOutlineWidth.current * 10) / 10);
+      }
+      if (pendingSideWidth.current !== null) {
+        setSideWidth(Math.round(pendingSideWidth.current * 10) / 10);
+      }
+    },
+    [setOutlineWidth, setSideWidth]
+  );
 
   const appendCodexName = useCallback((text: string) => {
     chapterStreamRef.current?.appendText(text);
@@ -189,11 +305,11 @@ export default function Editor() {
   /**
    * 所有显式章节导航的入口。
    *
-   * 普通点击默认落章首；滚轮上滑和“上一章”按钮传 end。待落点绑定目标章，
-   * 因而结构树、搜索等直接改 currentChapterId 的路径不会误继承上一次 end。
+   * 普通点击恢复该章上次阅读位置；滚轮上滑和“上一章”按钮显式传 end。
+   * 待落点绑定目标章，因而结构树、搜索等路径不会误继承上一次 end。
    */
   const selectChapter = useCallback(
-    (id: string | null, landing: ChapterLanding = "start") => {
+    (id: string | null, landing: ChapterLanding = "remember") => {
       pendingLandingRef.current = id ? { chapterId: id, landing } : null;
       setCurrentChapterId(id);
     },
@@ -206,15 +322,6 @@ export default function Editor() {
     if (!added) throw new Error("chapter import target is unavailable");
     toast.success("Import.toast.imported");
   }, [toast]);
-
-  /* 禅模式会移除两侧面板，切回来时要恢复控件显示的"已收起"状态。 */
-  useEffect(() => {
-    if (!zen) return;
-    outlinePanelRef.current?.expand();
-    sidePanelRef.current?.expand();
-    setOutlineCollapsed(false);
-    setSideCollapsed(false);
-  }, [zen]);
 
   /* 作品切换后回到作品库，避免空编辑器。 */
   useEffect(() => {
@@ -232,7 +339,7 @@ export default function Editor() {
       return;
     }
     if (!chapters.some((c) => c.id === currentChapterId)) {
-      selectChapter(chapters[0].id, "start");
+      selectChapter(chapters[0].id, "remember");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root, currentWorkId, chapterIdsKey]);
@@ -634,11 +741,12 @@ export default function Editor() {
           ref={outlinePanelRef}
           collapsible
           collapsedSize={0}
-          defaultSize={18}
-          minSize={12}
-          maxSize={24}
+          defaultSize={outlineDefaultSize}
+          minSize={OUTLINE_WIDTH_MIN}
+          maxSize={OUTLINE_WIDTH_MAX}
           onCollapse={() => setOutlineCollapsed(true)}
           onExpand={() => setOutlineCollapsed(false)}
+          onResize={persistOutlineWidth}
         >
           {/*
            * 面板自身不再画边框：ResizableHandle 就是那道分隔线。
@@ -661,7 +769,7 @@ export default function Editor() {
         ) : null}
 
         {/* 中栏：卡片区 */}
-        <ResizablePanel defaultSize={58} minSize={40}>
+        <ResizablePanel defaultSize={centerDefaultSize} minSize={CENTER_WIDTH_MIN}>
           {/*
            * 必须包一层「flex + h-full」。
            *
@@ -687,7 +795,7 @@ export default function Editor() {
                   chapter &&
                   pendingLandingRef.current?.chapterId === chapter.id
                     ? pendingLandingRef.current.landing
-                    : "start"
+                    : "remember"
                 }
                 onSelectChapter={selectChapter}
                 key={chapter.id}
@@ -728,11 +836,12 @@ export default function Editor() {
           ref={sidePanelRef}
           collapsible
           collapsedSize={0}
-          defaultSize={24}
-          minSize={16}
-          maxSize={30}
+          defaultSize={sideDefaultSize}
+          minSize={SIDE_WIDTH_MIN}
+          maxSize={SIDE_WIDTH_MAX}
           onCollapse={() => setSideCollapsed(true)}
           onExpand={() => setSideCollapsed(false)}
+          onResize={persistSideWidth}
         >
           {/* 同左栏：分隔线由 ResizableHandle 负责，这里不再重复画。 */}
           <div className="flex h-full min-h-0 flex-col gap-3 p-4">
@@ -928,7 +1037,7 @@ export default function Editor() {
                   </div>
                   <DraftBox
                     onOpenChapter={(chapterId) => {
-                      selectChapter(chapterId, "start");
+                      selectChapter(chapterId, "remember");
                       setDraftOpen(false);
                     }}
                   />
