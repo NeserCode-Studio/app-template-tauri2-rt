@@ -86,7 +86,9 @@ export default function TextContextMenu({
 
   return (
     <ContextMenu>
-      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuTrigger asChild data-preserve-context-menu>
+        {children}
+      </ContextMenuTrigger>
       <ContextMenuContent className="w-52">
         {selected ? (
           <>

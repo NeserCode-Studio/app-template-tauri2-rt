@@ -19,6 +19,7 @@ import { TitleContext } from "@/contexts/title";
 import { I18nContext } from "@/contexts/i18n";
 import { lifecycle } from "@/lifecycle";
 import SettingsDialog from "@/components/framework/SettingsDialog";
+import { AppNavigationContextMenu } from "@/components/framework/AppNavigationContextMenu";
 import AboutDialog from "@/components/framework/AboutDialog";
 import { SettingsDialogContext } from "@/contexts/settings";
 import { createLogger } from "@/lib/logger";
@@ -196,6 +197,7 @@ function App() {
                   <Titlebar />
                   <CommandDialog />
 
+                  <AppNavigationContextMenu>
                   <div id="container" className="app-body">
                     <Suspense fallback={null}>
                       <PageTransition>
@@ -226,6 +228,7 @@ function App() {
                       </PageTransition>
                     </Suspense>
                   </div>
+                  </AppNavigationContextMenu>
                 </main>
                 <SettingsDialog
                   open={settingsOpen}
