@@ -1,5 +1,8 @@
 /**
- * WorkspaceProvider：持有工作区 root 状态，并在应用就绪时恢复上次工作区。
+ * WorkspaceProvider：持有当前会话的工作区状态。
+ *
+ * 刷新时故意遗忘当前工作区，只保留最近工作区列表；这样首页始终要求
+ * 用户重新确认要进入的库，而不会自动把上一次选择当成当前上下文。
  */
 
 import { useCallback, useMemo, useState, type ReactNode } from "react";
@@ -13,41 +16,21 @@ const log = createLogger("WorkspaceProvider");
 
 const RECENT_KEY = "novels-yes:recent-workspaces";
 const RECENT_OPENED_KEY = "novels-yes:recent-workspace-opened";
-const CURRENT_KEY = "novels-yes:current-workspace";
+const LEGACY_CURRENT_KEY = "novels-yes:current-workspace";
 
-function readStoredRoot(): string | null {
+function forgetLegacyRoot(): void {
   try {
-    const raw = localStorage.getItem(CURRENT_KEY);
-    if (!raw || raw === "null") return null;
-    try {
-      const parsed = JSON.parse(raw);
-      return typeof parsed === "string" && parsed ? parsed : null;
-    } catch {
-      return raw.trim() || null;
-    }
-  } catch {
-    return null;
-  }
-}
-
-function persistRoot(path: string | null): void {
-  try {
-    if (path) {
-      localStorage.setItem(CURRENT_KEY, JSON.stringify(path));
-    } else {
-      localStorage.removeItem(CURRENT_KEY);
-    }
+    localStorage.removeItem(LEGACY_CURRENT_KEY);
   } catch (err) {
-    log.warn("workspace root persistence failed", err);
+    log.warn("legacy workspace root cleanup failed", err);
   }
 }
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  /*
-   * root 是页面上下文的一部分。只记“最近工作区”还不够：刷新时若 root
-   * 回到 null，/library 与 /editor 会立刻被重定向，用户刚选的库像丢了一样。
-   */
-  const [root, setRootState] = useState<string | null>(readStoredRoot);
+  const [root, setRootState] = useState<string | null>(() => {
+    forgetLegacyRoot();
+    return null;
+  });
   const [recent, setRecent] = useLocalStorageState<string[]>(RECENT_KEY, {
     defaultValue: [],
   });
@@ -56,7 +39,6 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   >(RECENT_OPENED_KEY, { defaultValue: {} });
 
   const setRoot = useCallback((path: string | null) => {
-    persistRoot(path);
     setRootState(path);
   }, []);
 

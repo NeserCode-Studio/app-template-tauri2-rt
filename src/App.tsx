@@ -35,6 +35,10 @@ import {
   pageFromPath,
   type NavigationLocationState,
 } from "@/lib/navigation";
+import {
+  interceptWorkspaceDialog,
+  interceptWorkspaceNavigation,
+} from "@/lib/workspace-open";
 
 const log = createLogger("App");
 
@@ -70,6 +74,7 @@ function App() {
   const location = useLocation();
   const navigator = useCallback(
     (path: string) => {
+      if (interceptWorkspaceNavigation(path)) return;
       const from = pageFromPath(location.pathname);
       const to = pageFromPath(path);
       navigate(path, {
@@ -95,9 +100,15 @@ function App() {
 
   /* 弹窗状态 */
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const openSettings = useCallback(() => {
+    if (interceptWorkspaceDialog("settings")) return;
+    setSettingsOpen(true);
+  }, []);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const openAbout = useCallback(() => setAboutOpen(true), []);
+  const openAbout = useCallback(() => {
+    if (interceptWorkspaceDialog("about")) return;
+    setAboutOpen(true);
+  }, []);
 
   /* 生命周期阶段只触发一次（StrictMode 下 effect 会 double-invoke）
      注册在模块作用域，此处只负责按序触发。 */

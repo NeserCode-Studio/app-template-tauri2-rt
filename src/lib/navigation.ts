@@ -1,5 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { useLocation, useNavigate } from "react-router";
+import { interceptWorkspaceNavigation } from "@/lib/workspace-open";
 
 export type AppPage = "home" | "library" | "editor" | "codex";
 export type PageTransitionDirection = "forward" | "back";
@@ -97,6 +98,7 @@ export function useAppNavigation() {
 
   const go = useCallback(
     (page: AppPage, options: NavigatePageOptions = {}) => {
+      if (interceptWorkspaceNavigation(APP_PAGE_PATHS[page])) return;
       if (page === currentPage && !options.replace) return;
       navigate(APP_PAGE_PATHS[page], {
         replace: options.replace,
@@ -113,6 +115,7 @@ export function useAppNavigation() {
 
   const back = useCallback(() => {
     if (!backPage) return;
+    if (interceptWorkspaceNavigation(APP_PAGE_PATHS[backPage])) return;
     if (priorPage) {
       navigate(-1);
       return;
