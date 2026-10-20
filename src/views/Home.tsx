@@ -28,6 +28,56 @@ interface PendingWorkspaceOpen {
   targetPath: string | null;
 }
 
+interface ProgressPoint {
+  time: number;
+  value: number;
+}
+
+function createRandomProgressCurve(): ProgressPoint[] {
+  const segmentCount = 7 + Math.floor(Math.random() * 3);
+  const timeWeights = Array.from(
+    { length: segmentCount },
+    () => 0.65 + Math.random() * 0.7
+  );
+  const valueWeights = Array.from(
+    { length: segmentCount },
+    () => 0.45 + Math.random() * 1.1
+  );
+  const totalTime = timeWeights.reduce((sum, weight) => sum + weight, 0);
+  const totalValue = valueWeights.reduce((sum, weight) => sum + weight, 0);
+  const points: ProgressPoint[] = [{ time: 0, value: 0 }];
+  let time = 0;
+  let value = 0;
+
+  for (let index = 0; index < segmentCount; index += 1) {
+    time += timeWeights[index] / totalTime;
+    value += valueWeights[index] / totalValue;
+    points.push({ time, value });
+  }
+
+  points[points.length - 1] = { time: 1, value: 1 };
+  return points;
+}
+
+function sampleProgressCurve(
+  points: ProgressPoint[],
+  currentTime: number
+): number {
+  for (let index = 1; index < points.length; index += 1) {
+    const next = points[index];
+    if (currentTime > next.time) continue;
+    const previous = points[index - 1];
+    const span = Math.max(Number.EPSILON, next.time - previous.time);
+    const localTime = Math.min(
+      1,
+      Math.max(0, (currentTime - previous.time) / span)
+    );
+    const eased = localTime * localTime * (3 - 2 * localTime);
+    return previous.value + (next.value - previous.value) * eased;
+  }
+  return 1;
+}
+
 function workspaceName(path: string): string {
   const normalized = path.replace(/[\\/]+$/, "");
   return normalized.split(/[\\/]/).pop() || path;
@@ -211,6 +261,7 @@ export default function Home() {
     if (!pendingOpen) return;
     openingRef.current = true;
     const startedAt = performance.now();
+    const progressCurve = createRandomProgressCurve();
     let frame = 0;
     let cancelled = false;
 
@@ -230,9 +281,11 @@ export default function Home() {
     };
 
     const tick = (now: number) => {
-      const value = Math.min(100, ((now - startedAt) / OPEN_DELAY_MS) * 100);
-      setProgress(value);
-      if (value < 100) {
+      const elapsed = Math.min(1, (now - startedAt) / OPEN_DELAY_MS);
+      setProgress(
+        elapsed >= 1 ? 100 : sampleProgressCurve(progressCurve, elapsed) * 100
+      );
+      if (elapsed < 1) {
         frame = requestAnimationFrame(tick);
         return;
       }
