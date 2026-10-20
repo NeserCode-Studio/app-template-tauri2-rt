@@ -56,6 +56,8 @@ import CreateNodeDialog from "./CreateNodeDialog";
 const log = createLogger("OutlinePane");
 
 export interface OutlinePaneProps {
+  /** 打开章节；普通结构树导航必须落到章首。 */
+  onSelectChapter: (chapterId: string) => void;
   /** 新建章节：创建后自动打开。 */
   onCreateChapter: (
     title: string,
@@ -522,6 +524,7 @@ function DropZone({
  * 已整体移除。
  */
 export default function OutlinePane({
+  onSelectChapter,
   onCreateChapter,
   onCreateVolume,
   onMoveNode,
@@ -541,7 +544,6 @@ export default function OutlinePane({
     volumes,
     chapterMetas,
     readingChapterId,
-    setCurrentChapterId,
   } = useOutline();
 
   /** 新建卷对话框。 */
@@ -897,7 +899,7 @@ export default function OutlinePane({
                 selected={readingChapterId === node.id}
                 dragging={activeId === NODE_PREFIX + node.id}
                 sessionActive={Boolean(activeId)}
-                onSelect={() => setCurrentChapterId(node.id)}
+                onSelect={() => onSelectChapter(node.id)}
                 onEditMeta={() => setMetaTarget(node)}
                 registerEl={(el) => {
                   if (el) nodeEls.current.set(node.id, el);
@@ -1113,7 +1115,7 @@ export default function OutlinePane({
                   onOpenCurrentChapter={() => {
                     setCollapsed((prev) => ({ ...prev, [volume.id]: false }));
                     if (selectedChapter) {
-                      setCurrentChapterId(selectedChapter.id);
+                      onSelectChapter(selectedChapter.id);
                     }
                   }}
                   onAddChapter={() => setChapterDialogIn(volume.id)}

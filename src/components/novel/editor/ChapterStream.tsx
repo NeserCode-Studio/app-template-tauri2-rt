@@ -41,17 +41,17 @@ export interface ChapterStreamProps {
   workId: string;
   /** 活动章（可写的那一章）。 */
   chapter: Chapter;
-  /** 切到另一章。 */
-  onSelectChapter: (id: string) => void;
- /**
-  * 切章后的落点。
-  *
-  * "end" 表示回退到上一章，"start" 表示前进到下一章。
-  * 必须由父级传入：本组件随切章整体重挂（Editor 用 key={chapter.id}
-  * 渲染它），组件内的 ref / state 都活不到新实例，"上滑落章尾"
-  * 这个意图会在这里凭空蒸发。
-  */
- landing?: "start" | "end";
+  /** 切到另一章，并声明新章应落在章首还是章尾。 */
+  onSelectChapter: (id: string, landing: ChapterLanding) => void;
+  /**
+   * 切章后的落点。
+   *
+   * "end" 表示回退到上一章，"start" 表示前进到下一章。
+   * 必须由父级传入：本组件随切章整体重挂（Editor 用 key={chapter.id}
+   * 渲染它），组件内的 ref / state 都活不到新实例，"上滑落章尾"
+   * 这个意图会在这里凭空蒸发。
+   */
+  landing?: ChapterLanding;
   onWordsChange: (words: number) => void;
   onSaved: (chapter: Chapter) => void;
   onWordsCommitted: (words: number) => void;
@@ -59,6 +59,8 @@ export interface ChapterStreamProps {
   onDelete: () => void;
   onOpenCodexEntry: (entryId: string) => void;
 }
+
+export type ChapterLanding = "start" | "end";
 
 export interface ChapterStreamHandle {
   appendText: (text: string) => boolean;
@@ -150,7 +152,14 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
    * 而且会一路"快速过章"：每次上滑都落在新一章顶部，再滑就又走了。
    * 落在末尾则衔接自然：上一章的收尾接着上一章的结尾，继续上滑才再退一章。
    */
-  const landing = landingProp;
+  /*
+   * 落点只在这次挂载时取一次。
+   *
+   * 父级完成导航后会清掉“待落点”标记，后续普通重渲染会把 landing
+   * 改回 start。若 effect 继续监听 landing，它会把刚落到章尾的页面
+   * 再拉回章首；组件本身以 chapter.id 为 key，挂载时捕获一次即可。
+   */
+  const initialLanding = useRef(landingProp);
   /*
    * 落点守护窗口。
    *
@@ -167,7 +176,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
      * 此刻读 scrollHeight 拿到的是旧章高度，落点会停在中途。
      * 等 rAF 之后新章已挂入，scrollHeight 才是这一章的。
      */
-    const target = landing;
+    const target = initialLanding.current;
     if (target === "start") {
       log.debug("landing: start", { activeId });
       el.scrollTop = 0;
@@ -187,7 +196,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
       el.scrollTop = el.scrollHeight;
     });
     return () => cancelAnimationFrame(raf);
-  }, [activeId, landing]);
+  }, [activeId]);
 
   /** 守护期间忽略 scroll：把 focus 引起的回弹挡掉，真人手势不受影响。 */
 
@@ -217,12 +226,12 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
         e.preventDefault();
         const nextId = sequence[activeIndex + 1].id;
         log.debug("wheel advances to next chapter", { nextId, activeIndex });
-        onSelectChapter(nextId);
+        onSelectChapter(nextId, "start");
       } else if (e.deltaY < 0 && atTop && activeIndex > 0) {
         e.preventDefault();
         const prevId = sequence[activeIndex - 1].id;
         log.debug("wheel returns to previous chapter", { prevId, activeIndex });
-        onSelectChapter(prevId);
+        onSelectChapter(prevId, "end");
       }
     },
     [activeIndex, sequence, onSelectChapter]

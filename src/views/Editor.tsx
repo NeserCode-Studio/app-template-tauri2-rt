@@ -55,6 +55,7 @@ import {
 } from "@/components/ui/resizable";
 
 import ChapterStream, {
+  type ChapterLanding,
   type ChapterStreamHandle,
 } from "@/components/novel/editor/ChapterStream";
 import CodexPane from "@/components/novel/CodexPane";
@@ -150,6 +151,11 @@ export default function Editor() {
   const outlinePanelRef = useRef<ImperativePanelHandle | null>(null);
   const sidePanelRef = useRef<ImperativePanelHandle | null>(null);
   const chapterStreamRef = useRef<ChapterStreamHandle | null>(null);
+  /** 目标章 + 落点；只对发起它的那一次切章有效。 */
+  const pendingLandingRef = useRef<{
+    chapterId: string;
+    landing: ChapterLanding;
+  } | null>(null);
   const [outlineCollapsed, setOutlineCollapsed] = useState(false);
   const [sideCollapsed, setSideCollapsed] = useState(false);
 
@@ -181,6 +187,20 @@ export default function Editor() {
     chapterStreamRef.current?.appendText(text);
   }, []);
 
+  /**
+   * 所有显式章节导航的入口。
+   *
+   * 普通点击默认落章首；滚轮上滑和“上一章”按钮传 end。待落点绑定目标章，
+   * 因而结构树、搜索等直接改 currentChapterId 的路径不会误继承上一次 end。
+   */
+  const selectChapter = useCallback(
+    (id: string | null, landing: ChapterLanding = "start") => {
+      pendingLandingRef.current = id ? { chapterId: id, landing } : null;
+      setCurrentChapterId(id);
+    },
+    [setCurrentChapterId]
+  );
+
   /** 导入确认后直接追加到当前控制器，保留草稿、历史与自动保存。 */
   const importIntoChapter = useCallback((preview: ImportPreview) => {
     const added = chapterStreamRef.current?.appendCards(preview.cards) ?? 0;
@@ -211,7 +231,7 @@ export default function Editor() {
       return;
     }
     if (!chapters.some((c) => c.id === currentChapterId)) {
-      setCurrentChapterId(chapters[0].id);
+      selectChapter(chapters[0].id, "start");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root, currentWorkId, chapterIdsKey]);
@@ -288,9 +308,9 @@ export default function Editor() {
       });
       setOutline(next);
       setChapter(created);
-      setCurrentChapterId(created.id);
+      selectChapter(created.id, "start");
     },
-    [root, currentWorkId, setOutline, setCurrentChapterId]
+    [root, currentWorkId, setOutline, selectChapter]
   );
 
   /* ---------- 章节跳转 ---------- */
@@ -415,12 +435,12 @@ export default function Editor() {
     const next = await removeNode(root, currentWorkId, chapter.id);
     setOutline(next);
     /* 选中相邻的章；没有别的章就回到空态。 */
-    setCurrentChapterId(next.nodes.some((n) => n.id === chapter.id)
+    selectChapter(next.nodes.some((n) => n.id === chapter.id)
       ? null
       : (chapters[index - 1]?.id ?? chapters[index + 1]?.id ?? null));
     setChapter(null);
     setPendingDelete(null);
-  }, [root, currentWorkId, chapter, chapters, setOutline, setCurrentChapterId]);
+  }, [root, currentWorkId, chapter, chapters, setOutline, selectChapter]);
 
   /**
    * 删除整卷：连同其下所有章一起进回收站。
@@ -469,13 +489,24 @@ export default function Editor() {
         const fallback = next.nodes.find(
           (n) => n.type === "chapter"
         );
-        setCurrentChapterId(fallback?.id ?? null);
+        selectChapter(fallback?.id ?? null, "start");
         setChapter(null);
       }
       setPendingVolumeDelete(null);
     },
-    [root, currentWorkId, volumes, chapters, chapter, setOutline, setCurrentChapterId]
+    [root, currentWorkId, volumes, chapters, chapter, setOutline, selectChapter]
   );
+
+  /*
+   * 新章真正挂载后，本次落点已经由 ChapterStream 捕获。
+   * 清掉待落点后，后续是否继续监听 landing 都不会改变本章位置。
+   */
+  useEffect(() => {
+    const pending = pendingLandingRef.current;
+    if (pending && chapter?.id === pending.chapterId) {
+      pendingLandingRef.current = null;
+    }
+  }, [chapter?.id]);
 
   /**
    * 章落盘后更新作品库字数。
@@ -618,6 +649,7 @@ export default function Editor() {
            */}
           <div className="h-full">
             <OutlinePane
+              onSelectChapter={selectChapter}
               onCreateChapter={createChapter}
               onCreateVolume={createVolume}
               onMoveNode={moveOutline}
@@ -654,7 +686,13 @@ export default function Editor() {
                */
               <ChapterStream
                 ref={chapterStreamRef}
-                onSelectChapter={setCurrentChapterId}
+                landing={
+                  chapter &&
+                  pendingLandingRef.current?.chapterId === chapter.id
+                    ? pendingLandingRef.current.landing
+                    : "start"
+                }
+                onSelectChapter={selectChapter}
                 key={chapter.id}
                 chapter={chapter}
                 root={root}
@@ -820,7 +858,7 @@ export default function Editor() {
                       variant="outline"
                       className="flex-1"
                       disabled={!prevId}
-                      onClick={() => prevId && setCurrentChapterId(prevId)}
+                      onClick={() => prevId && selectChapter(prevId, "end")}
                     >
                       <ChevronLeft className="icon-md" />
                       {t("Editor.nav.prev")}
@@ -830,7 +868,7 @@ export default function Editor() {
                       variant="outline"
                       className="flex-1"
                       disabled={!nextId}
-                      onClick={() => nextId && setCurrentChapterId(nextId)}
+                      onClick={() => nextId && selectChapter(nextId, "start")}
                     >
                       {t("Editor.nav.next")}
                       <ChevronRight className="icon-md" />
@@ -893,7 +931,7 @@ export default function Editor() {
                   </div>
                   <DraftBox
                     onOpenChapter={(chapterId) => {
-                      setCurrentChapterId(chapterId);
+                      selectChapter(chapterId, "start");
                       setDraftOpen(false);
                     }}
                   />
