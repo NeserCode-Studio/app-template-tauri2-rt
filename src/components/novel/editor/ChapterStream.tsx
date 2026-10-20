@@ -92,10 +92,12 @@ function ChapterTurnCue({
   side,
   progress,
   label,
+  showProgress,
 }: {
   side: ChapterLanding;
   progress: number;
   label: string;
+  showProgress: boolean;
 }) {
   const percent = Math.max(0, Math.min(100, progress * 100));
   return (
@@ -113,12 +115,14 @@ function ChapterTurnCue({
           <ChevronDown className="icon-sm shrink-0 text-[var(--editor-selection-border)]" />
         )}
         <span className="min-w-0 truncate">{label}</span>
-        <span className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
-          <span
-            className="block h-full rounded-full bg-[var(--editor-selection-border)] transition-[width] duration-100 ease-out"
-            style={{ width: `${percent}%` }}
-          />
-        </span>
+        {showProgress ? (
+          <span className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
+            <span
+              className="block h-full rounded-full bg-[var(--editor-selection-border)] transition-[width] duration-100 ease-out"
+              style={{ width: `${percent}%` }}
+            />
+          </span>
+        ) : null}
       </div>
     </div>
   );
@@ -325,10 +329,10 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
 
   const hasPrevious = activeIndex > 0;
   const hasNext = activeIndex >= 0 && activeIndex < sequence.length - 1;
-  const trackEdgeHints = showTurnHints && (hasPrevious || hasNext);
+  const trackEdgeHints = showTurnHints && activeIndex >= 0;
 
   /*
-   * 边缘提示只在“总开关 + 提示开关”都开启且确实有相邻章时监听滚动。
+   * 边缘提示只在“总开关 + 提示开关”都开启时监听滚动。
    *
    * scroll 用 passive 监听，并通过 rAF 合并到每帧一次；ResizeObserver
    * 负责正文变长、窗口缩放等不产生 scroll 事件的布局变化。任一开关关闭
@@ -492,9 +496,9 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
   const showPreviousCue = trackEdgeHints && boundaries.atTop;
   const showNextCue = trackEdgeHints && boundaries.atBottom;
   const previousProgress =
-    turnProgress?.side === "start" ? turnProgress.progress : 0;
+    hasPrevious && turnProgress?.side === "start" ? turnProgress.progress : 0;
   const nextProgress =
-    turnProgress?.side === "end" ? turnProgress.progress : 0;
+    hasNext && turnProgress?.side === "end" ? turnProgress.progress : 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -564,14 +568,18 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
           <ChapterTurnCue
             side="start"
             progress={previousProgress}
-            label={t("Editor.scroll.previous")}
+            label={t(
+              hasPrevious ? "Editor.scroll.previous" : "Editor.scroll.first"
+            )}
+            showProgress={hasPrevious}
           />
         ) : null}
         {showNextCue ? (
           <ChapterTurnCue
             side="end"
             progress={nextProgress}
-            label={t("Editor.scroll.next")}
+            label={t(hasNext ? "Editor.scroll.next" : "Editor.scroll.last")}
+            showProgress={hasNext}
           />
         ) : null}
       </div>
