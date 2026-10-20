@@ -588,20 +588,6 @@ export default function OutlinePane({
   /** 相对时间的基准：每分钟刷新一次即可，太频繁只会白白重渲染。 */
   const [now, setNow] = useState(() => Date.now());
 
-  /*
-   * 阅读章所在的卷自动展开。
-   *
-   * 只展开、不收起：收起是用户的明确意图，不能被阅读位置覆盖。
-   * 折叠表按作品持久化，重新打开编辑器时先恢复原状，再由这条规则
-   * 展开当前阅读章所属的卷。
-   */
-  useEffect(() => {
-    if (!readingChapterId) return;
-    const parent = chapters.find((c) => c.id === readingChapterId)?.parentId;
-    if (!parent) return;
-    setCollapsed((prev) => (prev[parent] ? { ...prev, [parent]: false } : prev));
-  }, [readingChapterId, chapters, setCollapsed]);
-
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
