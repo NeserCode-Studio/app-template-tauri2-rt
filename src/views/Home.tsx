@@ -54,25 +54,94 @@ function openedAtLabel(
   }).format(timestamp);
 }
 
-export default function Home() {
+function WorkspaceRow({
+  path,
+  current,
+  busy,
+  progress,
+  openedAt,
+  disabled,
+  onClick,
+}: {
+  path: string;
+  current: boolean;
+  busy: boolean;
+  progress: number;
+  openedAt?: number;
+  disabled: boolean;
+  onClick: () => void;
+}) {
   const { lang, t } = useI18n();
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="group hover:bg-accent/55 relative flex w-full items-start gap-3 overflow-hidden rounded-md border border-transparent px-2.5 py-2.5 text-left transition-colors disabled:pointer-events-none disabled:opacity-55 aria-busy:border-primary/25"
+      aria-busy={busy}
+    >
+      {busy ? (
+        <span
+          aria-hidden="true"
+          className="bg-primary/10 absolute inset-y-0 left-0 w-full origin-left"
+          style={{ transform: `scaleX(${progress / 100})` }}
+        />
+      ) : null}
+      <FolderOpen className="text-muted-foreground/60 relative z-10 mt-0.5 size-4 shrink-0" />
+      <span className="relative z-10 min-w-0 flex-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="group-hover:text-foreground truncate text-sm font-medium">
+            {workspaceName(path)}
+          </span>
+          {current ? (
+            <span className="bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 shrink-0 rounded border border-emerald-600/20 px-1.5 py-0.5 text-[10px] font-medium">
+              {t("Home.currentWorkspace")}
+            </span>
+          ) : null}
+        </span>
+        <span
+          className="text-muted-foreground/70 mt-0.5 block truncate text-[11px]"
+          title={path}
+        >
+          {path}
+        </span>
+        <span className="text-muted-foreground/55 mt-1 block text-[11px]">
+          {t("Home.openedAt").replace(
+            "{time}",
+            busy
+              ? t("Home.openedJustNow")
+              : openedAtLabel(openedAt, lang, t("Home.openedUnknown"))
+          )}
+        </span>
+      </span>
+      {busy ? (
+        <span className="text-muted-foreground relative z-10 mt-1 flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums">
+          <span>{Math.round(progress)}%</span>
+          <LoaderCircle className="size-3.5 animate-spin" />
+        </span>
+      ) : (
+        <ChevronRight className="text-muted-foreground/40 relative z-10 mt-1 size-3.5 shrink-0" />
+      )}
+    </button>
+  );
+}
+
+export default function Home() {
+  const { t } = useI18n();
   const { go } = useAppNavigation();
   const {
     root,
     recent,
     recentOpenedAt,
-    isOpen,
     pickPath,
     open,
   } = useWorkspace();
-  const hasWorkspace = Boolean(isOpen && root);
   const [pendingOpen, setPendingOpen] =
     useState<PendingWorkspaceOpen | null>(null);
   const [progress, setProgress] = useState(0);
-  const visibleRecent =
-    pendingOpen && !recent.includes(pendingOpen.path)
-      ? [pendingOpen.path, ...recent]
-      : recent;
+  const selectedRoot = pendingOpen?.path ?? root;
+  const hasSelection = Boolean(selectedRoot);
+  const otherRecent = recent.filter((path) => path !== selectedRoot);
 
   function queueWorkspaceOpen(path: string, intent: WorkspaceOpenIntent) {
     if (pendingOpen) return;
@@ -123,43 +192,33 @@ export default function Home() {
           {t("Home.title")}
         </div>
         <h1 className="mt-3 text-2xl font-semibold">
-          {hasWorkspace
+          {hasSelection
             ? t("Home.workspacePicker")
             : t("Library.empty.noWorkspace")}
         </h1>
         <p className="text-muted-foreground mt-2 max-w-lg text-sm leading-relaxed">
-          {hasWorkspace
+          {hasSelection
             ? t("Home.workspacePickerHint")
             : t("Library.workspace.hint")}
         </p>
 
-        {hasWorkspace && root ? (
-          <section className="bg-muted/20 mt-5 flex min-w-0 items-center gap-3 rounded-md border px-3 py-2.5">
-            <span className="bg-background text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md border">
-              <FolderOpen className="size-4" />
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="flex min-w-0 items-center gap-2">
-                <span className="truncate text-sm font-medium">
-                  {workspaceName(root)}
-                </span>
-                <span className="text-muted-foreground/60 shrink-0 text-[11px]">
-                  {t("Home.currentWorkspace")}
-                </span>
-              </span>
-              <span
-                className="text-muted-foreground/65 mt-0.5 block truncate text-[11px]"
-                title={root}
-              >
-                {root}
-              </span>
-            </span>
-          </section>
+        {selectedRoot ? (
+          <div className="mt-4">
+            <WorkspaceRow
+              path={selectedRoot}
+              current
+              busy={pendingOpen?.path === selectedRoot}
+              progress={progress}
+              openedAt={recentOpenedAt[selectedRoot]}
+              disabled={Boolean(pendingOpen)}
+              onClick={() => queueWorkspaceOpen(selectedRoot, "recent")}
+            />
+          </div>
         ) : null}
 
-        <div className="border-border/70 mt-8 border-y py-7">
+        <div className="mt-6">
           <div className="flex flex-wrap gap-2">
-            {hasWorkspace ? (
+            {hasSelection ? (
               <Button
                 size="lg"
                 disabled={Boolean(pendingOpen)}
@@ -167,17 +226,13 @@ export default function Home() {
                   if (root) queueWorkspaceOpen(root, "recent");
                 }}
               >
-                {pendingOpen?.path === root ? (
-                  <LoaderCircle className="icon-md animate-spin" />
-                ) : (
-                  <BookOpen className="icon-md" />
-                )}
+                <BookOpen className="icon-md" />
                 {t("Home.openLibrary")}
               </Button>
             ) : null}
             <Button
               size="lg"
-              variant={hasWorkspace ? "outline" : "default"}
+              variant={hasSelection ? "outline" : "default"}
               disabled={Boolean(pendingOpen)}
               onClick={() => void chooseWorkspace("create")}
             >
@@ -190,12 +245,8 @@ export default function Home() {
               disabled={Boolean(pendingOpen)}
               onClick={() => void chooseWorkspace("change")}
             >
-              {pendingOpen?.intent === "change" ? (
-                <LoaderCircle className="icon-md animate-spin" />
-              ) : (
-                <FolderOpen className="icon-md" />
-              )}
-              {hasWorkspace
+              <FolderOpen className="icon-md" />
+              {hasSelection
                 ? t("Library.workspace.change")
                 : t("Library.workspace.open")}
             </Button>
@@ -207,69 +258,22 @@ export default function Home() {
             </span>
           ) : null}
 
-          {visibleRecent.length ? (
-            <section className="mt-7">
+          {otherRecent.length ? (
+            <section className="mt-7 border-t pt-5">
               <h2 className="row-label">{t("Home.otherRecentWorkspaces")}</h2>
               <div className="mt-3 flex flex-col gap-1">
-                {visibleRecent.map((path) => {
-                  const current = isOpen && root === path;
-                  const busy = pendingOpen?.path === path;
-                  return (
-                    <button
-                      key={path}
-                      type="button"
-                      disabled={Boolean(pendingOpen)}
-                      onClick={() => queueWorkspaceOpen(path, "recent")}
-                      className="group hover:bg-accent/55 relative flex w-full items-start gap-3 overflow-hidden rounded-md border border-transparent px-2.5 py-2.5 text-left transition-colors disabled:pointer-events-none disabled:opacity-55 aria-busy:border-primary/25"
-                      aria-busy={busy}
-                    >
-                      {busy ? (
-                        <span
-                          aria-hidden="true"
-                          className="bg-primary/10 absolute inset-y-0 left-0 w-full origin-left"
-                          style={{ transform: `scaleX(${progress / 100})` }}
-                        />
-                      ) : null}
-                      <FolderOpen className="text-muted-foreground/60 relative z-10 mt-0.5 size-4 shrink-0" />
-                      <span className="relative z-10 min-w-0 flex-1">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="group-hover:text-foreground truncate text-sm font-medium">
-                            {workspaceName(path)}
-                          </span>
-                          {current ? (
-                            <span className="bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 shrink-0 rounded border border-emerald-600/20 px-1.5 py-0.5 text-[10px] font-medium">
-                              {t("Home.currentWorkspace")}
-                            </span>
-                          ) : null}
-                        </span>
-                        <span
-                          className="text-muted-foreground/70 mt-0.5 block truncate text-[11px]"
-                          title={path}
-                        >
-                          {path}
-                        </span>
-                        <span className="text-muted-foreground/55 mt-1 block text-[11px]">
-                          {t("Home.openedAt").replace(
-                            "{time}",
-                            openedAtLabel(
-                              recentOpenedAt[path],
-                              lang,
-                              t("Home.openedUnknown")
-                            )
-                          )}
-                        </span>
-                      </span>
-                      {busy ? (
-                        <span className="text-muted-foreground relative z-10 mt-1 flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums">
-                          <span>{Math.round(progress)}%</span>
-                          <LoaderCircle className="size-3.5 animate-spin" />
-                        </span>
-                      ) : (
-                        <ChevronRight className="text-muted-foreground/40 relative z-10 mt-1 size-3.5 shrink-0" />
-                      )}
-                    </button>
-                  );
-                })}
+                {otherRecent.map((path) => (
+                  <WorkspaceRow
+                    key={path}
+                    path={path}
+                    current={false}
+                    busy={false}
+                    progress={0}
+                    openedAt={recentOpenedAt[path]}
+                    disabled={Boolean(pendingOpen)}
+                    onClick={() => queueWorkspaceOpen(path, "recent")}
+                  />
+                ))}
               </div>
             </section>
           ) : null}
