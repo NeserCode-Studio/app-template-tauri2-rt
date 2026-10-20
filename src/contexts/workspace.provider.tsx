@@ -2,7 +2,7 @@
  * WorkspaceProvider：持有工作区 root 状态，并在应用就绪时恢复上次工作区。
  */
 
-import { useCallback, useMemo, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useLocalStorageState } from "ahooks";
 import { createLogger } from "@/lib/logger";
 import { WorkspaceContext, type WorkspaceContextValue } from "./workspace";
@@ -15,20 +15,50 @@ const RECENT_KEY = "novels-yes:recent-workspaces";
 const RECENT_OPENED_KEY = "novels-yes:recent-workspace-opened";
 const CURRENT_KEY = "novels-yes:current-workspace";
 
+function readStoredRoot(): string | null {
+  try {
+    const raw = localStorage.getItem(CURRENT_KEY);
+    if (!raw || raw === "null") return null;
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === "string" && parsed ? parsed : null;
+    } catch {
+      return raw.trim() || null;
+    }
+  } catch {
+    return null;
+  }
+}
+
+function persistRoot(path: string | null): void {
+  try {
+    if (path) {
+      localStorage.setItem(CURRENT_KEY, JSON.stringify(path));
+    } else {
+      localStorage.removeItem(CURRENT_KEY);
+    }
+  } catch (err) {
+    log.warn("workspace root persistence failed", err);
+  }
+}
+
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
   /*
    * root 是页面上下文的一部分。只记“最近工作区”还不够：刷新时若 root
    * 回到 null，/library 与 /editor 会立刻被重定向，用户刚选的库像丢了一样。
    */
-  const [root, setRoot] = useLocalStorageState<string | null>(CURRENT_KEY, {
-    defaultValue: null,
-  });
+  const [root, setRootState] = useState<string | null>(readStoredRoot);
   const [recent, setRecent] = useLocalStorageState<string[]>(RECENT_KEY, {
     defaultValue: [],
   });
   const [recentOpenedAt, setRecentOpenedAt] = useLocalStorageState<
     Record<string, number>
   >(RECENT_OPENED_KEY, { defaultValue: {} });
+
+  const setRoot = useCallback((path: string | null) => {
+    persistRoot(path);
+    setRootState(path);
+  }, []);
 
   const open = useCallback(
     (path: string) => {

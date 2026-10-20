@@ -69,6 +69,10 @@ export default function Home() {
   const [pendingOpen, setPendingOpen] =
     useState<PendingWorkspaceOpen | null>(null);
   const [progress, setProgress] = useState(0);
+  const visibleRecent =
+    pendingOpen && !recent.includes(pendingOpen.path)
+      ? [pendingOpen.path, ...recent]
+      : recent;
 
   function queueWorkspaceOpen(path: string, intent: WorkspaceOpenIntent) {
     if (pendingOpen) return;
@@ -129,6 +133,30 @@ export default function Home() {
             : t("Library.workspace.hint")}
         </p>
 
+        {hasWorkspace && root ? (
+          <section className="bg-muted/20 mt-5 flex min-w-0 items-center gap-3 rounded-md border px-3 py-2.5">
+            <span className="bg-background text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-md border">
+              <FolderOpen className="size-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="truncate text-sm font-medium">
+                  {workspaceName(root)}
+                </span>
+                <span className="text-muted-foreground/60 shrink-0 text-[11px]">
+                  {t("Home.currentWorkspace")}
+                </span>
+              </span>
+              <span
+                className="text-muted-foreground/65 mt-0.5 block truncate text-[11px]"
+                title={root}
+              >
+                {root}
+              </span>
+            </span>
+          </section>
+        ) : null}
+
         <div className="border-border/70 mt-8 border-y py-7">
           <div className="flex flex-wrap gap-2">
             {hasWorkspace ? (
@@ -174,41 +202,16 @@ export default function Home() {
           </div>
 
           {pendingOpen ? (
-            <div
-              role="status"
-              aria-live="polite"
-              className="relative mt-5 overflow-hidden rounded-md border px-3 py-2.5"
-            >
-              <span
-                aria-hidden="true"
-                className="bg-primary/10 absolute inset-y-0 left-0 w-full origin-left"
-                style={{ transform: `scaleX(${progress / 100})` }}
-              />
-              <div className="relative z-10 flex items-center gap-3">
-                <LoaderCircle className="text-muted-foreground size-4 shrink-0 animate-spin" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium">
-                    {t("Home.openingWorkspace")}
-                  </p>
-                  <p
-                    className="text-muted-foreground mt-0.5 truncate text-xs"
-                    title={pendingOpen.path}
-                  >
-                    {pendingOpen.path}
-                  </p>
-                </div>
-                <span className="text-muted-foreground text-xs tabular-nums">
-                  {Math.round(progress)}%
-                </span>
-              </div>
-            </div>
+            <span className="sr-only" role="status" aria-live="polite">
+              {t("Home.openingWorkspace")} {Math.round(progress)}%
+            </span>
           ) : null}
 
-          {recent.length ? (
+          {visibleRecent.length ? (
             <section className="mt-7">
-              <h2 className="row-label">{t("Library.workspace.recent")}</h2>
+              <h2 className="row-label">{t("Home.otherRecentWorkspaces")}</h2>
               <div className="mt-3 flex flex-col gap-1">
-                {recent.map((path) => {
+                {visibleRecent.map((path) => {
                   const current = isOpen && root === path;
                   const busy = pendingOpen?.path === path;
                   return (
@@ -257,7 +260,10 @@ export default function Home() {
                         </span>
                       </span>
                       {busy ? (
-                        <LoaderCircle className="text-muted-foreground relative z-10 mt-1 size-3.5 shrink-0 animate-spin" />
+                        <span className="text-muted-foreground relative z-10 mt-1 flex shrink-0 items-center gap-1.5 text-[11px] tabular-nums">
+                          <span>{Math.round(progress)}%</span>
+                          <LoaderCircle className="size-3.5 animate-spin" />
+                        </span>
                       ) : (
                         <ChevronRight className="text-muted-foreground/40 relative z-10 mt-1 size-3.5 shrink-0" />
                       )}
