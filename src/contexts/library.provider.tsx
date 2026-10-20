@@ -25,6 +25,32 @@ import { WORKS_DIR } from "@/services/paths";
 import { createFs } from "@/services/fs";
 
 const log = createLogger("LibraryProvider");
+const CURRENT_WORK_KEY = "novels-yes:current-work-by-workspace";
+
+function readCurrentWorkMap(): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(CURRENT_WORK_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {};
+    }
+    return Object.fromEntries(
+      Object.entries(parsed).filter(
+        (item): item is [string, string] => typeof item[1] === "string"
+      )
+    );
+  } catch {
+    return {};
+  }
+}
+
+function persistCurrentWork(root: string, workId: string | null): void {
+  const all = readCurrentWorkMap();
+  if (workId) all[root] = workId;
+  else delete all[root];
+  localStorage.setItem(CURRENT_WORK_KEY, JSON.stringify(all));
+}
 
 /** 从磁盘重新装载清单与全部作品元数据。 */
 async function reloadAll(root: string) {
@@ -57,7 +83,9 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const { root } = useWorkspace();
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [works, setWorks] = useState<Record<string, Work>>({});
-  const [currentWorkId, setCurrentWorkId] = useState<string | null>(null);
+  const [currentWorkId, setCurrentWorkIdState] = useState<string | null>(
+    () => (root ? readCurrentWorkMap()[root] ?? null : null)
+  );
   /** 磁盘数据版本：见 LibraryContextValue.dataVersion 的说明。 */
   const [dataVersion, setDataVersion] = useState(0);
   const bumpDataVersion = useCallback(() => setDataVersion((v) => v + 1), []);
@@ -67,7 +95,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     if (!root) {
       setWorkspace(null);
       setWorks({});
-      setCurrentWorkId(null);
+      setCurrentWorkIdState(null);
       return;
     }
     let alive = true;
@@ -76,6 +104,10 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         if (!alive) return;
         setWorkspace(ws);
         setWorks(list);
+        const remembered = readCurrentWorkMap()[root];
+        const restored = remembered && list[remembered] ? remembered : null;
+        setCurrentWorkIdState(restored);
+        if (remembered && !restored) persistCurrentWork(root, null);
         log.info("library loaded", { works: Object.keys(list).length });
       })
       .catch((err) => {
@@ -85,6 +117,14 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       alive = false;
     };
   }, [root]);
+
+  const setCurrentWorkId = useCallback(
+    (id: string | null) => {
+      setCurrentWorkIdState(id);
+      if (root) persistCurrentWork(root, id);
+    },
+    [root]
+  );
 
   const refresh = useCallback(async () => {
     if (!root) return;
@@ -122,7 +162,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       setCurrentWorkId(work.id);
       return work;
     },
-    [root, workspace]
+    [root, workspace, setCurrentWorkId]
   );
 
   const rename = useCallback(
@@ -151,7 +191,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       });
       if (currentWorkId === workId) setCurrentWorkId(null);
     },
-    [root, workspace, currentWorkId]
+    [root, workspace, currentWorkId, setCurrentWorkId]
   );
 
   const unarchive = useCallback(
@@ -184,7 +224,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       });
       if (currentWorkId === workId) setCurrentWorkId(null);
     },
-    [root, workspace, works, currentWorkId]
+    [root, workspace, works, currentWorkId, setCurrentWorkId]
   );
 
   const value = useMemo<LibraryContextValue>(
@@ -218,6 +258,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       archive,
       unarchive,
       remove,
+      setCurrentWorkId,
     ]
   );
 

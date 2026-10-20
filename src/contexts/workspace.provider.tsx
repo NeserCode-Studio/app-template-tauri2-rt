@@ -2,7 +2,7 @@
  * WorkspaceProvider：持有工作区 root 状态，并在应用就绪时恢复上次工作区。
  */
 
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, type ReactNode } from "react";
 import { useLocalStorageState } from "ahooks";
 import { createLogger } from "@/lib/logger";
 import { WorkspaceContext, type WorkspaceContextValue } from "./workspace";
@@ -12,9 +12,16 @@ import { moveWorkspaceToTrash } from "@/services/trash";
 const log = createLogger("WorkspaceProvider");
 
 const RECENT_KEY = "novels-yes:recent-workspaces";
+const CURRENT_KEY = "novels-yes:current-workspace";
 
 export function WorkspaceProvider({ children }: { children: ReactNode }) {
-  const [root, setRoot] = useState<string | null>(null);
+  /*
+   * root 是页面上下文的一部分。只记“最近工作区”还不够：刷新时若 root
+   * 回到 null，/library 与 /editor 会立刻被重定向，用户刚选的库像丢了一样。
+   */
+  const [root, setRoot] = useLocalStorageState<string | null>(CURRENT_KEY, {
+    defaultValue: null,
+  });
   const [recent, setRecent] = useLocalStorageState<string[]>(RECENT_KEY, {
     defaultValue: [],
   });
@@ -25,10 +32,10 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       setRecent((prev) => [path, ...(prev ?? []).filter((p) => p !== path)].slice(0, 10));
       log.info("workspace opened", path);
     },
-    [setRecent]
+    [setRecent, setRoot]
   );
 
-  const close = useCallback(() => setRoot(null), []);
+  const close = useCallback(() => setRoot(null), [setRoot]);
 
   /**
    * 在系统文件管理器里打开工作区目录。
@@ -59,14 +66,18 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     setRecent((prev) => (prev ?? []).filter((p) => p !== root));
     setRoot(null);
     log.info("workspace moved to trash", root);
-  }, [root, setRecent]);
+  }, [root, setRecent, setRoot]);
 
   /** 弹出选择框并打开；用户取消则返回 null。 */
+  const pickPath = useCallback(async (): Promise<string | null> => {
+    return pickWorkspaceDir();
+  }, []);
+
   const pick = useCallback(async (): Promise<string | null> => {
-    const selected = await pickWorkspaceDir();
+    const selected = await pickPath();
     if (selected) open(selected);
     return selected;
-  }, [open]);
+  }, [open, pickPath]);
 
   const value = useMemo<WorkspaceContextValue>(
     () => ({
@@ -76,10 +87,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       open,
       close,
       pick,
+      pickPath,
       reveal,
       deleteWorkspace,
     }),
-    [root, recent, open, close, pick, reveal, deleteWorkspace]
+    [root, recent, open, close, pick, pickPath, reveal, deleteWorkspace]
   );
 
   return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;

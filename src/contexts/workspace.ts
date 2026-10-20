@@ -20,6 +20,8 @@ export interface WorkspaceContextValue {
   close: () => void;
   /** 弹出目录选择框并打开；用户取消返回 null。 */
   pick: () => Promise<string | null>;
+  /** 只弹出目录选择框，不切换当前工作区。 */
+  pickPath: () => Promise<string | null>;
   /** 在系统文件管理器中打开工作区目录。 */
   reveal: () => Promise<void>;
   /** 把整个工作区移入回收站，并关闭当前工作区。 */
@@ -33,6 +35,7 @@ export const WorkspaceContext = createContext<WorkspaceContextValue>({
   open: () => {},
   close: () => {},
   pick: async () => null,
+  pickPath: async () => null,
   reveal: async () => {},
   deleteWorkspace: async () => {},
 });
