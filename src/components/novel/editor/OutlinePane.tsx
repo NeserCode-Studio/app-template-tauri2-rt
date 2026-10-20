@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type SetStateAction,
+} from "react";
+import { useLocalStorageState } from "ahooks";
 import {
   ArrowUpRight,
   BookOpen,
@@ -45,6 +53,7 @@ import {
   HoverCardTrigger,
 } from "@/components/ui/hover-card";
 import { useI18n } from "@/composables";
+import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import type { OutlineNode } from "@/shared/schema";
 import { createLogger } from "@/lib/logger";
@@ -54,6 +63,7 @@ import ChapterMetaDialog from "./ChapterMetaDialog";
 import CreateNodeDialog from "./CreateNodeDialog";
 
 const log = createLogger("OutlinePane");
+const VOLUME_COLLAPSE_KEY = "novels-yes:editor:volume-collapsed";
 
 export interface OutlinePaneProps {
   /** 打开章节；普通结构树导航必须落到章首。 */
@@ -545,38 +555,30 @@ export default function OutlinePane({
     chapterMetas,
     readingChapterId,
   } = useOutline();
+  const { currentWorkId } = useLibrary();
 
   /** 新建卷对话框。 */
   const [volumeDialog, setVolumeDialog] = useState(false);
-  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  /*
-   * 阅读章所在的卷自动展开。
-   *
-   * 连续滚动会跨卷：用户从上卷末章一路滚进下卷，若下卷是收起的，
-   * 高亮就落在了一个看不见的节点上——结构树像坏了。
-   * 这里只替"当前阅读章"展开，不碰用户手动收起别的卷的选择。
-   */
-  useEffect(() => {
-    if (!readingChapterId) return;
-    const parent = chapters.find((c) => c.id === readingChapterId)?.parentId;
-    if (!parent) return;
-    setCollapsed((prev) => (prev[parent] ? { ...prev, [parent]: false } : prev));
-  }, [readingChapterId, chapters]);
-
-
-  /*
-   * 阅读章所在卷自动展开。
-   *
-   * 连续滚动会跨卷，而用户可能早就把那一卷收起来了。不展开的话
-   * 高亮落在一棵看不见的树上，等于没高亮。
-   * 只展开、不收起：收起是用户的手势，反向操作会和用户抢控制权。
-   */
-  useEffect(() => {
-    if (!readingChapterId) return;
-    const parent = chapters.find((c) => c.id === readingChapterId)?.parentId;
-    if (!parent) return;
-    setCollapsed((prev) => (prev[parent] ? { ...prev, [parent]: false } : prev));
-  }, [readingChapterId, chapters]);
+  const [collapsedByWork, setCollapsedByWork] = useLocalStorageState<
+    Record<string, Record<string, boolean>>
+  >(VOLUME_COLLAPSE_KEY, { defaultValue: {} });
+  const collapsed = currentWorkId
+    ? collapsedByWork?.[currentWorkId] ?? {}
+    : {};
+  const setCollapsed = useCallback(
+    (next: SetStateAction<Record<string, boolean>>) => {
+      if (!currentWorkId) return;
+      setCollapsedByWork((previous) => {
+        const all = previous ?? {};
+        const current = all[currentWorkId] ?? {};
+        const value =
+          typeof next === "function" ? next(current) : next;
+        if (value === current) return all;
+        return { ...all, [currentWorkId]: value };
+      });
+    },
+    [currentWorkId, setCollapsedByWork]
+  );
   /** 新建章节对话框的目标父级，undefined 表示未打开。 */
   const [chapterDialogIn, setChapterDialogIn] = useState<string | null | undefined>(undefined);
   /** 章节详情对话框的目标节点。 */
@@ -587,35 +589,18 @@ export default function OutlinePane({
   const [now, setNow] = useState(() => Date.now());
 
   /*
-   * 阅读章所在的卷必须展开。
-   *
-   * 连续滚动时阅读章会跨卷移动，而卷的收起状态是用户留下的。若某卷正收着，
-   * 高亮落进去就整卷看不见——用户只会看到"高亮莫名消失了"。
-   * 这里只做"该展开的展开"，绝不反向收起：收起是用户的明确意图，
-   * 被滚动顺手覆盖掉同样难以理解。
-   */
-  useEffect(() => {
-    if (!readingChapterId) return;
-    const host = volumes.find((v) => v.id === readingChapterId)
-      ? null
-      : chapters.find((c) => c.id === readingChapterId)?.parentId ?? null;
-    if (!host) return;
-    setCollapsed((prev) => (prev[host] ? { ...prev, [host]: false } : prev));
-  }, [readingChapterId, volumes, chapters]);
-
-  /*
    * 阅读章所在的卷自动展开。
    *
-   * 连续滚动会跨卷，用户滚进一卷时那卷可能正被他收起着——不展开的话
-   * 高亮落在看不见的地方，"同步高亮"等于没发生。这里只做展开，
-   * 不做反向收起：收起是用户的显式意图，不能被滚动覆盖掉。
+   * 只展开、不收起：收起是用户的明确意图，不能被阅读位置覆盖。
+   * 折叠表按作品持久化，重新打开编辑器时先恢复原状，再由这条规则
+   * 展开当前阅读章所属的卷。
    */
   useEffect(() => {
     if (!readingChapterId) return;
     const parent = chapters.find((c) => c.id === readingChapterId)?.parentId;
     if (!parent) return;
     setCollapsed((prev) => (prev[parent] ? { ...prev, [parent]: false } : prev));
-  }, [readingChapterId, chapters]);
+  }, [readingChapterId, chapters, setCollapsed]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);

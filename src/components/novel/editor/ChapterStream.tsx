@@ -247,6 +247,11 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
   const boundarySyncFrame = useRef<number | null>(null);
   const scrollSaveTimer = useRef<number | null>(null);
   const lastScrollRatio = useRef(0);
+  /**
+   * StrictMode 会执行一次“挂载 -> 清理 -> 再挂载”。
+   * 首次清理时正文尚未恢复；若直接 flush，会把记忆位置覆盖成 0。
+   */
+  const scrollReadyRef = useRef(false);
   const scrollStorageKey = scrollMemoryKey(workId, activeId);
 
   const resetTurnProgress = useCallback(() => {
@@ -330,6 +335,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
      */
     const target = initialLanding.current;
     let secondFrame = 0;
+    scrollReadyRef.current = false;
     const firstFrame = requestAnimationFrame(() => {
       secondFrame = requestAnimationFrame(() => {
         const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
@@ -344,6 +350,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
           el.scrollTop = maxScroll * ratio;
           lastScrollRatio.current = ratio;
         }
+        scrollReadyRef.current = true;
         log.debug("landing applied", {
           activeId,
           target,
@@ -368,6 +375,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
     if (!el) return;
 
     const flush = () => {
+      if (!scrollReadyRef.current) return;
       const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
       const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
       lastScrollRatio.current = Math.min(1, Math.max(0, ratio));
@@ -375,6 +383,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
     };
 
     const onScroll = () => {
+      if (!scrollReadyRef.current) return;
       if (scrollSaveTimer.current !== null) {
         window.clearTimeout(scrollSaveTimer.current);
       }
@@ -386,9 +395,11 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
 
     el.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", flush);
     return () => {
       el.removeEventListener("scroll", onScroll);
       window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", flush);
       if (scrollSaveTimer.current !== null) {
         window.clearTimeout(scrollSaveTimer.current);
         scrollSaveTimer.current = null;
