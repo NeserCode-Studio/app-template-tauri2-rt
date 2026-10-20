@@ -44,6 +44,10 @@ export interface WritingPreferences {
   highlightMentions: boolean;
   /** 搜索是否独占 Ctrl+Shift+F（开关在命令面板里）。 */
   searchHotkeyEnabled: boolean;
+  /** 是否允许在章节边缘继续滚动时翻章。 */
+  chapterTurnEnabled: boolean;
+  /** 是否在章节顶部或底部持续显示翻章提示。 */
+  chapterTurnHintsEnabled: boolean;
   /** 贴边继续滚动多少距离后翻章。 */
   chapterTurnThreshold: number;
 }
@@ -59,6 +63,8 @@ export const DEFAULT_PREFERENCES: WritingPreferences = {
   uiFontSize: 14,
   highlightMentions: true,
   searchHotkeyEnabled: true,
+  chapterTurnEnabled: true,
+  chapterTurnHintsEnabled: true,
   chapterTurnThreshold: DEFAULT_CHAPTER_TURN_THRESHOLD,
 };
 

@@ -104,6 +104,12 @@ export const I18nTexts = {
     "Prefs.article.mentions": "Highlight material mentions",
     "Prefs.article.preview": "Preview",
     "Prefs.navigation.section": "Chapter navigation",
+    "Prefs.navigation.turnEnabled": "Scroll wheel chapter turning",
+    "Prefs.navigation.turnEnabledHint":
+      "Allow the mouse wheel or trackpad to turn chapters at the document edge. Buttons and outline navigation remain available when this is off.",
+    "Prefs.navigation.turnHints": "Edge turn hints",
+    "Prefs.navigation.turnHintsHint":
+      "Keep a turn hint visible whenever the text is at the top or bottom of the current chapter.",
     "Prefs.navigation.turnThreshold": "Turn threshold",
     "Prefs.navigation.turnThresholdHint":
       "Keep scrolling at the chapter edge. The chapter turns only after the accumulated distance reaches this value; larger values reduce accidental turns.",
@@ -209,8 +215,8 @@ export const I18nTexts = {
     "Editor.chapter.create": "Create and write",
     "Editor.nav.prev": "Previous chapter",
     "Editor.nav.next": "Next chapter",
-    "Editor.scroll.previous": "Up again for the previous chapter",
-    "Editor.scroll.next": "Down again for the next chapter",
+    "Editor.scroll.previous": "Up for the previous chapter",
+    "Editor.scroll.next": "Down for the next chapter",
     "Editor.title.placeholder": "Chapter title",
     "Editor.side.outline": "Outline",
     "Editor.side.add": "New",
@@ -699,6 +705,12 @@ export const I18nTexts = {
     "Prefs.article.mentions": "高亮正文中的素材提及",
     "Prefs.article.preview": "预览",
     "Prefs.navigation.section": "翻章",
+    "Prefs.navigation.turnEnabled": "滚动翻章总开关",
+    "Prefs.navigation.turnEnabledHint":
+      "关闭后，滚轮和触控板不会在章节边缘翻章；上一章、下一章按钮和结构树导航仍然可用。",
+    "Prefs.navigation.turnHints": "边缘翻章提示",
+    "Prefs.navigation.turnHintsHint":
+      "正文处于本章顶部或底部时，持续显示对应的翻章提示。",
     "Prefs.navigation.turnThreshold": "翻章阈值",
     "Prefs.navigation.turnThresholdHint":
       "在章节边缘继续滚动时，累计距离达到该值才会翻章。数值越大，越不容易误触。",
@@ -798,8 +810,8 @@ export const I18nTexts = {
     "Editor.chapter.create": "创建并写作",
     "Editor.nav.prev": "上一章",
     "Editor.nav.next": "下一章",
-    "Editor.scroll.previous": "继续向上，前往上一章末尾",
-    "Editor.scroll.next": "继续向下，前往下一章开头",
+    "Editor.scroll.previous": "向上前往上一章末尾",
+    "Editor.scroll.next": "向下前往下一章开头",
     "Editor.title.placeholder": "章节标题",
     "Editor.side.outline": "结构树",
     "Editor.side.add": "新建",

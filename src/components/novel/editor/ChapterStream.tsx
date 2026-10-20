@@ -87,6 +87,43 @@ export interface ChapterStreamHandle {
   appendCards: (cards: Card[]) => number;
 }
 
+/** 章节边缘常驻提示；progress 只表示本次滚动手势的累计进度。 */
+function ChapterTurnCue({
+  side,
+  progress,
+  label,
+}: {
+  side: ChapterLanding;
+  progress: number;
+  label: string;
+}) {
+  const percent = Math.max(0, Math.min(100, progress * 100));
+  return (
+    <div
+      aria-hidden="true"
+      className={[
+        "pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4",
+        side === "start" ? "top-3" : "bottom-3",
+      ].join(" ")}
+    >
+      <div className="animate-in fade-in flex max-w-full min-w-0 items-center gap-2.5 rounded-full border border-[var(--editor-selection-border)] bg-background/95 px-3 py-1.5 text-xs shadow-sm backdrop-blur-sm duration-150">
+        {side === "start" ? (
+          <ChevronUp className="icon-sm shrink-0 text-[var(--editor-selection-border)]" />
+        ) : (
+          <ChevronDown className="icon-sm shrink-0 text-[var(--editor-selection-border)]" />
+        )}
+        <span className="min-w-0 truncate">{label}</span>
+        <span className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
+          <span
+            className="block h-full rounded-full bg-[var(--editor-selection-border)] transition-[width] duration-100 ease-out"
+            style={{ width: `${percent}%` }}
+          />
+        </span>
+      </div>
+    </div>
+  );
+}
+
 const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
   function ChapterStream(
     {
@@ -108,6 +145,8 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
   const { chapters, volumes, setReadingChapterId } = useOutline();
   const { prefs } = usePreferences();
   const { mode } = useViewMode();
+  const turnEnabled = prefs.chapterTurnEnabled;
+  const showTurnHints = turnEnabled && prefs.chapterTurnHintsEnabled;
   const turnThreshold = Number.isFinite(prefs.chapterTurnThreshold)
     ? Math.max(
         CHAPTER_TURN_THRESHOLD_MIN,
@@ -159,29 +198,61 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
   }
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [turnCue, setTurnCue] = useState<{
+  const [turnProgress, setTurnProgress] = useState<{
     side: "start" | "end";
     progress: number;
   } | null>(null);
+  const [boundaries, setBoundaries] = useState({
+    atTop: false,
+    atBottom: false,
+  });
   const turnDistanceRef = useRef<{ direction: -1 | 1; distance: number }>({
     direction: 1,
     distance: 0,
   });
   const turnResetTimer = useRef<number | null>(null);
+  const boundarySyncFrame = useRef<number | null>(null);
 
-  const resetTurnCue = useCallback(() => {
+  const resetTurnProgress = useCallback(() => {
     if (turnResetTimer.current !== null) {
       window.clearTimeout(turnResetTimer.current);
       turnResetTimer.current = null;
     }
     turnDistanceRef.current = { direction: 1, distance: 0 };
-    setTurnCue(null);
+    setTurnProgress(null);
   }, []);
+
+  /** 读取真实滚动位置，只在边界状态变化时触发一次渲染。 */
+  const syncBoundaries = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const atTop = el.scrollTop <= 1;
+    const atBottom =
+      el.scrollHeight <= el.clientHeight + 1 ||
+      el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+    setBoundaries((prev) =>
+      prev.atTop === atTop && prev.atBottom === atBottom
+        ? prev
+        : { atTop, atBottom }
+    );
+  }, []);
+
+  /** 同一帧内多次 scroll / resize 只计算一次边界。 */
+  const scheduleBoundarySync = useCallback(() => {
+    if (boundarySyncFrame.current !== null) return;
+    boundarySyncFrame.current = requestAnimationFrame(() => {
+      boundarySyncFrame.current = null;
+      syncBoundaries();
+    });
+  }, [syncBoundaries]);
 
   useEffect(
     () => () => {
       if (turnResetTimer.current !== null) {
         window.clearTimeout(turnResetTimer.current);
+      }
+      if (boundarySyncFrame.current !== null) {
+        cancelAnimationFrame(boundarySyncFrame.current);
       }
     },
     []
@@ -252,6 +323,60 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
     return () => cancelAnimationFrame(raf);
   }, [activeId]);
 
+  const hasPrevious = activeIndex > 0;
+  const hasNext = activeIndex >= 0 && activeIndex < sequence.length - 1;
+  const trackEdgeHints = showTurnHints && (hasPrevious || hasNext);
+
+  /*
+   * 边缘提示只在“总开关 + 提示开关”都开启且确实有相邻章时监听滚动。
+   *
+   * scroll 用 passive 监听，并通过 rAF 合并到每帧一次；ResizeObserver
+   * 负责正文变长、窗口缩放等不产生 scroll 事件的布局变化。任一开关关闭
+   * 或组件卸载时，监听、观察器与尚未执行的帧都会完整回收。
+   */
+  useEffect(() => {
+    if (!trackEdgeHints) {
+      if (boundarySyncFrame.current !== null) {
+        cancelAnimationFrame(boundarySyncFrame.current);
+        boundarySyncFrame.current = null;
+      }
+      setBoundaries((prev) =>
+        !prev.atTop && !prev.atBottom
+          ? prev
+          : { atTop: false, atBottom: false }
+      );
+      return;
+    }
+
+    const el = scrollRef.current;
+    if (!el) return;
+    const onScroll = () => scheduleBoundarySync();
+    el.addEventListener("scroll", onScroll, { passive: true });
+
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => scheduleBoundarySync());
+    observer?.observe(el);
+    if (el.firstElementChild instanceof HTMLElement) {
+      observer?.observe(el.firstElementChild);
+    }
+    scheduleBoundarySync();
+
+    return () => {
+      el.removeEventListener("scroll", onScroll);
+      observer?.disconnect();
+      if (boundarySyncFrame.current !== null) {
+        cancelAnimationFrame(boundarySyncFrame.current);
+        boundarySyncFrame.current = null;
+      }
+    };
+  }, [trackEdgeHints, scheduleBoundarySync]);
+
+  useEffect(() => {
+    if (!showTurnHints) resetTurnProgress();
+  }, [showTurnHints, resetTurnProgress]);
+
   /** 守护期间忽略 scroll：把 focus 引起的回弹挡掉，真人手势不受影响。 */
 
   /**
@@ -268,6 +393,10 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
     (e: React.WheelEvent<HTMLDivElement>) => {
       const el = scrollRef.current;
       if (!el || activeIndex < 0 || e.deltaY === 0) return;
+      if (!turnEnabled) {
+        resetTurnProgress();
+        return;
+      }
 
       const atTop = el.scrollTop <= 0;
       /*
@@ -283,7 +412,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
           : atTop && activeIndex > 0;
 
       if (!canTurn) {
-        resetTurnCue();
+        resetTurnProgress();
         return;
       }
 
@@ -301,7 +430,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
       const progress = Math.min(1, distance / turnThreshold);
 
       turnDistanceRef.current = { direction, distance };
-      setTurnCue({ side, progress });
+      if (showTurnHints) setTurnProgress({ side, progress });
       if (turnResetTimer.current !== null) {
         window.clearTimeout(turnResetTimer.current);
       }
@@ -324,10 +453,18 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
       turnResetTimer.current = window.setTimeout(() => {
         turnResetTimer.current = null;
         turnDistanceRef.current = { direction, distance: 0 };
-        setTurnCue(null);
+        if (showTurnHints) setTurnProgress(null);
       }, TURN_IDLE_MS);
     },
-    [activeIndex, sequence, onSelectChapter, resetTurnCue, turnThreshold]
+    [
+      activeIndex,
+      sequence,
+      onSelectChapter,
+      resetTurnProgress,
+      showTurnHints,
+      turnEnabled,
+      turnThreshold,
+    ]
   );
 
   const appendText = useCallback(
@@ -351,6 +488,13 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
     () => ({ appendText, appendCards }),
     [appendText, appendCards]
   );
+
+  const showPreviousCue = trackEdgeHints && boundaries.atTop;
+  const showNextCue = trackEdgeHints && boundaries.atBottom;
+  const previousProgress =
+    turnProgress?.side === "start" ? turnProgress.progress : 0;
+  const nextProgress =
+    turnProgress?.side === "end" ? turnProgress.progress : 0;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -398,7 +542,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
       <div className="relative min-h-0 flex-1">
         <div
           ref={scrollRef}
-          onWheel={handleWheel}
+          onWheel={turnEnabled ? handleWheel : undefined}
           className="scrollbar-app h-full overflow-y-auto px-6 py-4"
         >
           <ChapterBody
@@ -416,35 +560,19 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
           />
         </div>
 
-        {turnCue ? (
-          <div
-            aria-hidden="true"
-            className={[
-              "pointer-events-none absolute inset-x-0 z-20 flex justify-center px-4",
-              turnCue.side === "start" ? "top-3" : "bottom-3",
-            ].join(" ")}
-          >
-            <div className="animate-in fade-in flex max-w-full min-w-0 items-center gap-2.5 rounded-full border border-[var(--editor-selection-border)] bg-background/95 px-3 py-1.5 text-xs shadow-sm backdrop-blur-sm duration-150">
-              {turnCue.side === "start" ? (
-                <ChevronUp className="icon-sm shrink-0 text-[var(--editor-selection-border)]" />
-              ) : (
-                <ChevronDown className="icon-sm shrink-0 text-[var(--editor-selection-border)]" />
-              )}
-              <span className="min-w-0 truncate">
-                {t(
-                  turnCue.side === "start"
-                    ? "Editor.scroll.previous"
-                    : "Editor.scroll.next"
-                )}
-              </span>
-              <span className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
-                <span
-                  className="block h-full rounded-full bg-[var(--editor-selection-border)] transition-[width] duration-100 ease-out"
-                  style={{ width: `${turnCue.progress * 100}%` }}
-                />
-              </span>
-            </div>
-          </div>
+        {showPreviousCue ? (
+          <ChapterTurnCue
+            side="start"
+            progress={previousProgress}
+            label={t("Editor.scroll.previous")}
+          />
+        ) : null}
+        {showNextCue ? (
+          <ChapterTurnCue
+            side="end"
+            progress={nextProgress}
+            label={t("Editor.scroll.next")}
+          />
         ) : null}
       </div>
 

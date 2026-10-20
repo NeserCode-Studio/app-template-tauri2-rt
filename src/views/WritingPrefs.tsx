@@ -174,6 +174,27 @@ export default function WritingPrefs() {
 
       <PrefsGroup title={t("Prefs.navigation.section")}>
         <PrefsRow
+          label={t("Prefs.navigation.turnEnabled")}
+          description={t("Prefs.navigation.turnEnabledHint")}
+        >
+          <Switch
+            checked={prefs.chapterTurnEnabled}
+            onCheckedChange={(v) => setPref("chapterTurnEnabled", v)}
+          />
+        </PrefsRow>
+
+        <PrefsRow
+          label={t("Prefs.navigation.turnHints")}
+          description={t("Prefs.navigation.turnHintsHint")}
+        >
+          <Switch
+            checked={prefs.chapterTurnHintsEnabled}
+            disabled={!prefs.chapterTurnEnabled}
+            onCheckedChange={(v) => setPref("chapterTurnHintsEnabled", v)}
+          />
+        </PrefsRow>
+
+        <PrefsRow
           label={t("Prefs.navigation.turnThreshold")}
           value={`${prefs.chapterTurnThreshold}px`}
           description={t("Prefs.navigation.turnThresholdHint")}
@@ -183,6 +204,7 @@ export default function WritingPrefs() {
             min={CHAPTER_TURN_THRESHOLD_MIN}
             max={CHAPTER_TURN_THRESHOLD_MAX}
             step={CHAPTER_TURN_THRESHOLD_STEP}
+            disabled={!prefs.chapterTurnEnabled}
             aria-label={t("Prefs.navigation.turnThreshold")}
             onValueChange={([v]) => setPref("chapterTurnThreshold", v)}
           />
