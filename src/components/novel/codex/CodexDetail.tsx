@@ -152,7 +152,7 @@ function ReferenceField({
   }
 
   return (
-    <div className="bg-neutral-100/70 dark:bg-neutral-800/40 flex min-h-8 flex-wrap items-center gap-1.5 rounded-md border px-2 py-1">
+    <div className="flex min-h-8 flex-wrap items-center gap-1.5 rounded-md border bg-neutral-100/70 px-2 py-1 dark:bg-neutral-800/40">
       {selected.map((entry) => (
         <span
           key={entry.id}
@@ -274,12 +274,11 @@ function FieldEditor({
   }
 
   if (field.kind === "select") {
-    const current =
-      value?.kind === "select" ? value.value : valueText(value);
+    const current = value?.kind === "select" ? value.value : valueText(value);
     return (
       <select
         value={current}
-        className="bg-neutral-100/70 dark:bg-neutral-800/40 focus:border-ring h-8 w-full rounded-md border px-2 text-sm outline-none"
+        className="focus:border-ring h-8 w-full rounded-md border bg-neutral-100/70 px-2 text-sm outline-none dark:bg-neutral-800/40"
         onChange={(event) =>
           onChange({ kind: "select", value: event.target.value })
         }
@@ -340,11 +339,14 @@ function FieldItem({
           </span>
         ) : null}
       </span>
-      <FieldEditor field={field} hint={hint} value={value} onChange={onChange} />
+      <FieldEditor
+        field={field}
+        hint={hint}
+        value={value}
+        onChange={onChange}
+      />
       {hint ? (
-        <span className="text-muted-foreground/60 text-[11px]">
-          {hint}
-        </span>
+        <span className="text-muted-foreground/60 text-[11px]">{hint}</span>
       ) : null}
     </label>
   );
@@ -680,15 +682,15 @@ function Section({
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-2 border-t px-4 py-3 first:border-t-0">
-      <div className="flex min-h-5 items-center justify-between gap-2">
+    <section className="border-t first:border-t-0">
+      <div className="bg-background sticky top-0 z-10 flex min-h-11 items-center justify-between gap-2 border-b px-4 py-2.5">
         <div className="flex items-center gap-2">
           <span className="bg-primary/60 h-3.5 w-0.5 rounded-full" />
           <h3 className="text-foreground text-sm font-semibold">{title}</h3>
         </div>
         {action}
       </div>
-      {children}
+      <div className="px-4 py-3">{children}</div>
     </section>
   );
 }
@@ -883,7 +885,8 @@ export function CodexDetail({
           ? t("Codex.save.error")
           : t("Codex.save.saved");
   const deleteConfirmed =
-    Boolean(draft.name.trim()) && deleteConfirmName.trim() === draft.name.trim();
+    Boolean(draft.name.trim()) &&
+    deleteConfirmName.trim() === draft.name.trim();
 
   function jumpToMention(record: MentionRecord) {
     openChapter(record.workId, record.chapterId);
@@ -944,7 +947,7 @@ export function CodexDetail({
                 : saveState === "dirty"
                   ? "bg-amber-500"
                   : saveState === "saving"
-                    ? "bg-sky-500 animate-pulse"
+                    ? "animate-pulse bg-sky-500"
                     : "bg-emerald-500",
             ].join(" ")}
           />
@@ -1147,7 +1150,7 @@ export function CodexDetail({
                       </span>
                       <button
                         type="button"
-                        className="text-muted-foreground hover:bg-neutral-100 hover:text-destructive dark:hover:bg-neutral-800/50 flex size-6 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100"
+                        className="text-muted-foreground hover:text-destructive flex size-6 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100 hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
                         aria-label={t("Codex.relation.remove")}
                         title={t("Codex.relation.remove")}
                         onClick={() => {
@@ -1183,7 +1186,9 @@ export function CodexDetail({
                       >
                         <BookOpen className="text-muted-foreground size-3.5 shrink-0" />
                         <span className="min-w-0 flex-1">
-                          <span className="block truncate text-sm">{title}</span>
+                          <span className="block truncate text-sm">
+                            {title}
+                          </span>
                           <span className="text-muted-foreground/60 block truncate text-[11px]">
                             {works[record.workId]?.title ?? record.workId}
                           </span>
@@ -1202,7 +1207,6 @@ export function CodexDetail({
                 </p>
               )}
             </Section>
-
           </div>
         </div>
       </div>
@@ -1299,7 +1303,7 @@ export function CodexDetail({
               {t("Editor.chapter.cancelRename")}
             </AlertDialogCancel>
             <AlertDialogAction
-              className="bg-destructive text-white hover:bg-destructive/90"
+              className="bg-destructive hover:bg-destructive/90 text-white"
               disabled={!deleteConfirmed}
               onClick={deleteEntry}
             >

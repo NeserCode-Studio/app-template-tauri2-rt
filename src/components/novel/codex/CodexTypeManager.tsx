@@ -257,10 +257,7 @@ function RelationGroupEditor({
         </Button>
       </div>
       {vocab.kinds.map((pair, index) => (
-        <div
-          key={index}
-          className="grid grid-cols-[1fr_1fr_auto] gap-1.5"
-        >
+        <div key={index} className="grid grid-cols-[1fr_1fr_auto] gap-1.5">
           <Input
             value={relationLabel(pair.kind, lang)}
             className="h-8 text-xs"
@@ -342,14 +339,8 @@ export function CodexTypeManager({
 }) {
   const { t } = useI18n();
   const toast = useToast();
-  const {
-    entries,
-    typeConfigs,
-    colorOf,
-    createType,
-    saveType,
-    removeType,
-  } = useCodex();
+  const { entries, typeConfigs, colorOf, createType, saveType, removeType } =
+    useCodex();
   const [selectedId, setSelectedId] = useState(typeConfigs[0]?.id ?? "");
   const [draft, setDraft] = useState<TypeConfig | null>(null);
   const [creating, setCreating] = useState(false);
@@ -460,7 +451,7 @@ export function CodexTypeManager({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="bg-neutral-50 dark:bg-neutral-700 flex h-[min(82vh,780px)] w-[min(1040px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden p-0 sm:max-w-none">
+      <DialogContent className="flex h-[min(82vh,780px)] w-[min(1040px,calc(100vw-2rem))] max-w-none flex-col gap-0 overflow-hidden bg-neutral-50 p-0 sm:max-w-none dark:bg-neutral-700">
         <DialogHeader className="shrink-0 border-b py-2.5 pr-12 pl-4 text-left">
           <DialogTitle className="flex items-center gap-2 text-base">
             <Settings2 className="size-4" />
@@ -472,7 +463,7 @@ export function CodexTypeManager({
         </DialogHeader>
 
         <div className="flex min-h-0 flex-1 flex-col sm:flex-row">
-          <aside className="bg-neutral-100/55 dark:bg-neutral-800/35 flex max-h-44 w-full shrink-0 flex-col border-b sm:max-h-none sm:w-52 sm:border-r sm:border-b-0">
+          <aside className="flex max-h-44 w-full shrink-0 flex-col border-b bg-neutral-100/55 sm:max-h-none sm:w-52 sm:border-r sm:border-b-0 dark:bg-neutral-800/35">
             <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto p-2">
               <p className="text-muted-foreground px-2 pt-2 pb-1 text-[11px] font-semibold">
                 {t("Codex.type.builtinSection")}
@@ -486,8 +477,8 @@ export function CodexTypeManager({
                   className={[
                     "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors",
                     selectedId === type.id
-                      ? "border-primary/30 bg-accent font-medium text-accent-foreground"
-                      : "border-transparent text-muted-foreground hover:bg-accent/55 hover:text-foreground",
+                      ? "border-primary/30 bg-accent text-accent-foreground font-medium"
+                      : "text-muted-foreground hover:bg-accent/55 hover:text-foreground border-transparent",
                   ].join(" ")}
                 >
                   <TypeGlyph icon={type.icon} className="size-3.5" />
@@ -504,7 +495,7 @@ export function CodexTypeManager({
                 </p>
                 <button
                   type="button"
-                  className="text-muted-foreground hover:bg-neutral-100 hover:text-foreground dark:hover:bg-neutral-800/50 flex size-5 items-center justify-center rounded"
+                  className="text-muted-foreground hover:text-foreground flex size-5 items-center justify-center rounded hover:bg-neutral-100 dark:hover:bg-neutral-800/50"
                   aria-label={t("Codex.type.new")}
                   onClick={() => setCreating(true)}
                 >
@@ -520,8 +511,8 @@ export function CodexTypeManager({
                   className={[
                     "flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-sm transition-colors",
                     selectedId === type.id
-                      ? "border-primary/30 bg-accent font-medium text-accent-foreground"
-                      : "border-transparent text-muted-foreground hover:bg-accent/55 hover:text-foreground",
+                      ? "border-primary/30 bg-accent text-accent-foreground font-medium"
+                      : "text-muted-foreground hover:bg-accent/55 hover:text-foreground border-transparent",
                   ].join(" ")}
                 >
                   <TypeGlyph icon={type.icon} className="size-3.5" />
@@ -540,7 +531,7 @@ export function CodexTypeManager({
               ) : null}
 
               {creating ? (
-                <div className="bg-neutral-100/70 dark:bg-neutral-800/40 mt-1 flex flex-col gap-1 rounded-md border p-2">
+                <div className="mt-1 flex flex-col gap-1 rounded-md border bg-neutral-100/70 p-2 dark:bg-neutral-800/40">
                   <Input
                     autoFocus
                     value={newLabel}
@@ -622,11 +613,13 @@ export function CodexTypeManager({
                   </Button>
                 </div>
 
-                <section className="flex flex-col gap-2.5 border-b px-4 py-2.5">
-                  <h4 className="text-muted-foreground text-xs font-semibold">
-                    {t("Codex.type.identity")}
-                  </h4>
-                  <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_9rem_auto_auto] md:items-end">
+                <section className="border-b px-4 pb-2.5">
+                  <div className="bg-background sticky top-0 z-20 -mx-4 border-b px-4 py-2.5">
+                    <h4 className="text-muted-foreground text-xs font-semibold">
+                      {t("Codex.type.identity")}
+                    </h4>
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_9rem_auto_auto] md:items-end">
                     <label className="flex flex-col gap-1.5">
                       <span className="text-muted-foreground text-xs">
                         {t("Codex.type.label")}
@@ -718,16 +711,11 @@ export function CodexTypeManager({
                   </div>
                 </section>
 
-                <section className="flex flex-col gap-2 border-b px-4 py-2.5">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h4 className="text-muted-foreground text-xs font-semibold">
-                        {t("Codex.type.fields")}
-                      </h4>
-                      <p className="text-muted-foreground/60 mt-1 text-[11px]">
-                        {t("Codex.type.fieldsOrderHint")}
-                      </p>
-                    </div>
+                <section className="flex flex-col gap-2 border-b px-4 pb-2.5">
+                  <div className="bg-background sticky top-0 z-20 -mx-4 flex items-center justify-between gap-3 border-b px-4 py-2.5">
+                    <h4 className="text-muted-foreground text-xs font-semibold">
+                      {t("Codex.type.fields")}
+                    </h4>
                     <Button
                       type="button"
                       variant="outline"
@@ -739,6 +727,9 @@ export function CodexTypeManager({
                       {t("Codex.type.addField")}
                     </Button>
                   </div>
+                  <p className="text-muted-foreground/60 text-[11px]">
+                    {t("Codex.type.fieldsOrderHint")}
+                  </p>
                   {draft.fields.map((field, index) => (
                     <FieldRow
                       key={field.key}
@@ -776,10 +767,12 @@ export function CodexTypeManager({
                   ) : null}
                 </section>
 
-                <section className="flex flex-col gap-2 border-b px-4 py-2.5">
-                  <h4 className="text-muted-foreground text-xs font-semibold">
-                    {t("Codex.type.relationVocab")}
-                  </h4>
+                <section className="flex flex-col gap-2 border-b px-4 pb-2.5">
+                  <div className="bg-background sticky top-0 z-20 -mx-4 border-b px-4 py-2.5">
+                    <h4 className="text-muted-foreground text-xs font-semibold">
+                      {t("Codex.type.relationVocab")}
+                    </h4>
+                  </div>
                   {draft.relationVocab.map((vocab, index) => (
                     <RelationGroupEditor
                       key={vocab.targetTypeId}
@@ -857,28 +850,30 @@ export function CodexTypeManager({
                   ) : null}
                 </section>
 
-                <section className="flex items-center justify-between gap-3 px-4 py-2.5">
-                  <div>
-                    <h4 className="text-muted-foreground text-xs font-semibold">
-                      {t("Codex.type.danger")}
-                    </h4>
-                    <p className="text-muted-foreground/70 mt-1 text-xs">
-                      {draft.builtin
-                        ? t("Codex.type.builtinLocked")
-                        : t("Codex.type.deleteHint")}
-                    </p>
+                <section className="px-4 pb-2.5">
+                  <div className="bg-background sticky top-0 z-20 -mx-4 flex items-center justify-between gap-3 border-b px-4 py-2.5">
+                    <div>
+                      <h4 className="text-muted-foreground text-xs font-semibold">
+                        {t("Codex.type.danger")}
+                      </h4>
+                      <p className="text-muted-foreground/70 mt-1 text-xs">
+                        {draft.builtin
+                          ? t("Codex.type.builtinLocked")
+                          : t("Codex.type.deleteHint")}
+                      </p>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive h-7 shrink-0 text-xs"
+                      disabled={draft.builtin}
+                      onClick={() => setPendingDelete(true)}
+                    >
+                      <Trash2 className="size-3.5" />
+                      {t("Codex.type.delete")}
+                    </Button>
                   </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="text-destructive hover:text-destructive h-7 text-xs"
-                    disabled={draft.builtin}
-                    onClick={() => setPendingDelete(true)}
-                  >
-                    <Trash2 className="size-3.5" />
-                    {t("Codex.type.delete")}
-                  </Button>
                 </section>
               </div>
             ) : (

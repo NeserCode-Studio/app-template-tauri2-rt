@@ -49,9 +49,11 @@ function PreviewSection({
   children: ReactNode;
 }) {
   return (
-    <section className="flex flex-col gap-2 border-t px-4 py-3">
-      <h3 className="text-muted-foreground text-xs font-medium">{title}</h3>
-      {children}
+    <section className="border-t first:border-t-0">
+      <h3 className="bg-background text-muted-foreground sticky top-0 z-10 border-b px-4 py-2.5 text-xs font-medium">
+        {title}
+      </h3>
+      <div className="px-4 py-3">{children}</div>
     </section>
   );
 }
@@ -88,8 +90,7 @@ export function CodexPreview({
     .filter((field) => hasFieldValue(entry.fields[field.key]));
   const linked = relations
     .filter(
-      (relation) =>
-        relation.fromId === entry.id || relation.toId === entry.id
+      (relation) => relation.fromId === entry.id || relation.toId === entry.id
     )
     .map((relation) => {
       const outgoing = relation.fromId === entry.id;
@@ -188,7 +189,10 @@ export function CodexPreview({
           <PreviewSection title={t("Codex.fields")}>
             <dl className="flex flex-col gap-2">
               {fields.map((field: FieldTemplate) => (
-                <div key={field.key} className="grid grid-cols-[5.5rem_1fr] gap-2">
+                <div
+                  key={field.key}
+                  className="grid grid-cols-[5.5rem_1fr] gap-2"
+                >
                   <dt className="text-muted-foreground truncate text-[11px]">
                     {fieldLabel(entry.typeId, field, lang)}
                   </dt>
@@ -203,7 +207,7 @@ export function CodexPreview({
 
         {entry.body ? (
           <PreviewSection title={t("Codex.body")}>
-            <p className="text-muted-foreground line-clamp-6 whitespace-pre-wrap text-[13px] leading-5">
+            <p className="text-muted-foreground line-clamp-6 text-[13px] leading-5 whitespace-pre-wrap">
               {entry.body}
             </p>
           </PreviewSection>
@@ -236,8 +240,7 @@ export function CodexPreview({
               ))}
               {linked.length > 5 ? (
                 <span className="text-muted-foreground/70 flex items-center gap-1 px-1 text-[11px]">
-                  <Link2 className="size-3" />
-                  +{linked.length - 5}
+                  <Link2 className="size-3" />+{linked.length - 5}
                 </span>
               ) : null}
             </div>
