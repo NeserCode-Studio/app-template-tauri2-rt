@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useToast } from "@/composables";
+import { useCodex } from "@/contexts/codex";
 import { createLogger } from "@/lib/logger";
 import { CommandHistory } from "@/lib/command-history";
 import {
@@ -10,7 +11,12 @@ import {
   rollbackTo,
   saveChapter,
 } from "@/services/chapter";
-import { readDraft, writeDraft } from "@/services/drafts";
+import {
+  DRAFT_REMOVED_EVENT,
+  readDraftEntry,
+  writeDraft,
+  type DraftRemovedDetail,
+} from "@/services/drafts";
 import { cardSchema, type Card, type Chapter } from "@/shared/schema";
 import type { ComposerHandle } from "./ComposerInput";
 
@@ -26,8 +32,27 @@ type SaveState = "saved" | "dirty" | "saving";
  * 只认真正收束语义的标点，逗号顿号这类停顿符不算。
  */
 const TERMINATORS = new Set([
-  "。", "！", "？", "…", "）", "】", "》", "」", "』", "〉",
-  "”", "’", ".", "!", "?", "…", ")", "]", "}", '"', "'",
+  "。",
+  "！",
+  "？",
+  "…",
+  "）",
+  "】",
+  "》",
+  "」",
+  "』",
+  "〉",
+  "”",
+  "’",
+  ".",
+  "!",
+  "?",
+  "…",
+  ")",
+  "]",
+  "}",
+  '"',
+  "'",
 ]);
 
 /** 该段是否以句读收束。 */
@@ -77,6 +102,7 @@ export function useChapterController({
   onWordsCommitted,
 }: ChapterControllerOptions) {
   const toast = useToast();
+  const { syncChapterMentions } = useCodex();
 
   const [cards, setCards] = useState<Card[]>(chapter.cards);
   const [editingIndex, setEditingIndex] = useState(-1);
@@ -110,32 +136,103 @@ export function useChapterController({
    * 用 state 而非 useLocalStorageState，是为了自己控制读写时机——
    * 切章时要按 chapterId 重新读，不能让 ahooks 沿用上一章的值。
    */
-  const [draft, setDraftState] = useState<string | null>(() =>
-    readDraft(workId, chapter.id)
+  const [draft, setDraftState] = useState<string | null>(
+    () => readDraftEntry(workId, chapter.id)?.stashedText ?? null
   );
   /** draft 的 ref 副本：回调里读最新值，不必把 draft 塞进依赖。 */
   const draftRef = useRef<string | null>(draft);
-
-  /** 统一写入口，保证 ref 与 localStorage 同步。 */
-  const setDraft = useCallback(
-    (value: string | null) => {
-      draftRef.current = value;
-      setDraftState(value);
-      writeDraft({
-        text: value ?? "",
-        workId,
-        chapterId: chapter.id,
-        chapterTitle: chapter.title,
-      });
-    },
-    [workId, chapter.id, chapter.title]
-  );
 
   const composerRef = useRef<ComposerHandle | null>(null);
   const historyRef = useRef<CommandHistory<Card[]> | null>(null);
   const saveTimer = useRef<number | null>(null);
   /** 待保存的最新卡片数组，卸载时 flush 用。 */
   const pendingCards = useRef<Card[] | null>(null);
+  /** cards 的 ref 副本，供草稿持久化同步读取最新编辑目标。 */
+  const cardsRef = useRef(cards);
+  /** editingIndex 的 ref 副本，供防抖和卸载回调同步读取最新值。 */
+  const editingIndexRef = useRef(-1);
+  /** 输入框是否已经完成本章草稿的首次装载。 */
+  const composerHydratedRef = useRef(false);
+  /** 输入草稿防抖计时器。 */
+  const draftSyncTimer = useRef<number | null>(null);
+
+  /** 同一帧内同步更新编辑目标 state 与 ref。 */
+  const setEditingTarget = useCallback((index: number) => {
+    editingIndexRef.current = index;
+    setEditingIndex(index);
+  }, []);
+
+  /** 暂存段落进入输入区上方时，只更新界面；持久化由调用方明确写入。 */
+  const setPendingDraft = useCallback((value: string | null) => {
+    draftRef.current = value;
+    setDraftState(value);
+  }, []);
+
+  /** 取消尚未执行的输入草稿同步，避免旧内容覆盖显式操作。 */
+  const cancelDraftSync = useCallback(() => {
+    if (draftSyncTimer.current !== null) {
+      window.clearTimeout(draftSyncTimer.current);
+      draftSyncTimer.current = null;
+    }
+  }, []);
+
+  /**
+   * 保存一份完整草稿快照。
+   *
+   * text 是输入框当前内容；编辑旧段落时还必须同时保存卡片 id 与暂存段落。
+   * 三者分开后，切章回来才能恢复“正在改哪一段”，而不是把旧段原文
+   * 当成一段新草稿重新灌进输入框。
+   */
+  const persistDraftSnapshot = useCallback(
+    (
+      text: string,
+      index = editingIndexRef.current,
+      stashedText: string | null = draftRef.current
+    ) => {
+      cancelDraftSync();
+      const editingCardId =
+        index >= 0 ? cardsRef.current[index]?.id : undefined;
+      const normalizedStashed = stashedText?.trim() || undefined;
+      writeDraft({
+        text: text.trim(),
+        workId,
+        chapterId: chapter.id,
+        chapterTitle: chapter.title,
+        ...(editingCardId ? { editingCardId } : {}),
+        ...(normalizedStashed ? { stashedText: normalizedStashed } : {}),
+      });
+    },
+    [workId, chapter.id, chapter.title, cancelDraftSync]
+  );
+
+  /**
+   * 输入框内容变化时同步草稿。
+   *
+   * 清空必须立即落盘，否则草稿箱会继续显示一份已经不存在的文本；
+   * 正常输入则防抖，避免每次按键都重写 localStorage 并广播重渲染。
+   */
+  const handleComposerTextChange = useCallback(
+    (text: string) => {
+      if (!text.trim()) {
+        persistDraftSnapshot(
+          "",
+          editingIndexRef.current,
+          draftRef.current
+        );
+        return;
+      }
+      cancelDraftSync();
+      draftSyncTimer.current = window.setTimeout(() => {
+        draftSyncTimer.current = null;
+        persistDraftSnapshot(
+          text,
+          editingIndexRef.current,
+          draftRef.current
+        );
+      }, 300);
+    },
+    [cancelDraftSync, persistDraftSnapshot]
+  );
 
   /** 真正执行落盘。 */
   const persistNow = useCallback(
@@ -155,6 +252,11 @@ export function useChapterController({
         const saved = await saveChapter(root, workId, next);
         chapterRef.current = saved;
         setChapterWithHistory(saved);
+        try {
+          await syncChapterMentions(workId, chapter.id, cardsToText(nextCards));
+        } catch (err) {
+          log.warn("mention index sync failed", err);
+        }
         /*
          * 作品库的字数来自 stats.json。作品总字数是全书各章之和，
          * 由父级汇总后写入——单章字数不等于作品字数，这里只上报本章。
@@ -170,7 +272,15 @@ export function useChapterController({
         toast.error("Editor.save.failed");
       }
     },
-    [root, workId, onSaved, onWordsCommitted, toast]
+    [
+      root,
+      workId,
+      chapter.id,
+      syncChapterMentions,
+      onSaved,
+      onWordsCommitted,
+      toast,
+    ]
   );
 
   /**
@@ -202,36 +312,71 @@ export function useChapterController({
   const initialCards = chapter.cards;
   useEffect(() => {
     setCards(initialCards);
-    setEditingIndex(-1);
     setSaveState("saved");
     setChapterWithHistory(chapter);
     pendingCards.current = null;
     /*
-     * 切章时按新章重新取草稿并灌回输入框。
+     * 切章时按新章重新读取完整草稿。
      *
-     * 取回后只清 state、不清 ref：这份文字现在已经在输入框里了，
-     * 若 draft state 仍非空，编辑器上方还会再渲染一张"暂存草稿"卡片，
-     * 同一段内容在界面上出现两次。约定是「草稿归位到输入框 = 不再显示暂存卡」。
-     *
-     * draftRef 仍保留该文本：紧接着点开旧卡片时，handleCardClick 要靠它
-     * 把这段扣下来再载入卡片原文。清掉 ref 就会在点卡片时丢掉它。
+     * text 灌回输入框；editingCardId 用来恢复“正在改哪一段”；
+     * stashedText 才重新渲染输入框上方的暂存卡。三者不能混为一个字符串，
+     * 否则编辑旧段落时切章回来就会退化成一段新段落草稿。
      */
-    const nextDraft = readDraft(workId, chapterId);
-    draftRef.current = nextDraft;
-    setDraftState(null);
+    const storedDraft = readDraftEntry(workId, chapterId);
+    const restoredEditingIndex = storedDraft?.editingCardId
+      ? initialCards.findIndex((card) => card.id === storedDraft.editingCardId)
+      : -1;
+    const nextEditingIndex =
+      restoredEditingIndex >= 0 ? restoredEditingIndex : -1;
+    setEditingTarget(nextEditingIndex);
+    setPendingDraft(
+      nextEditingIndex >= 0 ? (storedDraft?.stashedText ?? null) : null
+    );
     historyRef.current = new CommandHistory<Card[]>(initialCards);
     /*
      * 把这一章自己的草稿灌回输入框。切回来要能接着写，
      * 这是草稿存 localStorage（而非组件 state）的唯一理由。
      * 顺带进入可写作状态：不必先去点某张卡片才能落笔。
      */
+    const nextText = storedDraft?.text ?? null;
     requestAnimationFrame(() => {
       composerRef.current?.clear();
-      if (nextDraft) composerRef.current?.load(nextDraft, "end", true);
+      if (nextText) composerRef.current?.load(nextText, "end", true);
       composerRef.current?.focus("end");
+      composerHydratedRef.current = true;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chapterId]);
+
+  /*
+   * 草稿箱删除当前章草稿时，持久化记录与输入框必须一起清掉。
+   * 否则卸载清理会把输入框里同一段文字重新写回，表现为“切回来又出现”。
+   */
+  useEffect(() => {
+    const onDraftRemoved = (event: Event) => {
+      const detail = (event as CustomEvent<DraftRemovedDetail>).detail;
+      if (
+        !detail ||
+        detail.workId !== workId ||
+        detail.chapterId !== chapterId
+      ) {
+        return;
+      }
+      cancelDraftSync();
+      setPendingDraft(null);
+      setEditingTarget(-1);
+      composerRef.current?.clear();
+    };
+    window.addEventListener(DRAFT_REMOVED_EVENT, onDraftRemoved);
+    return () =>
+      window.removeEventListener(DRAFT_REMOVED_EVENT, onDraftRemoved);
+  }, [
+    workId,
+    chapterId,
+    cancelDraftSync,
+    setEditingTarget,
+    setPendingDraft,
+  ]);
 
   /**
    * 回滚到某个历史快照。
@@ -255,8 +400,17 @@ export function useChapterController({
         const saved = await saveChapter(root, workId, restored, false);
         chapterRef.current = saved;
         setChapterWithHistory(saved);
+        try {
+          await syncChapterMentions(
+            workId,
+            chapter.id,
+            cardsToText(saved.cards)
+          );
+        } catch (err) {
+          log.warn("mention index sync failed after rollback", err);
+        }
         setCards(saved.cards);
-        setEditingIndex(-1);
+        setEditingTarget(-1);
         historyRef.current = new CommandHistory<Card[]>(saved.cards);
         setSaveState("saved");
         setHistoryOpen(false);
@@ -269,7 +423,16 @@ export function useChapterController({
         toast.error("Editor.save.failed");
       }
     },
-    [root, workId, onSaved, onWordsCommitted, toast]
+    [
+      root,
+      workId,
+      chapter.id,
+      syncChapterMentions,
+      setEditingTarget,
+      onSaved,
+      onWordsCommitted,
+      toast,
+    ]
   );
 
   /* 字数统计：仅在卡片数组变化时重算（中文输入组合期不会触发，因为内容不进 state）。 */
@@ -315,12 +478,6 @@ export function useChapterController({
   useEffect(() => {
     chapterRef.current = chapter;
   }, [chapter]);
-
-  /* editingIndex 的 ref 副本，供防抖回调读取最新值而不重建定时器。 */
-  const editingIndexRef = useRef(-1);
-  useEffect(() => {
-    editingIndexRef.current = editingIndex;
-  }, [editingIndex]);
 
   /** 统一的卡片变更入口：更新 state、记历史、排保存。 */
   const applyCards = useCallback(
@@ -376,7 +533,9 @@ export function useChapterController({
         applyCards([...cards, card]);
       } else {
         const next = cards.map((c, i) =>
-          i === index ? cardSchema.parse({ ...c, text: text, updatedAt: now }) : c
+          i === index
+            ? cardSchema.parse({ ...c, text: text, updatedAt: now })
+            : c
         );
         applyCards(next);
       }
@@ -395,38 +554,57 @@ export function useChapterController({
          * 草稿此时"回到"了编辑框，因此上面的暂存卡片同步撤掉，
          * 否则同一段文字会同时出现在卡片和输入框里。
          */
-        setDraft(null);
-        setEditingIndex(-1);
-        requestAnimationFrame(() => composerRef.current?.load(stashed, "end", true));
+        setPendingDraft(null);
+        setEditingTarget(-1);
+        persistDraftSnapshot(stashed, -1, null);
+        requestAnimationFrame(() =>
+          composerRef.current?.load(stashed, "end", true)
+        );
         return;
       }
 
-      setDraft(null);
-      setEditingIndex(-1);
+      setPendingDraft(null);
+      setEditingTarget(-1);
+      persistDraftSnapshot("", -1, null);
     },
-    [cards, applyCards, setDraft]
+    [
+      cards,
+      applyCards,
+      persistDraftSnapshot,
+      setEditingTarget,
+      setPendingDraft,
+    ]
   );
 
   /** 点击卡片：载入输入框编辑。 */
-  const handleCardClick = useCallback((index: number) => {
-    /*
-     * 正在写新段落时点开旧卡片，先把草稿暂存起来。
-     * load() 会覆盖 textarea.value，若不扣下草稿就直接被冲掉了。
-     * 已经在编辑某张卡时则不暂存——那时输入框里的内容属于那张卡。
-     */
-    if (editingIndexRef.current < 0) {
-      const pending = composerRef.current?.read().trim() ?? "";
-      if (pending) {
-        setDraft(pending);
-      }
-    }
-    setEditingIndex(index);
-    // 下一帧再 focus，确保 textarea 已渲染出 editing 提示。
-    requestAnimationFrame(() => {
+  const handleCardClick = useCallback(
+    (index: number) => {
       const card = cardsRef.current[index];
-      if (card) composerRef.current?.load(card.text, "end");
-    });
-  }, [setDraft]);
+      if (!card) return;
+      /*
+       * 正在写新段落时点开旧卡片，先把草稿暂存起来。
+       * load() 会覆盖 textarea.value，若不扣下草稿就直接被冲掉了。
+       * 已经在编辑某张卡时则不暂存——那时输入框里的内容属于那张卡。
+       */
+      if (editingIndexRef.current < 0) {
+        const pending = composerRef.current?.read().trim() ?? "";
+        if (pending) {
+          setPendingDraft(pending);
+        }
+      }
+      setEditingTarget(index);
+      /*
+       * 先把旧卡正文与目标 id 写进草稿，再异步载入输入框。
+       * 这样即使紧接着切章，持久化记录也已经指向正确卡片。
+       */
+      persistDraftSnapshot(card.text, index, draftRef.current);
+      // 下一帧再 focus，确保 textarea 已渲染出 editing 提示。
+      requestAnimationFrame(() => {
+        composerRef.current?.load(card.text, "end");
+      });
+    },
+    [persistDraftSnapshot, setEditingTarget, setPendingDraft]
+  );
 
   /**
    * 从"编辑已有卡片"退回"接着写新段落"。
@@ -441,7 +619,9 @@ export function useChapterController({
     if (index >= 0 && typed) {
       const now = Date.now();
       const next = cardsRef.current.map((c, i) =>
-        i === index ? cardSchema.parse({ ...c, text: typed, updatedAt: now }) : c
+        i === index
+          ? cardSchema.parse({ ...c, text: typed, updatedAt: now })
+          : c
       );
       setCards(next);
       historyRef.current?.record(next);
@@ -452,35 +632,52 @@ export function useChapterController({
      * 否则会出现"点了回到最新段落，草稿却还孤零零挂在上面"的错位。
      */
     const stashed = draftRef.current;
-    setDraft(null);
-    setEditingIndex(-1);
+    setPendingDraft(null);
+    setEditingTarget(-1);
+    persistDraftSnapshot(stashed ?? "", -1, null);
     composerRef.current?.clear();
-    requestAnimationFrame(() => composerRef.current?.load(stashed ?? "", "end", Boolean(stashed)));
-  }, [scheduleSave, setDraft]);
+    requestAnimationFrame(() =>
+      composerRef.current?.load(stashed ?? "", "end", Boolean(stashed))
+    );
+  }, [
+    persistDraftSnapshot,
+    scheduleSave,
+    setEditingTarget,
+    setPendingDraft,
+  ]);
 
   /** 取回暂存段落：清空输入框回到追加模式，并把草稿放回去。 */
   const restoreDraft = useCallback(() => {
-    setEditingIndex(-1);
     const text = draft ?? "";
-    setDraft(null);
+    setEditingTarget(-1);
+    setPendingDraft(null);
+    persistDraftSnapshot(text, -1, null);
     requestAnimationFrame(() => composerRef.current?.load(text, "end", true));
-  }, [draft, setDraft]);
+  }, [
+    draft,
+    persistDraftSnapshot,
+    setEditingTarget,
+    setPendingDraft,
+  ]);
 
   /**
    * 丢弃暂存段落。
    *
    * 必须连 ref 一起清。只清 state 的话卡片照样消失，但 draftRef 还留着
    * 文本：下一次点开旧卡片再提交，handleSubmit 会把这段"扣下"又放回
-   * 输入框，用户会发现刚丢掉的段落又回来了。setDraft 本身已同步 ref，
-   * 这里额外确认一次是因为这条路径语义上要求彻底作废。
+   * 输入框，用户会发现刚丢掉的段落又回来了。setPendingDraft 会同步 ref，
+   * 同时重写一份只保留当前旧卡内容的快照。
    */
   const discardDraft = useCallback(() => {
-    draftRef.current = null;
-    setDraft(null);
-  }, [setDraft]);
+    setPendingDraft(null);
+    persistDraftSnapshot(
+      composerRef.current?.read() ?? "",
+      editingIndexRef.current,
+      null
+    );
+  }, [persistDraftSnapshot, setPendingDraft]);
 
   /* cards 的 ref 副本，供回调读取最新值。 */
-  const cardsRef = useRef(cards);
   useEffect(() => {
     cardsRef.current = cards;
   }, [cards]);
@@ -610,13 +807,21 @@ export function useChapterController({
     (index: number) => {
       applyCards(cards.filter((_, i) => i !== index));
       if (editingIndexRef.current === index) {
-        setEditingIndex(-1);
+        setPendingDraft(null);
+        setEditingTarget(-1);
         composerRef.current?.clear();
+        persistDraftSnapshot("", -1, null);
       } else if (editingIndexRef.current > index) {
-        setEditingIndex(editingIndexRef.current - 1);
+        setEditingTarget(editingIndexRef.current - 1);
       }
     },
-    [cards, applyCards]
+    [
+      cards,
+      applyCards,
+      persistDraftSnapshot,
+      setEditingTarget,
+      setPendingDraft,
+    ]
   );
 
   /* 全局快捷键：Ctrl+Z / Ctrl+Shift+Z。输入框内让位给原生 undo。 */
@@ -652,6 +857,7 @@ export function useChapterController({
      */
     const composer = composerRef.current;
     return () => {
+      cancelDraftSync();
       if (saveTimer.current !== null) {
         window.clearTimeout(saveTimer.current);
         saveTimer.current = null;
@@ -659,7 +865,7 @@ export function useChapterController({
       const cards = pendingCards.current;
       if (cards) void persistNow(cards);
       /*
-       * 输入框里的半成品同样要在这里存成草稿。
+       * 输入框里的半成品同样要在这里存成完整草稿。
        *
        * 父级用 `key={chapter.id}` 渲染本组件，所以**切章走的是卸载，
        * 不是 chapterId effect**——之前只在 effect 里补草稿的话根本不会触发。
@@ -667,13 +873,12 @@ export function useChapterController({
        * 三条路径都在这里收口。
        */
       const typed = composer?.read().trim() ?? "";
-      if (typed) {
-        writeDraft({
-          text: typed,
-          workId,
-          chapterId,
-          chapterTitle: chapter.title,
-        });
+      if (composerHydratedRef.current && (typed || draftRef.current)) {
+        persistDraftSnapshot(
+          typed,
+          editingIndexRef.current,
+          draftRef.current
+        );
       }
     };
     // chapterId / workId / chapter.title 在卸载时读取，均为本章的稳定值。
@@ -701,6 +906,7 @@ export function useChapterController({
     undo,
     redo,
     handleSubmit,
+    handleComposerTextChange,
     handleCardClick,
     returnToNew,
     restoreDraft,

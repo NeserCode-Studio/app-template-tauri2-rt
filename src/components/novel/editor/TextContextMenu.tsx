@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/context-menu";
 import { useI18n, useToast } from "@/composables";
 import { useCodex } from "@/contexts/codex";
-import { CODEX_TYPES, type CodexType } from "@/services/codex";
+import { typeLabel } from "@/services/codex";
 
 export interface TextContextMenuProps {
   index: number;
@@ -49,7 +49,8 @@ export default function TextContextMenu({
 }: TextContextMenuProps) {
   const { t } = useI18n();
   const toast = useToast();
-  const { entries, colorOf, create, setCurrentEntryId } = useCodex();
+  const { entries, typeConfigs, colorOf, create, setCurrentEntryId } =
+    useCodex();
   const [selected, setSelected] = useState("");
 
   /*
@@ -57,7 +58,8 @@ export default function TextContextMenu({
    * 打开时才挂载，那时选区可能已经被点击清掉了。
    */
   useEffect(() => {
-    const read = () => setSelected(window.getSelection()?.toString().trim() ?? "");
+    const read = () =>
+      setSelected(window.getSelection()?.toString().trim() ?? "");
     document.addEventListener("selectionchange", read);
     return () => document.removeEventListener("selectionchange", read);
   }, []);
@@ -69,10 +71,10 @@ export default function TextContextMenu({
       )
     : false;
 
-  async function addCodex(type: CodexType) {
+  async function addCodex(typeId: string) {
     if (!selected) return;
     try {
-      const entry = await create(type, selected);
+      const entry = await create(typeId, selected);
       if (entry) {
         setCurrentEntryId(entry.id);
         toast.success("Codex.save");
@@ -90,7 +92,9 @@ export default function TextContextMenu({
           <>
             <ContextMenuItem
               onSelect={() => {
-                void navigator.clipboard.writeText(selected).catch(() => undefined);
+                void navigator.clipboard
+                  .writeText(selected)
+                  .catch(() => undefined);
               }}
             >
               {t("ContextMenu.copy")}
@@ -98,18 +102,25 @@ export default function TextContextMenu({
             </ContextMenuItem>
             <ContextMenuSeparator />
             {exists ? (
-              <ContextMenuItem disabled>{t("ContextMenu.alreadyCodex")}</ContextMenuItem>
+              <ContextMenuItem disabled>
+                {t("ContextMenu.alreadyCodex")}
+              </ContextMenuItem>
             ) : (
               <ContextMenuSub>
-                <ContextMenuSubTrigger>{t("ContextMenu.addCodex")}</ContextMenuSubTrigger>
+                <ContextMenuSubTrigger>
+                  {t("ContextMenu.addCodex")}
+                </ContextMenuSubTrigger>
                 <ContextMenuSubContent>
-                  {CODEX_TYPES.map((tp) => (
-                    <ContextMenuItem key={tp} onSelect={() => void addCodex(tp)}>
+                  {typeConfigs.map((tp) => (
+                    <ContextMenuItem
+                      key={tp.id}
+                      onSelect={() => void addCodex(tp.id)}
+                    >
                       <span
                         className="size-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: colorOf(tp) }}
+                        style={{ backgroundColor: colorOf(tp.id) }}
                       />
-                      {t(`Codex.type.${tp}`)}
+                      {typeLabel(tp, t)}
                     </ContextMenuItem>
                   ))}
                 </ContextMenuSubContent>
@@ -123,12 +134,18 @@ export default function TextContextMenu({
           <Scissors className="icon-sm" />
           {t("Editor.card.split")}
         </ContextMenuItem>
-        <ContextMenuItem disabled={index === total - 1} onSelect={() => onMergeDown(index)}>
+        <ContextMenuItem
+          disabled={index === total - 1}
+          onSelect={() => onMergeDown(index)}
+        >
           <Combine className="icon-sm" />
           {t("Editor.card.merge")}
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem disabled={index === 0} onSelect={() => onMoveUp(index)}>
+        <ContextMenuItem
+          disabled={index === 0}
+          onSelect={() => onMoveUp(index)}
+        >
           <ArrowUp className="icon-sm" />
           {t("Editor.card.moveUp")}
         </ContextMenuItem>

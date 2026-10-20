@@ -19,3 +19,5 @@
 ### Special Note
 
 1. If the project includes the tauri2 library, do not run the `tauri build` command to build the application until reaching the final output stage; instead, perform semantic checks on TypeScript/Rust code using tools such as `tsc` or `cargo check`.
+
+2. File operations: During the project planning phase, first inquire whether a dedicated MCP tool has already been added within the project, and record the corresponding name in the plan document (if applicable). Otherwise, prioritize using PowerShell 7 environment to support UTF-8.

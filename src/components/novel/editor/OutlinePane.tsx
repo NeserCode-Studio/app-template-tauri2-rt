@@ -1,5 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BookOpen, ChevronRight, FileText, GripVertical, Plus, Settings2, Trash2 } from "lucide-react";
+import {
+  ArrowUpRight,
+  BookOpen,
+  ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
+  FileText,
+  GripVertical,
+  Plus,
+  Settings2,
+  Trash2,
+} from "lucide-react";
 import {
   DndContext,
   DragOverlay,
@@ -28,6 +39,11 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  HoverCard,
+  HoverCardContent,
+  HoverCardTrigger,
+} from "@/components/ui/hover-card";
 import { useI18n } from "@/composables";
 import { useOutline } from "@/contexts/outline";
 import type { OutlineNode } from "@/shared/schema";
@@ -225,15 +241,16 @@ function SortableChapter({
     >
       <div
         className={[
-          "flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-md border border-transparent py-1.5 pr-6 pl-7 text-left transition-colors",
+          "flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-md border py-1.5 pr-6 pl-7 text-left transition-colors",
           "hover:bg-accent hover:text-accent-foreground",
           selected
-            ? "border-border bg-accent/60 text-accent-foreground"
-            : "text-muted-foreground",
+            ? "chapter-row-selected bg-accent/60 text-accent-foreground"
+            : "border-transparent text-muted-foreground",
           isDragging || dragging ? "opacity-40" : "",
         ].join(" ")}
         onClick={onSelect}
         title={node.title}
+        aria-current={selected ? "page" : undefined}
         {...attributes}
       >
         <div className="flex items-center gap-1.5">
@@ -311,27 +328,36 @@ function SortableChapter({
 function VolumeRow({
   volume,
   isCollapsed,
+  currentChapterTitle,
   sessionActive,
   dragging,
   chapterCount,
+  currentLabel,
+  openCurrentLabel,
   addChapterLabel,
   deleteVolumeLabel,
   dragLabel,
   registerEl,
   onToggle,
+  onOpenCurrentChapter,
   onAddChapter,
   onDelete,
 }: {
   volume: OutlineNode;
   isCollapsed: boolean;
+  /** 当前阅读章标题；为空表示这卷不包含正在写的章节。 */
+  currentChapterTitle: string | null;
   sessionActive: boolean;
   dragging: boolean;
   chapterCount: number;
+  currentLabel: string;
+  openCurrentLabel: string;
   addChapterLabel: string;
   deleteVolumeLabel: string;
   dragLabel: string;
   registerEl: (el: HTMLElement | null) => void;
   onToggle: () => void;
+  onOpenCurrentChapter: () => void;
   onAddChapter: () => void;
   onDelete: () => void;
 }) {
@@ -347,7 +373,8 @@ function VolumeRow({
     data: { type: "volume", nodeId: volume.id },
   });
 
-  return (
+  const containsSelectedChapter = isCollapsed && currentChapterTitle !== null;
+  const row = (
     <div
       ref={(el) => {
         setNodeRef(el);
@@ -358,7 +385,10 @@ function VolumeRow({
         transition: sessionActive ? transition : undefined,
       }}
       className={[
-        "group relative flex items-center gap-1 rounded-md px-2 py-1 hover:bg-accent/40",
+        "group relative flex items-center gap-1 rounded-md border px-2 py-1 transition-colors hover:bg-accent/40",
+        containsSelectedChapter
+          ? "chapter-row-selected bg-accent/25 text-accent-foreground before:pointer-events-none before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r-full before:bg-[var(--editor-selection-border)]"
+          : "border-transparent",
         isDragging || dragging ? "opacity-40" : "",
       ].join(" ")}
       {...attributes}
@@ -378,17 +408,27 @@ function VolumeRow({
       >
         <ChevronRight
           className={[
-            "icon-sm shrink-0 text-muted-foreground transition-transform",
+            "icon-sm shrink-0 transition-transform",
+            containsSelectedChapter
+              ? "text-[var(--editor-selection-border)]"
+              : "text-muted-foreground",
             isCollapsed ? "" : "rotate-90",
           ].join(" ")}
         />
-        <span className="truncate text-sm font-medium">{volume.title}</span>
+        <span className="min-w-0 truncate text-sm font-medium">{volume.title}</span>
         {/*
          * 章数跟在名称后面而不是推到最右：名称与数量是同一条信息
          * （"这卷有多少章"），推到右侧会被两端的操作按钮挤远，
          * 视线要来回扫才联系得上。
          */}
-        <span className="shrink-0 text-xs tabular-nums text-muted-foreground/60">
+        <span
+          className={[
+            "shrink-0 text-xs tabular-nums",
+            containsSelectedChapter
+              ? "text-[var(--editor-selection-border)]"
+              : "text-muted-foreground/60",
+          ].join(" ")}
+        >
           {chapterCount}
         </span>
       </button>
@@ -411,6 +451,40 @@ function VolumeRow({
         <Trash2 className="icon-sm" />
       </button>
     </div>
+  );
+
+  if (!containsSelectedChapter || !currentChapterTitle) return row;
+
+  return (
+    <HoverCard openDelay={450} closeDelay={140}>
+      <HoverCardTrigger asChild>{row}</HoverCardTrigger>
+      <HoverCardContent
+        side="right"
+        align="start"
+        sideOffset={8}
+        collisionPadding={12}
+        className="w-60 p-2.5"
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0 rounded-sm border border-[var(--editor-selection-border)] bg-accent px-1.5 py-0.5 text-[10px] font-medium text-accent-foreground">
+            {currentLabel}
+          </span>
+          <span className="min-w-0 truncate text-sm font-medium">
+            {currentChapterTitle}
+          </span>
+        </div>
+        <Button
+          type="button"
+          variant="secondary"
+          size="sm"
+          className="mt-2 h-7 w-full justify-between px-2 text-xs"
+          onClick={onOpenCurrentChapter}
+        >
+          {openCurrentLabel}
+          <ArrowUpRight className="icon-sm" />
+        </Button>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -567,6 +641,14 @@ export default function OutlinePane({
     () => new Map([...chapters, ...volumes].map((n) => [n.id, n])),
     [chapters, volumes]
   );
+  /** 当前阅读章；卷收起时用它的标题组成跳转 HoverCard。 */
+  const selectedChapter = useMemo(() => {
+    if (!readingChapterId) return null;
+    const selected = nodeById.get(readingChapterId);
+    return selected?.type === "chapter" ? selected : null;
+  }, [nodeById, readingChapterId]);
+  const allVolumesCollapsed =
+    volumes.length > 0 && volumes.every((volume) => Boolean(collapsed[volume.id]));
   /** 章节点 DOM：位置法算插入下标时要读实时矩形。 */
   const nodeEls = useRef(new Map<string, HTMLElement>());
   /**
@@ -893,29 +975,60 @@ export default function OutlinePane({
          * "卷"是低频操作，并排等权重反而把主路径藏起来了。改成下拉后，
          * 主路径在一个明确的下拉项上，低频项排在下面。
          */}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="size-7"
-              aria-label={t("Editor.side.add")}
-              title={t("Editor.side.add")}
-            >
-              <Plus className="icon-sm" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="min-w-32">
-            <DropdownMenuItem onSelect={() => setChapterDialogIn(null)}>
-              <Plus className="icon-sm" />
-              {t("Editor.side.addChapter")}
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setVolumeDialog(true)}>
-              <BookOpen className="icon-sm" />
-              {t("Editor.side.addVolume")}
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <div className="flex items-center gap-0.5">
+          <Button
+            size="icon"
+            variant="ghost"
+            className="size-7"
+            disabled={volumes.length === 0}
+            aria-label={
+              allVolumesCollapsed
+                ? t("Editor.volume.expandAll")
+                : t("Editor.volume.collapseAll")
+            }
+            title={
+              allVolumesCollapsed
+                ? t("Editor.volume.expandAll")
+                : t("Editor.volume.collapseAll")
+            }
+            onClick={() =>
+              setCollapsed(
+                allVolumesCollapsed
+                  ? {}
+                  : Object.fromEntries(volumes.map((volume) => [volume.id, true]))
+              )
+            }
+          >
+            {allVolumesCollapsed ? (
+              <ChevronsUpDown className="icon-sm" />
+            ) : (
+              <ChevronsDownUp className="icon-sm" />
+            )}
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="icon"
+                variant="ghost"
+                className="size-7"
+                aria-label={t("Editor.side.add")}
+                title={t("Editor.side.add")}
+              >
+                <Plus className="icon-sm" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-32">
+              <DropdownMenuItem onSelect={() => setChapterDialogIn(null)}>
+                <Plus className="icon-sm" />
+                {t("Editor.side.addChapter")}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={() => setVolumeDialog(true)}>
+                <BookOpen className="icon-sm" />
+                {t("Editor.side.addVolume")}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       <DndContext
@@ -977,9 +1090,16 @@ export default function OutlinePane({
                 <VolumeRow
                   volume={volume}
                   isCollapsed={isCollapsed}
+                  currentChapterTitle={
+                    selectedChapter?.parentId === volume.id
+                      ? selectedChapter.title
+                      : null
+                  }
                   sessionActive={Boolean(activeId)}
                   dragging={activeId === NODE_PREFIX + volume.id}
                   chapterCount={(chaptersByVolume.get(volume.id) ?? []).length}
+                  currentLabel={t("Editor.side.current")}
+                  openCurrentLabel={t("Editor.volume.openCurrent")}
                   addChapterLabel={t("Editor.side.addChapter")}
                   deleteVolumeLabel={t("Editor.volume.delete")}
                   dragLabel={t("Editor.node.dragHint")}
@@ -990,6 +1110,12 @@ export default function OutlinePane({
                   onToggle={() =>
                     setCollapsed((prev) => ({ ...prev, [volume.id]: !prev[volume.id] }))
                   }
+                  onOpenCurrentChapter={() => {
+                    setCollapsed((prev) => ({ ...prev, [volume.id]: false }));
+                    if (selectedChapter) {
+                      setCurrentChapterId(selectedChapter.id);
+                    }
+                  }}
                   onAddChapter={() => setChapterDialogIn(volume.id)}
                   onDelete={() => onDeleteVolume(volume.id)}
                 />

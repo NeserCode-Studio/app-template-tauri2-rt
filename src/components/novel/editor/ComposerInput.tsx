@@ -56,6 +56,13 @@ export interface ComposerInputProps {
   onRestoreDraft?: () => void;
   /** 丢弃暂存段落。 */
   onDiscardDraft?: () => void;
+  /**
+   * 输入框原始内容变化。
+   *
+   * 内容仍不进入 React state；控制器只据此防抖同步草稿，
+   * 清空时则立即删除草稿。
+   */
+  onTextChange?: (text: string) => void;
 }
 
 /**
@@ -76,7 +83,15 @@ export interface ComposerInputProps {
  */
 const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
   function ComposerInput(
-    { onSubmit, editingIndex, onReturnToNew, pendingDraft, onRestoreDraft, onDiscardDraft },
+    {
+      onSubmit,
+      editingIndex,
+      onReturnToNew,
+      pendingDraft,
+      onRestoreDraft,
+      onDiscardDraft,
+      onTextChange,
+    },
     ref
   ) {
     const { t } = useI18n();
@@ -210,7 +225,11 @@ const ComposerInput = forwardRef<ComposerHandle, ComposerInputProps>(
              * 视觉上像是飘在中间。左边不补偿，文字仍与正文对齐。
              */
             className="prose-article [field-sizing:content] scrollbar-app -mr-6 max-h-[220px] min-h-[3lh] w-[calc(100%+1.5rem)] resize-none overflow-y-auto border-0 bg-transparent py-1 pr-1 outline-none ring-0 transition-colors placeholder:text-muted-foreground/50 focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
-            onInput={(e) => setHasText(e.currentTarget.value.trim().length > 0)}
+            onInput={(e) => {
+              const text = e.currentTarget.value;
+              setHasText(text.trim().length > 0);
+              onTextChange?.(text);
+            }}
             onKeyDown={(e) => {
               // 输入法组合中：Enter 属于候选确认，绝不提交。
               if (e.nativeEvent.isComposing || e.keyCode === 229) return;

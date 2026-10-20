@@ -22,10 +22,24 @@ const STORAGE_KEY = "novels-yes:drafts";
  * localStorage 不是响应式数据源：编辑器写入草稿后，草稿箱不会自己重渲染。
  * 用一个自定义事件把"变了"这件事广播出去，订阅方再重读列表。
  */
-const CHANGE_EVENT = "novels-yes:drafts-changed";
+export const DRAFTS_CHANGED_EVENT = "novels-yes:drafts-changed";
+
+/**
+ * 显式删除广播。
+ *
+ * 草稿箱只负责删持久化记录，但当前章节的输入框仍持有同一段文字。
+ * 若不把“删除的是哪一章”通知编辑器，切章时卸载逻辑会把输入框内容
+ * 重新写成草稿，形成删不掉的循环。
+ */
+export const DRAFT_REMOVED_EVENT = "novels-yes:draft-removed";
+
+export interface DraftRemovedDetail {
+  workId: string;
+  chapterId: string;
+}
 
 function broadcast(): void {
-  window.dispatchEvent(new Event(CHANGE_EVENT));
+  window.dispatchEvent(new Event(DRAFTS_CHANGED_EVENT));
 }
 
 /** 单条草稿。 */
@@ -37,6 +51,15 @@ export interface Draft {
   /** 草稿所属章，用于草稿箱里显示"哪一章的半成品"。 */
   chapterId: string;
   chapterTitle: string;
+  /**
+   * 正在编辑的已有段落 id。
+   *
+   * 只存下标会在切章重挂后失效；id 能在重新读取章节卡片时找回目标，
+   * 避免把“编辑旧段落”误恢复成“新建段落”。
+   */
+  editingCardId?: string;
+  /** 点开旧段落前暂存的新段落；与 text 分开保存，避免互相覆盖。 */
+  stashedText?: string;
   /** 最近更新时间（毫秒）。 */
   updatedAt: number;
 }
@@ -71,6 +94,12 @@ export function readDrafts(): DraftStore {
           chapterId: d.chapterId,
           chapterTitle:
             typeof d.chapterTitle === "string" ? d.chapterTitle : d.chapterId,
+          ...(typeof d.editingCardId === "string" && d.editingCardId
+            ? { editingCardId: d.editingCardId }
+            : {}),
+          ...(typeof d.stashedText === "string" && d.stashedText
+            ? { stashedText: d.stashedText }
+            : {}),
           updatedAt: typeof d.updatedAt === "number" ? d.updatedAt : Date.now(),
         };
       }
@@ -93,14 +122,22 @@ function writeDrafts(store: DraftStore): void {
 
 /** 读取某一章的草稿。 */
 export function readDraft(workId: string, chapterId: string): string | null {
-  return readDrafts()[draftKey(workId, chapterId)]?.text ?? null;
+  return readDraftEntry(workId, chapterId)?.text ?? null;
 }
 
-/** 写入草稿；文本为空视为清空（提交后自动消失）。 */
+/** 读取完整草稿，包括编辑目标与暂存段落。 */
+export function readDraftEntry(
+  workId: string,
+  chapterId: string
+): Draft | null {
+  return readDrafts()[draftKey(workId, chapterId)] ?? null;
+}
+
+/** 写入草稿；正文与暂存段落都为空时清空（提交后自动消失）。 */
 export function writeDraft(draft: Omit<Draft, "updatedAt">): void {
   const store = readDrafts();
   const key = draftKey(draft.workId, draft.chapterId);
-  if (!draft.text) {
+  if (!draft.text && !draft.stashedText) {
     if (key in store) {
       delete store[key];
       writeDrafts(store);
@@ -119,6 +156,11 @@ export function removeDraft(workId: string, chapterId: string): void {
   delete store[draftKey(workId, chapterId)];
   writeDrafts(store);
   broadcast();
+  window.dispatchEvent(
+    new CustomEvent<DraftRemovedDetail>(DRAFT_REMOVED_EVENT, {
+      detail: { workId, chapterId },
+    })
+  );
 }
 
 /** 草稿列表，按最近更新倒序（草稿箱展示用）。 */

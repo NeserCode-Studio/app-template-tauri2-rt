@@ -32,6 +32,8 @@ export interface OutlineContextValue {
   chapterMetas: Record<string, ChapterMeta>;
   setOutline: (outline: Outline) => void;
   setCurrentChapterId: (id: string | null) => void;
+  /** 跨作品或跨章跳转：先切作品，等结构树装载后落到指定章。 */
+  openChapter: (workId: string, chapterId: string) => void;
   reload: () => Promise<void>;
   /** 重新读取章元信息（保存、切章后调用）。 */
   reloadChapterMetas: () => Promise<void>;
@@ -47,6 +49,7 @@ export const OutlineContext = createContext<OutlineContextValue>({
   chapterMetas: {},
   setOutline: () => {},
   setCurrentChapterId: () => {},
+  openChapter: () => {},
   reload: async () => {},
   reloadChapterMetas: async () => {},
 });

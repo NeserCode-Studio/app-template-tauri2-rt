@@ -17,7 +17,7 @@
 import { createFs, joinRel, type FsBridge } from "./fs";
 import { chapterSchema, type Chapter } from "@/shared/schema";
 import { chapterFile } from "./paths";
-import type { CodexEntry } from "./codex";
+import type { Entry } from "./codex";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("SearchService");
@@ -60,7 +60,7 @@ export class SearchIndex {
   private readonly chapters = new Map<string, IndexEntry>();
   /** 章 id → 正文缓存，避免同一次搜索重复读同一文件。 */
   private readonly bodies = new Map<string, string>();
-  private codex: CodexEntry[] = [];
+  private codex: Entry[] = [];
 
   /** 用结构树节点重建章条目（章节增删改后调用）。 */
   syncChapters(
@@ -76,7 +76,7 @@ export class SearchIndex {
   }
 
   /** 素材条目变化后替换。 */
-  syncCodex(entries: CodexEntry[]): void {
+  syncCodex(entries: Entry[]): void {
     this.codex = entries;
   }
 
@@ -101,7 +101,16 @@ export class SearchIndex {
 
     /* ---- 素材条目：全量常驻，直接扫 ---- */
     for (const e of this.codex) {
-      const hay = `${e.name}\n${e.aliases.join("\n")}\n${e.tags.join("\n")}\n${e.body}`;
+      const fieldText = Object.values(e.fields)
+        .map((value) =>
+          "value" in value
+            ? Array.isArray(value.value)
+              ? value.value.join(" ")
+              : String(value.value)
+            : ""
+        )
+        .join("\n");
+      const hay = `${e.name}\n${e.aliases.join("\n")}\n${e.tags.join("\n")}\n${e.summary}\n${e.body}\n${fieldText}`;
       const lower = hay.toLowerCase();
       const at = lower.indexOf(q);
       if (at < 0) continue;
@@ -113,7 +122,7 @@ export class SearchIndex {
         workTitle: "",
         snippet: snippet(hay, at, q.length),
         count: countOccurrences(lower, q),
-        type: e.type,
+        type: e.typeId,
       });
       if (hits.length >= MAX_HITS) return hits;
     }
@@ -152,14 +161,20 @@ export class SearchIndex {
   }
 
   /** 取章正文（进程内缓存）。 */
-  private async bodyOf(fs2: FsBridge, chapterId: string, workId: string): Promise<string> {
+  private async bodyOf(
+    fs2: FsBridge,
+    chapterId: string,
+    workId: string
+  ): Promise<string> {
     const cached = this.bodies.get(chapterId);
     if (cached !== undefined) return cached;
     let text = "";
     try {
       const file = chapterFile(workId, chapterId);
       if (await fs2.exists(file)) {
-        const parsed = chapterSchema.safeParse(JSON.parse(await fs2.readText(file)));
+        const parsed = chapterSchema.safeParse(
+          JSON.parse(await fs2.readText(file))
+        );
         if (parsed.success) text = cardsText(parsed.data);
       }
     } catch (err) {
@@ -222,7 +237,9 @@ export async function searchWork(
     if (!name.endsWith(".json")) continue;
     try {
       const parsed = chapterSchema.safeParse(
-        JSON.parse(await fs2.readText(joinRel("works", workId, "chapters", name)))
+        JSON.parse(
+          await fs2.readText(joinRel("works", workId, "chapters", name))
+        )
       );
       if (!parsed.success) continue;
       const text = cardsText(parsed.data);

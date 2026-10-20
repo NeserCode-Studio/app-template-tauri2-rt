@@ -6,11 +6,12 @@
 :root {
   --radius: 0.625rem;
   /* 排版偏好：由 PreferencesProvider 写入，这里给出默认值兜底 */
-  --app-font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
+  --app-font-ui:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
     "PingFang SC", sans-serif;
   --app-font-ui-size: 14px;
-  --app-font-article: "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC",
-    SimSun, serif;
+  --app-font-article:
+    "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif;
   --app-font-article-size: 18px;
   --app-line-height: 1.8;
   --app-line-width: 40em;
@@ -42,6 +43,7 @@
   --border: oklch(0.895 0.012 100);
   --input: oklch(0.895 0.012 100);
   --ring: oklch(0.6 0.05 152);
+  --editor-selection-border: oklch(0.74 0.085 152);
 
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
@@ -78,6 +80,7 @@
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
+  --editor-selection-border: oklch(0.46 0.095 152);
 
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
@@ -157,7 +160,6 @@
     background-color: color-mix(in oklab, #34d399 34%, transparent);
     color: var(--foreground);
   }
-
 }
 
 /*
@@ -277,15 +279,15 @@
     @apply flex flex-row items-center gap-1;
   }
   .row-label {
-    @apply flex items-center gap-1.5 text-xs font-medium text-muted-foreground;
+    @apply text-muted-foreground flex items-center gap-1.5 text-xs font-medium;
   }
 
   /* ===== 文本 ===== */
   .text-muted-sm {
-    @apply text-sm text-muted-foreground;
+    @apply text-muted-foreground text-sm;
   }
   .text-muted-xs {
-    @apply text-xs text-muted-foreground;
+    @apply text-muted-foreground text-xs;
   }
 
   /* ===== 图标 ===== */
@@ -296,8 +298,7 @@
     @apply h-3.5 w-3.5;
   }
   .icon-action {
-    @apply h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors
-      group-hover:text-accent-foreground;
+    @apply text-muted-foreground group-hover:text-accent-foreground h-3.5 w-3.5 shrink-0 transition-colors;
   }
 
   /* ===== 应用骨架 ===== */
@@ -305,9 +306,7 @@
     @apply flex h-screen w-screen flex-row items-center justify-center;
   }
   .app-body {
-    @apply fixed bottom-0 flex h-[calc(100vh-2rem)] w-screen flex-col
-      items-center justify-center bg-neutral-50
-      transition-colors duration-100 ease-in-out dark:bg-neutral-700;
+    @apply fixed bottom-0 flex h-[calc(100vh-2rem)] w-screen flex-col items-center justify-center bg-neutral-50 transition-colors duration-100 ease-in-out dark:bg-neutral-700;
   }
 
   /* ===== 作品库 ===== */
@@ -315,7 +314,7 @@
     @apply relative z-0 h-full w-full transition-colors duration-100 ease-in-out;
   }
   .library-empty {
-    @apply flex h-full min-h-[60vh] w-full flex-col items-center justify-center gap-4 text-muted-foreground;
+    @apply text-muted-foreground flex h-full min-h-[60vh] w-full flex-col items-center justify-center gap-4;
   }
   .library-empty .icon-lg {
     @apply h-10 w-10 opacity-50;
@@ -358,8 +357,7 @@
    * 字体并固定为较大号，让它像"编辑器的行号槽"而不是正文的标点。
    */
   .card-index {
-    @apply font-[family-name:var(--app-font-ui)] text-xs font-medium
-      tabular-nums text-muted-foreground/50;
+    @apply text-muted-foreground/50 font-[family-name:var(--app-font-ui)] text-xs font-medium tabular-nums;
   }
 
   /*
@@ -382,10 +380,7 @@
      注意：标题栏里的 <Separator> 是 shadcn 组件，其样式在调用处平铺。
   */
   .titlebar-op {
-    @apply inline-flex h-full w-fit cursor-pointer items-center justify-center
-      px-2.5 py-0.5 transition-colors delay-0 duration-100 ease-in-out
-      hover:bg-neutral-200 dark:hover:bg-neutral-600
-      last:hover:bg-red-400 dark:last:hover:bg-red-600;
+    @apply inline-flex h-full w-fit cursor-pointer items-center justify-center px-2.5 py-0.5 transition-colors delay-0 duration-100 ease-in-out hover:bg-neutral-200 last:hover:bg-red-400 dark:hover:bg-neutral-600 dark:last:hover:bg-red-600;
   }
   .titlebar-op-icon {
     @apply h-4 w-4 transition-all duration-100 ease-in-out;
@@ -400,6 +395,87 @@ html {
 }
 html.dark {
   color-scheme: dark;
+}
+
+/*
+ * 章节树持续选中项。亮色主题使用浅绿，暗色主题使用深绿；
+ * 与编辑中段落共用同一套选中边框令牌。
+ */
+.chapter-row-selected {
+  border-color: var(--editor-selection-border);
+}
+
+/*
+ * 正在编辑的旧段落：2px 虚线沿边框顺时针行进。
+ *
+ * 四条背景分别绘制上下左右边，并用不同的位移方向形成环形流动。
+ * 用伪元素而不是直接加 border，避免进入/退出编辑时挤动正文宽度。
+ */
+@keyframes editing-paragraph-dashes {
+  from {
+    background-position:
+      0 0,
+      100% 0,
+      0 100%,
+      0 0;
+  }
+  to {
+    background-position:
+      14px 0,
+      100% 14px,
+      -14px 100%,
+      0 -14px;
+  }
+}
+
+.article-paragraph.is-editing::after {
+  --editing-border-color: var(--editor-selection-border);
+
+  position: absolute;
+  inset: -2px;
+  z-index: 1;
+  border-radius: 4px;
+  pointer-events: none;
+  content: "";
+  background-image:
+    linear-gradient(
+      90deg,
+      var(--editing-border-color) 0 7px,
+      transparent 7px 14px
+    ),
+    linear-gradient(
+      0deg,
+      var(--editing-border-color) 0 7px,
+      transparent 7px 14px
+    ),
+    linear-gradient(
+      90deg,
+      var(--editing-border-color) 0 7px,
+      transparent 7px 14px
+    ),
+    linear-gradient(
+      0deg,
+      var(--editing-border-color) 0 7px,
+      transparent 7px 14px
+    );
+  background-repeat: repeat-x, repeat-y, repeat-x, repeat-y;
+  background-size:
+    14px 2px,
+    2px 14px,
+    14px 2px,
+    2px 14px;
+  background-position:
+    0 0,
+    100% 0,
+    0 100%,
+    0 0;
+  animation: editing-paragraph-dashes 1.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .article-paragraph.is-editing::after {
+    animation: none;
+  }
 }
 
 /*
@@ -420,4 +496,30 @@ html.dark {
 
 .animate-draft-return {
   animation: draft-return 600ms ease-out;
+}
+
+/*
+ * 草稿箱内容变化反馈。
+ * 只闪背景、不做位移；短促淡出，避免持续编辑时抢走正文注意力。
+ */
+@keyframes draft-box-flash {
+  0% {
+    background-color: transparent;
+  }
+  24% {
+    background-color: color-mix(in oklab, var(--primary) 12%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.draft-box-flash {
+  animation: draft-box-flash 480ms ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .draft-box-flash {
+    animation: none;
+  }
 }

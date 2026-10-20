@@ -1,10 +1,21 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useLocalStorageState } from "ahooks";
 
 import { OutlineContext, type OutlineContextValue } from "./outline";
 import { useWorkspace } from "./workspace";
 import { useLibrary } from "./library";
-import { loadOutline, reconcileChapterIds, saveOutline } from "@/services/outline";
+import {
+  loadOutline,
+  reconcileChapterIds,
+  saveOutline,
+} from "@/services/outline";
 import { loadChapterMetas } from "@/services/chapter";
 import { createLogger } from "@/lib/logger";
 import type { OutlineNode } from "@/shared/schema";
@@ -16,17 +27,23 @@ const LAST_CHAPTER_KEY = "novels-yes:last-chapter";
 
 export function OutlineProvider({ children }: { children: ReactNode }) {
   const { root } = useWorkspace();
-  const { currentWorkId, dataVersion } = useLibrary();
+  const { currentWorkId, setCurrentWorkId, dataVersion } = useLibrary();
 
-  const [outline, setOutline] = useState<{ nodes: OutlineNode[] }>({ nodes: [] });
+  const [outline, setOutline] = useState<{ nodes: OutlineNode[] }>({
+    nodes: [],
+  });
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
   /** 阅读位置：滚动正文时更新，只驱动结构树高亮。 */
   const [readingChapterId, setReadingChapterId] = useState<string | null>(null);
-  const [chapterMetas, setChapterMetas] = useState<Record<string, ChapterMeta>>({});
-  const [lastByWork, setLastByWork] = useLocalStorageState<Record<string, string>>(
-    LAST_CHAPTER_KEY,
-    { defaultValue: {} }
+  const [chapterMetas, setChapterMetas] = useState<Record<string, ChapterMeta>>(
+    {}
   );
+  const pendingJumpRef = useRef<{ workId: string; chapterId: string } | null>(
+    null
+  );
+  const [lastByWork, setLastByWork] = useLocalStorageState<
+    Record<string, string>
+  >(LAST_CHAPTER_KEY, { defaultValue: {} });
 
   /** 切换作品时装载结构树，并恢复上次打开的章节。 */
   useEffect(() => {
@@ -45,18 +62,26 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
       .then((next) => {
         if (!alive) return;
         setOutline(next);
+        const pending = pendingJumpRef.current;
+        const requested =
+          pending?.workId === currentWorkId &&
+          next.nodes.some((node) => node.id === pending.chapterId)
+            ? pending.chapterId
+            : null;
+        if (requested) pendingJumpRef.current = null;
         const remembered = (lastByWork ?? {})[currentWorkId] ?? null;
-        const exists = remembered && next.nodes.some((n) => n.id === remembered);
-        setCurrentChapterId(exists ? remembered : null);
+        const exists =
+          remembered && next.nodes.some((n) => n.id === remembered);
+        setCurrentChapterId(requested ?? (exists ? remembered : null));
         setReadingChapterId(null);
       })
       .catch((err) => log.error("outline load failed", err));
     return () => {
       alive = false;
     };
-      // lastByWork 只在装载时读一次，不作为依赖以免重复装载。
-      // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [root, currentWorkId]);
+    // lastByWork 只在装载时读一次，不作为依赖以免重复装载。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [root, currentWorkId]);
 
   /**
    * 外部改了磁盘（回收站恢复、深度扫描）时重载，但不动当前打开的章节。
@@ -108,6 +133,21 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
     if (!root || !currentWorkId) return;
     setOutline(await loadOutline(root, currentWorkId));
   }, [root, currentWorkId]);
+
+  const openChapter = useCallback(
+    (workId: string, chapterId: string) => {
+      pendingJumpRef.current = { workId, chapterId };
+      if (workId === currentWorkId) {
+        if (outline.nodes.some((node) => node.id === chapterId)) {
+          pendingJumpRef.current = null;
+        }
+        setCurrentChapterId(chapterId);
+        return;
+      }
+      setCurrentWorkId(workId);
+    },
+    [currentWorkId, outline.nodes, setCurrentWorkId]
+  );
 
   /** 章元信息（字数 / 正文更新时间）：切作品时读一次，保存后再刷新。 */
   const reloadChapterMetas = useCallback(async () => {
@@ -163,6 +203,7 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
       chapterMetas,
       setOutline: persist,
       setCurrentChapterId,
+      openChapter,
       reload,
       reloadChapterMetas,
     }),
@@ -174,10 +215,13 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
       volumes,
       chapterMetas,
       persist,
+      openChapter,
       reload,
       reloadChapterMetas,
     ]
   );
 
-  return <OutlineContext.Provider value={value}>{children}</OutlineContext.Provider>;
+  return (
+    <OutlineContext.Provider value={value}>{children}</OutlineContext.Provider>
+  );
 }

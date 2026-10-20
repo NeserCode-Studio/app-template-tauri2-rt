@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+} from "react";
 
 import { useOutline } from "@/contexts/outline";
 import { useViewMode } from "@/contexts/viewmode";
@@ -36,6 +43,15 @@ export interface ChapterStreamProps {
   chapter: Chapter;
   /** 切到另一章。 */
   onSelectChapter: (id: string) => void;
+ /**
+  * 切章后的落点。
+  *
+  * "end" 表示回退到上一章，"start" 表示前进到下一章。
+  * 必须由父级传入：本组件随切章整体重挂（Editor 用 key={chapter.id}
+  * 渲染它），组件内的 ref / state 都活不到新实例，"上滑落章尾"
+  * 这个意图会在这里凭空蒸发。
+  */
+ landing?: "start" | "end";
   onWordsChange: (words: number) => void;
   onSaved: (chapter: Chapter) => void;
   onWordsCommitted: (words: number) => void;
@@ -44,18 +60,27 @@ export interface ChapterStreamProps {
   onOpenCodexEntry: (entryId: string) => void;
 }
 
-export default function ChapterStream({
-  root,
-  workId,
-  chapter,
-  onSelectChapter,
-  onWordsChange,
-  onSaved,
-  onWordsCommitted,
-  onRename,
-  onDelete,
-  onOpenCodexEntry,
-}: ChapterStreamProps) {
+export interface ChapterStreamHandle {
+  appendText: (text: string) => boolean;
+}
+
+const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
+  function ChapterStream(
+    {
+      root,
+      workId,
+      chapter,
+      landing: landingProp = "start",
+      onSelectChapter,
+      onWordsChange,
+      onSaved,
+      onWordsCommitted,
+      onRename,
+      onDelete,
+      onOpenCodexEntry,
+    },
+    ref
+  ) {
   const { chapters, volumes, setReadingChapterId } = useOutline();
   const { mode } = useViewMode();
   const c = useChapterController({
@@ -123,7 +148,7 @@ export default function ChapterStream({
    * 而且会一路"快速过章"：每次上滑都落在新一章顶部，再滑就又走了。
    * 落在末尾则衔接自然：上一章的收尾接着上一章的结尾，继续上滑才再退一章。
    */
-  const landingRef = useRef<"start" | "end">("start");
+  const landing = landingProp;
   /*
    * 落点守护窗口。
    *
@@ -140,9 +165,7 @@ export default function ChapterStream({
      * 此刻读 scrollHeight 拿到的是旧章高度，落点会停在中途。
      * 等 rAF 之后新章已挂入，scrollHeight 才是这一章的。
      */
-    const target = landingRef.current;
-    /* 读完就复位：落点只对紧接着的这一次切章生效。 */
-    landingRef.current = "start";
+    const target = landing;
     if (target === "start") {
       log.debug("landing: start", { activeId });
       el.scrollTop = 0;
@@ -162,7 +185,7 @@ export default function ChapterStream({
       el.scrollTop = el.scrollHeight;
     });
     return () => cancelAnimationFrame(raf);
-  }, [activeId]);
+  }, [activeId, landing]);
 
   /** 守护期间忽略 scroll：把 focus 引起的回弹挡掉，真人手势不受影响。 */
 
@@ -189,13 +212,11 @@ export default function ChapterStream({
         el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
 
       if (e.deltaY > 0 && atBottom && activeIndex < sequence.length - 1) {
-        landingRef.current = "start";
         e.preventDefault();
         const nextId = sequence[activeIndex + 1].id;
         log.debug("wheel advances to next chapter", { nextId, activeIndex });
         onSelectChapter(nextId);
       } else if (e.deltaY < 0 && atTop && activeIndex > 0) {
-        landingRef.current = "end";
         e.preventDefault();
         const prevId = sequence[activeIndex - 1].id;
         log.debug("wheel returns to previous chapter", { prevId, activeIndex });
@@ -204,6 +225,19 @@ export default function ChapterStream({
     },
     [activeIndex, sequence, onSelectChapter]
   );
+
+  const appendText = useCallback(
+    (text: string) => {
+      const composer = c.composerRef.current;
+      const value = text.trim();
+      if (!composer || !value) return false;
+      composer.load(`${composer.read()}${value}`, "end");
+      return true;
+    },
+    [c.composerRef]
+  );
+
+  useImperativeHandle(ref, () => ({ appendText }), [appendText]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -278,8 +312,12 @@ export default function ChapterStream({
           pendingDraft={c.draft}
           onRestoreDraft={c.restoreDraft}
           onDiscardDraft={c.discardDraft}
+          onTextChange={c.handleComposerTextChange}
         />
       </div>
     </div>
   );
-}
+  }
+);
+
+export default ChapterStream;

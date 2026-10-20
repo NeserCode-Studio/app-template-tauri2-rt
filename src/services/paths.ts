@@ -61,7 +61,11 @@ export function codexDir(workId: string, type: string): string {
 }
 
 /** 素材条目文件。 */
-export function codexEntryFile(workId: string, type: string, entryId: string): string {
+export function codexEntryFile(
+  workId: string,
+  type: string,
+  entryId: string
+): string {
   return joinRel(WORKS_DIR, workId, "codex", type, entryId + ".json");
 }
 
@@ -78,6 +82,37 @@ export function codexEntryFileShared(entryId: string): string {
 /** 素材库类型配置（名称键、高亮颜色、字段定义、排序）。 */
 export function codexTypesFile(): string {
   return joinRel(CODEX_DIR, "types.json");
+}
+
+/**
+ * 素材库关系边文件（V2）。
+ *
+ * 关系边是「两个条目之间的事实」，独立成文件而不是塞进条目：
+ * 任何一边存都要在另一边复制一份，于是必须做同步——F22 那一串
+ * 「清单 / 内存 / 磁盘三者不同步」的病根就是"同一个事实存在多处"。
+ * 独立成文件后只有一个真相来源，同步在结构上不可能出错。
+ */
+export function codexRelationsFile(): string {
+  return joinRel(CODEX_DIR, "relations.json");
+}
+
+/**
+ * 素材库提及索引（V2）。
+ *
+ * 索引跨作品，而素材库是工作区级；每部作品各存一份全局索引是 N 份重复。
+ */
+export function codexMentionsFile(): string {
+  return joinRel(CODEX_DIR, "mentions.json");
+}
+
+/**
+ * V1 素材库备份目录（V2 迁移前整体复制一份）。
+ *
+ * 迁移失败不阻断使用：条目仍可读写，只是停留在旧结构。
+ * 这份备份是用户「数据是我的，不能被一次升级弄丢」的兜底。
+ */
+export function codexLegacyBackupDir(): string {
+  return joinRel(CODEX_DIR, "legacy-backup");
 }
 
 /** 回收站目录（工作区内）。 */

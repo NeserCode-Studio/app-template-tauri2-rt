@@ -6,30 +6,51 @@
  */
 
 import { createContext, useContext } from "react";
-import type { CodexEntry, CodexType, CodexTypeConfig } from "@/services/codex";
+import type {
+  Entry,
+  MentionIndex,
+  Relation,
+  TypeConfig,
+} from "@/services/codex";
+
+export interface TypeCreateInput {
+  label: string;
+  icon?: string;
+  color?: TypeConfig["color"];
+}
 
 export interface CodexContextValue {
-  /** 全部条目（跨类型），供搜索与提及匹配使用。 */
-  entries: CodexEntry[];
-  /** 类型配置（含高亮颜色）。 */
-  typeConfigs: CodexTypeConfig[];
-  /** 当前选中的条目 id（右侧抽屉展示）。 */
+  entries: Entry[];
+  relations: Relation[];
+  mentions: MentionIndex;
+  typeConfigs: TypeConfig[];
   currentEntryId: string | null;
-  /** 按类型筛选后的条目。 */
-  byType: (type: CodexType) => CodexEntry[];
-  /** 某类型的色值（#rrggbb），未配置时回落默认色。 */
-  colorOf: (type: CodexType) => string;
+  byType: (typeId: string) => Entry[];
+  typeOf: (typeId: string) => TypeConfig | null;
+  labelOf: (typeId: string) => string;
+  /** 当前主题下的类型色。 */
+  colorOf: (typeId: string) => string;
   setCurrentEntryId: (id: string | null) => void;
-  /** 重新从磁盘装载。 */
   reload: () => Promise<void>;
-  /** 新建条目并选中。 */
-  create: (type: CodexType, name: string) => Promise<CodexEntry | null>;
-  /** 保存（新建或更新）条目。 */
-  save: (entry: CodexEntry) => Promise<void>;
-  /** 删除条目。 */
-  remove: (entry: CodexEntry) => Promise<void>;
-  /** 改某类型的高亮颜色。 */
-  setTypeColor: (type: CodexType, color: string) => Promise<void>;
+  create: (typeId: string, name: string) => Promise<Entry | null>;
+  save: (entry: Entry) => Promise<Entry | null>;
+  remove: (entryId: string) => Promise<void>;
+  saveType: (type: TypeConfig) => Promise<TypeConfig | null>;
+  createType: (input: TypeCreateInput) => Promise<TypeConfig | null>;
+  removeType: (typeId: string) => Promise<void>;
+  addRelation: (
+    fromId: string,
+    toId: string,
+    kind: string,
+    inverseKind: string,
+    note?: string
+  ) => Promise<Relation | null>;
+  removeRelation: (relationId: string) => Promise<void>;
+  syncChapterMentions: (
+    workId: string,
+    chapterId: string,
+    text: string
+  ) => Promise<void>;
 }
 
 export const CodexContext = createContext<CodexContextValue | null>(null);
