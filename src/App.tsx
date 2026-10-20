@@ -185,11 +185,11 @@ function App() {
       <WorkspaceProvider>
         <LibraryProvider>
           <OutlineProvider>
+          <ThemeContext.Provider value={themeValue}>
           <CodexProvider>
           <SearchProvider>
         <SettingsDialogContext.Provider value={settingsValue}>
         <I18nContext.Provider value={i18nValue}>
-          <ThemeContext.Provider value={themeValue}>
             <TitleContext.Provider value={titleValue}>
               <NavigatorContext.Provider value={navigatorValue}>
                 <main id="app-main" className="app-shell">
@@ -235,11 +235,11 @@ function App() {
                 <Toaster richColors theme={theme} position="bottom-right" />
               </NavigatorContext.Provider>
             </TitleContext.Provider>
-          </ThemeContext.Provider>
         </I18nContext.Provider>
         </SettingsDialogContext.Provider>
           </SearchProvider>
           </CodexProvider>
+          </ThemeContext.Provider>
           </OutlineProvider>
         </LibraryProvider>
       </WorkspaceProvider>

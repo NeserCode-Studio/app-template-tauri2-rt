@@ -37,6 +37,7 @@ import {
 } from "@/services/codex";
 import { loadWorkspace } from "@/services/workspace";
 import { CodexContext, type CodexContextValue } from "./codex";
+import { useThemeContext } from "./theme";
 import { useWorkspace } from "./workspace";
 
 const log = createLogger("CodexProvider");
@@ -54,6 +55,7 @@ function replaceEntry(entries: Entry[], entry: Entry): Entry[] {
 }
 
 export function CodexProvider({ children }: { children: ReactNode }) {
+  const { theme } = useThemeContext();
   const { root } = useWorkspace();
   const [entries, setEntries] = useState<Entry[]>([]);
   const [relations, setRelations] = useState<Relation[]>([]);
@@ -341,11 +343,9 @@ export function CodexProvider({ children }: { children: ReactNode }) {
     (typeId: string) => {
       const type = typeConfigs.find((item) => item.id === typeId);
       if (!type) return "#64748b";
-      return document.documentElement.classList.contains("dark")
-        ? type.color.dark
-        : type.color.light;
+      return theme === "dark" ? type.color.dark : type.color.light;
     },
-    [typeConfigs]
+    [typeConfigs, theme]
   );
 
   const value = useMemo<CodexContextValue>(
