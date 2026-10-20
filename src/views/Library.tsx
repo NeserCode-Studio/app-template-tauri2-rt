@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BookMarked,
   Database,
+  FileUp,
   Folder,
   FolderOpen,
   Plus,
@@ -34,11 +35,19 @@ import { Label } from "@/components/ui/label";
 import WorkCard from "@/components/novel/WorkCard";
 import TrashDialog from "@/components/novel/TrashDialog";
 import ConfirmDeleteDialog from "@/components/framework/ConfirmDeleteDialog";
+import ImportDialog, {
+  type ImportPreview,
+} from "@/components/novel/ImportDialog";
 import { useI18n, useToast } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useWorkspace } from "@/contexts/workspace";
 import { loadStats, recordWorkWords } from "@/services/stats";
-import { countWorkWords } from "@/services/chapter";
+import { countWorkWords, createChapter } from "@/services/chapter";
+import {
+  appendCardsToChapter,
+  importTitleFromPath,
+} from "@/services/import";
+import { addNode as addOutlineNode } from "@/services/outline";
 import { createLogger } from "@/lib/logger";
 import type { Work } from "@/shared/schema";
 
@@ -85,6 +94,7 @@ export default function Library() {
   const [aliasName, setAliasName] = useState("");
   const [wordCounts, setWordCounts] = useState<Record<string, number>>({});
   const [trashOpen, setTrashOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   /** 统计字数：阶段 2 先从 stats.json 读取，阶段 6 再做实时更新。 */
   const loadWordCounts = useCallback(async () => {
@@ -175,6 +185,46 @@ export default function Library() {
   }
 
   /**
+   * 导入为新作品。
+   *
+   * 先创建作品和章文件，再把预览中已经确认的卡片一次追加进章，
+   * 最后登记结构树。导入标题取自文件名，避免让用户在一个流程里
+   * 同时填写标题、类型、章节名等与“先看看正文是否正确”无关的字段。
+   */
+  async function importWork(preview: ImportPreview) {
+    if (!root) throw new Error("workspace is unavailable");
+    const title =
+      importTitleFromPath(preview.path).trim() || t("Import.untitledWork");
+    const work = await create(title, "");
+    if (!work) throw new Error("could not create imported work");
+
+    const chapterTitle = t("Import.defaultChapter");
+    const created = await createChapter(root, work.id, chapterTitle);
+    const imported = await appendCardsToChapter(
+      root,
+      work.id,
+      created,
+      preview.cards
+    );
+    await addOutlineNode(root, work.id, {
+      type: "chapter",
+      title: chapterTitle,
+      parentId: null,
+      id: imported.id,
+    });
+    await recordWorkWords(
+      root,
+      work.id,
+      await countWorkWords(root, work.id)
+    );
+    /* 作品库创建作品会立刻切换 currentWorkId，结构树可能已先读过空文件。 */
+    bumpDataVersion();
+
+    toast.success("Import.toast.imported");
+    void navigate("/editor");
+  }
+
+  /**
    * 提交工作区别名。
    *
    * 从"无别名"改成"有别名"要确认一次：作品库的大标题就是它，
@@ -253,7 +303,7 @@ export default function Library() {
         </div>
         <div className="flex items-center gap-2">
           {/*
-           * 操作区四个：工作区设置、素材库、回收站、新建作品。
+           * 操作区五个：工作区设置、素材库、回收站、导入文稿、新建作品。
            *
            * "更换工作区"收进设置——它是低频动作，且换工作区意味着
            * 离开当前上下文（当前作品、草稿都在里面），不该和"新建作品"
@@ -273,6 +323,10 @@ export default function Library() {
           <Button variant="outline" size="sm" onClick={() => setTrashOpen(true)}>
             <Trash2 className="icon-md" />
             {t("Trash.title")}
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+            <FileUp className="icon-md" />
+            {t("Import.action")}
           </Button>
           <Button size="sm" onClick={openCreate}>
             <Plus className="icon-md" />
@@ -343,6 +397,13 @@ export default function Library() {
       ) : null}
 
       {/* 新建 / 重命名对话框 */}
+      <ImportDialog
+        open={importOpen}
+        target="work"
+        onOpenChange={setImportOpen}
+        onConfirm={importWork}
+      />
+
       <Dialog
         open={dialog !== null}
         onOpenChange={(openState) => {

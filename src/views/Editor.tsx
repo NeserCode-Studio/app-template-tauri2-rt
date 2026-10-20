@@ -6,6 +6,7 @@ import {
   ChevronUp,
   Download,
   FileText,
+  FileUp,
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightClose,
@@ -60,11 +61,14 @@ import CodexPane from "@/components/novel/CodexPane";
 import DraftBox, { DraftFlashOverlay } from "@/components/novel/DraftBox";
 import ProgressPane from "@/components/novel/ProgressPane";
 import ExportDialog from "@/components/novel/ExportDialog";
+import ImportDialog, {
+  type ImportPreview,
+} from "@/components/novel/ImportDialog";
 import NewChapterDialog from "@/components/novel/editor/NewChapterDialog";
 import OutlinePane from "@/components/novel/editor/OutlinePane";
 import SubtreePreview from "@/components/novel/SubtreePreview";
 
-import { useI18n } from "@/composables";
+import { useI18n, useToast } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useWorkspace } from "@/contexts/workspace";
@@ -98,6 +102,7 @@ const log = createLogger("Editor");
  */
 export default function Editor() {
   const { t } = useI18n();
+  const toast = useToast();
   const navigate = useNavigate();
   const { root } = useWorkspace();
   const { setCurrentEntryId } = useCodex();
@@ -127,6 +132,7 @@ export default function Editor() {
   /** 右栏页签：章节信息 / 素材库。 */
   const [sideTab, setSideTab] = useState<"chapter" | "codex" | "progress">("chapter");
   const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   /** 视图模式（普通 / 专注 / 打字机 / 禅）。 */
   const { mode: viewMode, setMode: setViewMode } = useViewMode();
   /** 禅模式隐藏两侧栏，把整幅宽度让给正文。 */
@@ -174,6 +180,13 @@ export default function Editor() {
   const appendCodexName = useCallback((text: string) => {
     chapterStreamRef.current?.appendText(text);
   }, []);
+
+  /** 导入确认后直接追加到当前控制器，保留草稿、历史与自动保存。 */
+  const importIntoChapter = useCallback((preview: ImportPreview) => {
+    const added = chapterStreamRef.current?.appendCards(preview.cards) ?? 0;
+    if (!added) throw new Error("chapter import target is unavailable");
+    toast.success("Import.toast.imported");
+  }, [toast]);
 
   /* 禅模式会移除两侧面板，切回来时要恢复控件显示的"已收起"状态。 */
   useEffect(() => {
@@ -541,6 +554,15 @@ export default function Editor() {
           <Button size="sm" variant="ghost" onClick={() => setExportOpen(true)}>
             <Download className="icon-md" />
             {t("Export.action")}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!chapter}
+            onClick={() => setImportOpen(true)}
+          >
+            <FileUp className="icon-md" />
+            {t("Import.action")}
           </Button>
           {!zen ? (
             <Button
@@ -930,6 +952,13 @@ export default function Editor() {
         workId={currentWorkId}
         chapter={chapter}
         onOpenChange={setExportOpen}
+      />
+
+      <ImportDialog
+        open={importOpen}
+        target="chapter"
+        onOpenChange={setImportOpen}
+        onConfirm={importIntoChapter}
       />
 
       <AlertDialog

@@ -63,8 +63,20 @@ export class ImportFileError extends Error {
   }
 }
 
+/** 文件路径最后一段，兼容 Windows 与 Unix 路径。 */
+export function importFileName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? path;
+}
+
+/** 从文件名生成新作品标题，去掉扩展名并清理首尾空白。 */
+export function importTitleFromPath(path: string): string {
+  const fileName = importFileName(path);
+  const dot = fileName.lastIndexOf(".");
+  return (dot > 0 ? fileName.slice(0, dot) : fileName).trim();
+}
+
 function importFormat(path: string): ImportFormat {
-  const fileName = path.split(/[\\/]/).pop() ?? path;
+  const fileName = importFileName(path);
   const dot = fileName.lastIndexOf(".");
   const extension = dot >= 0 ? fileName.slice(dot + 1).toLowerCase() : "";
   if (extension === "txt" || extension === "md") return extension;

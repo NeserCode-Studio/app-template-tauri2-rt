@@ -490,6 +490,24 @@ export function useChapterController({
   );
 
   /**
+   * 追加导入的卡片。
+   *
+   * 导入必须走控制器而不是父级重新 loadChapter：同一章不会因内容更新
+   * 重挂 ChapterStream，直接替换父级 chapter 会冲掉当前草稿和撤销栈。
+   * 这里与手动新增段落共用 applyCards，保存、历史记录和提及同步都一致。
+   */
+  const importCards = useCallback(
+    (incoming: Card[]) => {
+      if (!incoming.length) return 0;
+      const next = [...cardsRef.current, ...incoming];
+      cardsRef.current = next;
+      applyCards(next);
+      return incoming.length;
+    },
+    [applyCards]
+  );
+
+  /**
    * 手动保存：按钮任何时候都可点，落什么由保存函数自己判断。
    *
    * 不做"是否有未保存内容"的前置判断——防抖窗口内点击、或上次保存失败后
@@ -900,6 +918,7 @@ export function useChapterController({
     composerRef,
     listRef,
     persistNow,
+    importCards,
     dropVersion,
     rollback,
     saveNow,

@@ -10,7 +10,7 @@ import {
 import { useOutline } from "@/contexts/outline";
 import { useViewMode } from "@/contexts/viewmode";
 import { createLogger } from "@/lib/logger";
-import type { Chapter, OutlineNode } from "@/shared/schema";
+import type { Card, Chapter, OutlineNode } from "@/shared/schema";
 import ChapterBody from "./ChapterBody";
 import ChapterHeader from "./ChapterHeader";
 import ComposerInput from "./ComposerInput";
@@ -62,6 +62,8 @@ export interface ChapterStreamProps {
 
 export interface ChapterStreamHandle {
   appendText: (text: string) => boolean;
+  /** 把已预览的导入卡片追加到当前章并触发自动保存。 */
+  appendCards: (cards: Card[]) => number;
 }
 
 const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
@@ -237,7 +239,16 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
     [c.composerRef]
   );
 
-  useImperativeHandle(ref, () => ({ appendText }), [appendText]);
+  const appendCards = useCallback(
+    (cards: Card[]) => c.importCards(cards),
+    [c.importCards]
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({ appendText, appendCards }),
+    [appendText, appendCards]
+  );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
