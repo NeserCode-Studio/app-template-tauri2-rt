@@ -53,7 +53,7 @@ export default function ChapterBody({
   return (
     <div
       ref={listRef}
-      className="article-body prose-article mx-auto flex flex-col pl-9"
+      className="article-body prose-article mx-auto flex flex-col"
     >
       {cards.map((card, index) => (
         <CardItem
