@@ -108,7 +108,7 @@ function ChapterTurnCue({
         side === "start" ? "top-3" : "bottom-3",
       ].join(" ")}
     >
-      <div className="animate-in fade-in flex max-w-full min-w-0 items-center gap-2.5 rounded-full border border-border/60 bg-background/80 px-3 py-1.5 text-xs text-muted-foreground shadow-none backdrop-blur-sm duration-150">
+      <div className="animate-in fade-in flex max-w-full min-w-0 items-center gap-2.5 rounded-full border border-border/60 bg-muted/45 px-3 py-1.5 text-xs text-muted-foreground shadow-none backdrop-blur-sm duration-150">
         {side === "start" ? (
           <ChevronUp className="icon-sm shrink-0 text-muted-foreground/60" />
         ) : (
