@@ -565,7 +565,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
 
   const appendCards = useCallback(
     (cards: Card[]) => c.importCards(cards),
-    [c.importCards]
+    [c]
   );
 
   useImperativeHandle(
