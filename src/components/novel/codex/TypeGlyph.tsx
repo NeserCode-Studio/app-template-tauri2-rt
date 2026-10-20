@@ -25,7 +25,23 @@ const ICONS: Record<string, LucideIcon> = {
   shapes: Shapes,
 };
 
-export const TYPE_ICON_OPTIONS = Object.keys(ICONS);
+export interface TypeIconOption {
+  value: string;
+  labelKey: string;
+}
+
+export const TYPE_ICON_OPTIONS: TypeIconOption[] = [
+  { value: "user", labelKey: "Codex.icon.user" },
+  { value: "map-pin", labelKey: "Codex.icon.mapPin" },
+  { value: "package", labelKey: "Codex.icon.package" },
+  { value: "flag", labelKey: "Codex.icon.flag" },
+  { value: "clock", labelKey: "Codex.icon.clock" },
+  { value: "layers", labelKey: "Codex.icon.layers" },
+  { value: "landmark", labelKey: "Codex.icon.landmark" },
+  { value: "book-open", labelKey: "Codex.icon.bookOpen" },
+  { value: "calendar-clock", labelKey: "Codex.icon.calendarClock" },
+  { value: "shapes", labelKey: "Codex.icon.shapes" },
+];
 
 export function TypeGlyph({
   icon,

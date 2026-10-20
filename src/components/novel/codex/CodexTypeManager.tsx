@@ -454,6 +454,9 @@ export function CodexTypeManager({
     (type) =>
       !draft?.relationVocab.some((vocab) => vocab.targetTypeId === type.id)
   );
+  const selectedIcon =
+    TYPE_ICON_OPTIONS.find((option) => option.value === draft?.icon) ??
+    TYPE_ICON_OPTIONS[TYPE_ICON_OPTIONS.length - 1];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -623,7 +626,7 @@ export function CodexTypeManager({
                   <h4 className="text-muted-foreground text-xs font-semibold">
                     {t("Codex.type.identity")}
                   </h4>
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  <div className="grid grid-cols-2 gap-3 md:grid-cols-[minmax(0,1fr)_9rem_auto_auto] md:items-end">
                     <label className="flex flex-col gap-1.5">
                       <span className="text-muted-foreground text-xs">
                         {t("Codex.type.label")}
@@ -650,25 +653,40 @@ export function CodexTypeManager({
                         onValueChange={(icon) => setDraft({ ...draft, icon })}
                       >
                         <SelectTrigger className="h-8 text-sm">
-                          <SelectValue />
+                          <SelectValue>
+                            <span className="flex items-center gap-2">
+                              <TypeGlyph
+                                icon={selectedIcon.value}
+                                className="size-4"
+                              />
+                              <span>{t(selectedIcon.labelKey)}</span>
+                            </span>
+                          </SelectValue>
                         </SelectTrigger>
                         <SelectContent>
-                          {TYPE_ICON_OPTIONS.map((icon) => (
-                            <SelectItem key={icon} value={icon}>
-                              {icon}
+                          {TYPE_ICON_OPTIONS.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              <span className="flex items-center gap-2">
+                                <TypeGlyph
+                                  icon={option.value}
+                                  className="size-4"
+                                />
+                                <span>{t(option.labelKey)}</span>
+                              </span>
                             </SelectItem>
                           ))}
                         </SelectContent>
                       </Select>
                     </label>
-                    <label className="flex items-center gap-2 text-xs">
-                      <span className="text-muted-foreground text-xs">
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-muted-foreground text-xs whitespace-nowrap">
                         {t("Codex.type.colorLight")}
                       </span>
                       <input
                         type="color"
                         value={draft.color.light}
-                        className="h-7 w-12 rounded border bg-transparent p-0.5"
+                        aria-label={t("Codex.type.colorLight")}
+                        className="size-8 cursor-pointer appearance-none overflow-hidden rounded-md border-0 bg-transparent p-0 [&::-moz-color-swatch]:rounded-md [&::-moz-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0"
                         onChange={(event) =>
                           setDraft({
                             ...draft,
@@ -680,14 +698,15 @@ export function CodexTypeManager({
                         }
                       />
                     </label>
-                    <label className="flex items-center gap-2 text-xs">
-                      <span className="text-muted-foreground text-xs">
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-muted-foreground text-xs whitespace-nowrap">
                         {t("Codex.type.colorDark")}
                       </span>
                       <input
                         type="color"
                         value={draft.color.dark}
-                        className="h-7 w-12 rounded border bg-transparent p-0.5"
+                        aria-label={t("Codex.type.colorDark")}
+                        className="size-8 cursor-pointer appearance-none overflow-hidden rounded-md border-0 bg-transparent p-0 [&::-moz-color-swatch]:rounded-md [&::-moz-color-swatch]:border-0 [&::-webkit-color-swatch]:rounded-md [&::-webkit-color-swatch]:border-0 [&::-webkit-color-swatch-wrapper]:p-0"
                         onChange={(event) =>
                           setDraft({
                             ...draft,
