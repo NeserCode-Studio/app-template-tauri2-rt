@@ -54,6 +54,7 @@ import { CodexEntryCreateDialog } from "@/components/novel/codex/CodexEntryCreat
 import { CodexPreview } from "@/components/novel/codex/CodexPreview";
 import { CodexTypeManager } from "@/components/novel/codex/CodexTypeManager";
 import { TypeGlyph } from "@/components/novel/codex/TypeGlyph";
+import { useJumpHighlight } from "@/hooks/useJumpHighlight";
 
 type ViewMode = "grid" | "list" | "timeline";
 type SortMode = "name" | "updated" | "type";
@@ -123,6 +124,7 @@ function TimelineView({
   onSelect,
   onEdit,
   onCreate,
+  highlightedEntryId,
 }: {
   events: Entry[];
   allEntries: Entry[];
@@ -131,6 +133,7 @@ function TimelineView({
   onSelect: (entryId: string) => void;
   onEdit: (entryId: string) => void;
   onCreate: () => void;
+  highlightedEntryId: string | null;
 }) {
   const { t } = useI18n();
   const { colorOf } = useCodex();
@@ -223,6 +226,7 @@ function TimelineView({
               onDoubleClick={() => onEdit(event.id)}
               className={[
                 "mb-2.5 w-full rounded-md border px-3 py-2.5 text-left transition-colors",
+                event.id === highlightedEntryId ? "jump-highlight" : "",
                 selected
                   ? "border-primary/30 bg-accent/45"
                   : related
@@ -339,6 +343,7 @@ function EntryCard({
   selected,
   mentionCount,
   conflict,
+  highlighted,
   onSelect,
   onEdit,
 }: {
@@ -347,6 +352,7 @@ function EntryCard({
   selected: boolean;
   mentionCount: number;
   conflict: boolean;
+  highlighted: boolean;
   onSelect: () => void;
   onEdit: () => void;
 }) {
@@ -361,6 +367,7 @@ function EntryCard({
       onDoubleClick={onEdit}
       className={[
         "flex min-h-28 w-full min-w-0 flex-col rounded-md border p-3 text-left transition-colors",
+        highlighted ? "jump-highlight" : "",
         selected
           ? "border-primary/30 bg-accent/25"
           : "border-border/50 bg-transparent hover:border-border hover:bg-accent/20",
@@ -408,6 +415,7 @@ function EntryRow({
   selected,
   mentionCount,
   conflict,
+  highlighted,
   onSelect,
   onEdit,
 }: {
@@ -416,6 +424,7 @@ function EntryRow({
   selected: boolean;
   mentionCount: number;
   conflict: boolean;
+  highlighted: boolean;
   onSelect: () => void;
   onEdit: () => void;
 }) {
@@ -430,6 +439,7 @@ function EntryRow({
       className={[
         LIST_GRID_CLASS,
         "border-border/70 min-h-12 rounded-md border px-3 text-left text-sm transition-colors",
+        highlighted ? "jump-highlight" : "",
         selected
           ? "border-primary/30 bg-accent/45"
           : "hover:bg-neutral-100/70 dark:hover:bg-neutral-800/35",
@@ -520,6 +530,7 @@ export default function CodexLibrary() {
   const [createOpen, setCreateOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const { highlightId, jumpTo } = useJumpHighlight("data-codex-entry");
 
   const current = entries.find((entry) => entry.id === currentEntryId) ?? null;
   const timelineEventType =
@@ -618,6 +629,20 @@ export default function CodexLibrary() {
   function selectEntry(entryId: string) {
     setCurrentEntryId(entryId);
     if (narrow) setDetailOpen(true);
+  }
+
+  function jumpToEntry(entryId: string) {
+    const target = entries.find((entry) => entry.id === entryId);
+    const targetVisible = filtered.some((entry) => entry.id === entryId);
+    const timelineNeedsGrid =
+      viewMode === "timeline" && target?.typeId !== "event";
+    setCurrentEntryId(entryId);
+    if (!targetVisible) {
+      setQuery("");
+      setTypeFilter("all");
+    }
+    if (timelineNeedsGrid) setViewMode("grid");
+    window.requestAnimationFrame(() => jumpTo(entryId));
   }
 
   function editEntry(entryId: string | null = currentEntryId) {
@@ -866,6 +891,7 @@ export default function CodexLibrary() {
               allEntries={entries}
               relations={relations}
               currentEntryId={currentEntryId}
+              highlightedEntryId={highlightId}
               onSelect={selectEntry}
               onEdit={editEntry}
               onCreate={openCreate}
@@ -884,6 +910,7 @@ export default function CodexLibrary() {
                   selected={entry.id === currentEntryId}
                   mentionCount={mentions[entry.id]?.length ?? 0}
                   conflict={conflictIds.has(entry.id)}
+                  highlighted={entry.id === highlightId}
                   onSelect={() => selectEntry(entry.id)}
                   onEdit={() => editEntry(entry.id)}
                 />
@@ -918,6 +945,7 @@ export default function CodexLibrary() {
                     selected={entry.id === currentEntryId}
                     mentionCount={mentions[entry.id]?.length ?? 0}
                     conflict={conflictIds.has(entry.id)}
+                    highlighted={entry.id === highlightId}
                     onSelect={() => selectEntry(entry.id)}
                     onEdit={() => editEntry(entry.id)}
                   />
@@ -1158,7 +1186,7 @@ export default function CodexLibrary() {
                 <CodexPreview
                   entry={current}
                   onEdit={() => editEntry()}
-                  onSelectEntry={selectEntry}
+                  onSelectEntry={jumpToEntry}
                 />
               </aside>
             </ResizablePanel>

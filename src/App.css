@@ -554,8 +554,25 @@ html.dark {
   animation: draft-box-flash 480ms ease-out;
 }
 
+@keyframes jump-highlight {
+  0% {
+    background-color: transparent;
+  }
+  28% {
+    background-color: color-mix(in oklab, var(--primary) 13%, transparent);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.jump-highlight {
+  animation: jump-highlight 900ms ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .draft-box-flash {
+  .draft-box-flash,
+  .jump-highlight {
     animation: none;
   }
 }

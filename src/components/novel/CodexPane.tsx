@@ -19,6 +19,7 @@ import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useAppNavigation } from "@/lib/navigation";
 import { typeLabel } from "@/services/codex";
+import { useJumpHighlight } from "@/hooks/useJumpHighlight";
 import { CodexEntryCreateDialog } from "./codex/CodexEntryCreateDialog";
 
 interface CodexPaneProps {
@@ -51,7 +52,7 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
   const [chapterOnly, setChapterOnly] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [flashId, setFlashId] = useState<string | null>(null);
+  const { highlightId, jumpTo } = useJumpHighlight("data-codex-entry");
   const chapterMentionIds = useMemo(() => {
     if (!chapterOnly) return null;
     if (!currentWorkId || !currentChapterId) return new Set<string>();
@@ -114,10 +115,8 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
   /* 选中项短暂高亮，让"点了正文里的提及 → 右栏定位到它"能被看见。 */
   useEffect(() => {
     if (!currentEntryId) return;
-    setFlashId(currentEntryId);
-    const timer = window.setTimeout(() => setFlashId(null), 1200);
-    return () => window.clearTimeout(timer);
-  }, [currentEntryId]);
+    jumpTo(currentEntryId);
+  }, [currentEntryId, jumpTo]);
   function openCreate() {
     setCreateOpen(true);
   }
@@ -262,6 +261,7 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
                 <li key={e.id}>
                   <button
                     type="button"
+                    data-codex-entry={e.id}
                     title={
                       onAppendToText ? t("Codex.appendHint") : undefined
                     }
@@ -273,9 +273,10 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
                     }}
                     className={[
                       "flex w-full items-center gap-1.5 rounded-md border px-2 py-1 text-left text-xs transition-colors",
-                      e.id === currentEntryId || e.id === flashId
+                      e.id === currentEntryId
                         ? "border-primary/30 bg-accent/60 font-medium text-accent-foreground"
                         : "border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                      e.id === highlightId ? "jump-highlight" : "",
                     ].join(" ")}
                   >
                     <span
@@ -349,7 +350,6 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
               className="text-muted-foreground hover:text-foreground h-6 shrink-0 px-1.5 text-[10px]"
               onClick={() => {
                 setCurrentEntryId(null);
-                setFlashId(null);
               }}
             >
               {t("Codex.clearSelection")}
