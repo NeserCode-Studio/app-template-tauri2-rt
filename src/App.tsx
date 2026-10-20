@@ -4,7 +4,7 @@ import Titlebar from "@/components/framework/Titlebar";
 import CommandDialog from "@/components/framework/CommandDialog";
 import PageTransition from "@/components/framework/PageTransition";
 import { Toaster } from "@/components/ui/sonner";
-import { Routes, Route, useLocation, useNavigate } from "react-router";
+import { Navigate, Routes, Route, useLocation, useNavigate } from "react-router";
 
 import { useTheme, useI18nLogic } from "@/composables";
 import { lazy, Suspense, useEffect, useMemo, useState, useCallback, useRef } from "react";
@@ -37,6 +37,7 @@ import {
 
 const log = createLogger("App");
 
+const Home = lazy(() => import("@/views/Home"));
 const Library = lazy(() => import("@/views/Library"));
 const Editor = lazy(() => import("@/views/Editor"));
 const CodexLibrary = lazy(() => import("@/views/CodexLibrary"));
@@ -199,7 +200,7 @@ function App() {
                     <Suspense fallback={null}>
                       <PageTransition>
                         <Routes>
-                          <Route path="/" index element={<Library />} />
+                          <Route path="/" index element={<Home />} />
                           <Route path="/library" element={<Library />} />
                           <Route
                             path="/codex"
@@ -220,6 +221,7 @@ function App() {
                               </div>
                             }
                           />
+                          <Route path="*" element={<Navigate to="/" replace />} />
                         </Routes>
                       </PageTransition>
                     </Suspense>

@@ -9,6 +9,7 @@ import {
   Settings2,
   Trash2,
 } from "lucide-react";
+import { useLocation, useNavigate } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -48,7 +49,7 @@ import {
 } from "@/services/import";
 import { addNode as addOutlineNode } from "@/services/outline";
 import { createLogger } from "@/lib/logger";
-import { useAppNavigation } from "@/lib/navigation";
+import { navigationStateOf, useAppNavigation } from "@/lib/navigation";
 import type { Work } from "@/shared/schema";
 
 const log = createLogger("Library");
@@ -63,7 +64,9 @@ export default function Library() {
   const { t } = useI18n();
   const toast = useToast();
   const { go } = useAppNavigation();
-  const { root, recent, isOpen, pick, open, reveal, deleteWorkspace } = useWorkspace();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { root, isOpen, pick, reveal, deleteWorkspace } = useWorkspace();
   const {
     workspace,
     works,
@@ -95,6 +98,8 @@ export default function Library() {
   const [wordCounts, setWordCounts] = useState<Record<string, number>>({});
   const [trashOpen, setTrashOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const createRequested =
+    navigationStateOf(location.state).intent === "create-work";
 
   /** 统计字数：阶段 2 先从 stats.json 读取，阶段 6 再做实时更新。 */
   const loadWordCounts = useCallback(async () => {
@@ -127,6 +132,36 @@ export default function Library() {
   useEffect(() => {
     void loadWordCounts();
   }, [loadWordCounts, orderKey]);
+
+  useEffect(() => {
+    if (!isOpen || !root) {
+      go("home", { replace: true, transition: "back" });
+    }
+  }, [go, isOpen, root]);
+
+  useEffect(() => {
+    if (!createRequested) return;
+    setName("");
+    setType("");
+    setDialog({ kind: "create" });
+    /*
+     * 消费一次性跳转意图，避免用户关闭新建框后通过浏览器前进/后退
+     * 再次打开它；保留来源页和动画方向，返回语义不因此丢失。
+     */
+    navigate(`${location.pathname}${location.search}`, {
+      replace: true,
+      state: {
+        ...navigationStateOf(location.state),
+        intent: undefined,
+      },
+    });
+  }, [
+    createRequested,
+    location.pathname,
+    location.search,
+    location.state,
+    navigate,
+  ]);
 
   const active = useMemo<Work[]>(() => {
     if (!workspace) return [];
@@ -227,10 +262,8 @@ export default function Library() {
   /**
    * 提交工作区别名。
    *
-   * 从"无别名"改成"有别名"要确认一次：作品库的大标题就是它，
-   * 而 H1 之前一直是固定的"作品库"。用户可能以为改的是某个字段，
-   * 没想到整个页面的标题都换掉了。反向（清空别名）同理，
-   * 那是让标题退回默认文案的可见变化。
+   * 从"无别名"改成"有别名"要确认一次：页面顶部的上下文名称会变化。
+   * 作品库自身的标题保持稳定，工作区别名只描述当前打开的是哪个库。
    */
   function requestAliasSave() {
     const from = (workspace?.alias ?? "").trim();
@@ -239,78 +272,36 @@ export default function Library() {
     setPendingAlias({ from, to });
   }
 
-  /* ---------- 未选择工作区：引导选择 ---------- */
-  if (!isOpen || !root) {
-    return (
-      <div className="view-library scrollbar-app h-full overflow-y-auto">
-      <div className="px-6 py-8">
-        <header className="mx-auto w-full max-w-3xl">
-          <div className="flex items-start gap-3">
-            <BookMarked className="icon-md mt-1 shrink-0 text-muted-foreground" />
-            <div>
-              <h1 className="text-xl font-semibold">{t("Library.empty.noWorkspace")}</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {t("Library.workspace.hint")}
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <Button onClick={() => void pick()}>
-              <FolderOpen className="icon-md" />
-              {t("Library.workspace.pick")}
-            </Button>
-          </div>
-
-          {recent.length ? (
-            <section className="mt-8">
-              <h2 className="row-label">{t("Library.workspace.recent")}</h2>
-              <ul className="mt-2 flex flex-col gap-1">
-                {recent.map((path) => (
-                  <li key={path}>
-                    <button
-                      type="button"
-                      onClick={() => open(path)}
-                      className="w-full truncate rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                    >
-                      {path}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          ) : null}
-        </header>
-      </div>
-      </div>
-    );
-  }
+  if (!isOpen || !root) return null;
 
   /* ---------- 已选择工作区：作品网格 ---------- */
   return (
-    <div className="view-library scrollbar-app h-full overflow-y-auto">
-    <div className="px-6 py-8">
-      <header className="mx-auto flex w-full max-w-3xl flex-wrap items-end justify-between gap-4">
-        <div>
-          {/*
-           * 标题优先用工作区别名。目录名常是随手起的（"wirting"、
-           * "新建文件夹"），而用户心里这个库有个正式称呼；别名留空时
-           * 退回通用标题，不拿路径当标题——一整条盘符路径当 H1 太吵。
-           */}
-          <h1 className="text-xl font-semibold">
-            {workspace?.alias?.trim() || t("Library.title")}
-          </h1>
-        </div>
-        <div className="flex items-center gap-2">
-          {/*
-           * 操作区五个：工作区设置、素材库、回收站、导入文稿、新建作品。
-           *
-           * "更换工作区"收进设置——它是低频动作，且换工作区意味着
-           * 离开当前上下文（当前作品、草稿都在里面），不该和"新建作品"
-           * 并列成同级按钮，那会让人误以为随时可以无损切换。
-           * 回收站留在外面：它是"东西在哪还能捞回来"的查证入口，
-           * 删了东西之后第一反应就是去找它，埋进设置等于找不到。
-           */}
+    <div className="view-library scrollbar-app bg-background h-full overflow-y-auto">
+      <div className="px-6 py-10 sm:px-8">
+        <header className="mx-auto flex w-full max-w-4xl items-start gap-3">
+          <span className="border-border/80 bg-muted/35 flex size-10 shrink-0 items-center justify-center rounded-md border">
+            <BookMarked className="icon-md text-muted-foreground" />
+          </span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <h1 className="min-w-0 truncate text-2xl font-semibold">{t("Library.title")}</h1>
+              <span className="border-border/70 bg-muted/45 text-muted-foreground rounded border px-1.5 py-0.5 text-[11px] tabular-nums">
+                {active.length}
+              </span>
+            </div>
+            <div className="text-muted-foreground mt-1.5 flex min-w-0 items-center gap-1.5 text-xs">
+              <span className="shrink-0">
+                {workspace?.alias?.trim() || t("Library.action.workspaceSettings")}
+              </span>
+              <span aria-hidden>·</span>
+              <span className="text-muted-foreground/70 min-w-0 truncate" title={root}>
+                {root}
+              </span>
+            </div>
+          </div>
+        </header>
+
+        <div className="border-border/70 mx-auto mt-5 flex w-full max-w-4xl flex-wrap items-center gap-2 border-b pb-5">
           <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
             <Settings2 className="icon-md" />
             {t("Library.action.workspaceSettings")}
@@ -328,73 +319,78 @@ export default function Library() {
             <FileUp className="icon-md" />
             {t("Import.action")}
           </Button>
-          <Button size="sm" onClick={openCreate}>
+          <Button className="sm:ml-auto" size="sm" onClick={openCreate}>
             <Plus className="icon-md" />
             {t("Library.action.new")}
           </Button>
         </div>
-      </header>
 
-      {active.length ? (
-        <section className="mx-auto mt-8 w-full max-w-3xl">
-          <div className="flex flex-col gap-2">
-            {active.map((work) => (
-              <WorkCard
-                key={work.id}
-                work={work}
-                words={wordCounts[work.id] ?? 0}
-                isCurrent={currentWorkId === work.id}
-                onOpen={(id) => {
-                  setCurrentWorkId(id);
-                  go("editor");
-                }}
-                onRename={openRename}
-                onArchive={setPendingArchive}
-                onDelete={setPendingWorkDelete}
-                onUnarchive={(id) => {
-                  void unarchive(id)
-                    .then(() => toast.success("Library.toast.unarchived"))
-                    .catch(() => toast.error("Library.toast.failed"));
-                }}
-              />
-            ))}
-          </div>
-        </section>
-      ) : (
-        <section className="mx-auto mt-16 flex w-full max-w-3xl flex-col items-center gap-3 text-center">
-          <BookMarked className="h-10 w-10 text-muted-foreground/40" />
-          <p className="text-sm text-muted-foreground">{t("Library.empty.noWorksHint")}</p>
-          <Button size="sm" onClick={openCreate}>
-            <Plus className="icon-md" />
-            {t("Library.action.new")}
-          </Button>
-        </section>
-      )}
+        {active.length ? (
+          <section className="mx-auto mt-6 w-full max-w-4xl">
+            <div className="mb-3 flex items-center justify-between">
+              <h2 className="row-label">{t("Library.section.works")}</h2>
+              <span className="text-muted-foreground/60 text-[11px] tabular-nums">
+                {active.length}
+              </span>
+            </div>
+            <div className="flex flex-col gap-2">
+              {active.map((work) => (
+                <WorkCard
+                  key={work.id}
+                  work={work}
+                  words={wordCounts[work.id] ?? 0}
+                  isCurrent={currentWorkId === work.id}
+                  onOpen={(id) => {
+                    setCurrentWorkId(id);
+                    go("editor");
+                  }}
+                  onRename={openRename}
+                  onArchive={setPendingArchive}
+                  onDelete={setPendingWorkDelete}
+                  onUnarchive={(id) => {
+                    void unarchive(id)
+                      .then(() => toast.success("Library.toast.unarchived"))
+                      .catch(() => toast.error("Library.toast.failed"));
+                  }}
+                />
+              ))}
+            </div>
+          </section>
+        ) : (
+          <section className="border-border/80 mx-auto mt-8 flex w-full max-w-4xl flex-col items-center gap-3 border border-dashed py-12 text-center">
+            <BookMarked className="text-muted-foreground/40 h-10 w-10" />
+            <p className="text-muted-foreground text-sm">{t("Library.empty.noWorksHint")}</p>
+            <Button size="sm" onClick={openCreate}>
+              <Plus className="icon-md" />
+              {t("Library.action.new")}
+            </Button>
+          </section>
+        )}
 
-      {archived.length ? (
-        <section className="mx-auto mt-12 w-full max-w-3xl">
-          <h2 className="row-label mb-3">{t("Library.empty.archived")}</h2>
-          <div className="flex flex-col gap-2">
-            {archived.map((work) => (
-              <WorkCard
-                key={work.id}
-                work={work}
-                words={wordCounts[work.id] ?? 0}
-                isCurrent={false}
-                onOpen={() => undefined}
-                onRename={openRename}
-                onArchive={setPendingArchive}
-                onDelete={setPendingWorkDelete}
-                onUnarchive={(id) => {
-                  void unarchive(id)
-                    .then(() => toast.success("Library.toast.unarchived"))
-                    .catch(() => toast.error("Library.toast.failed"));
-                }}
-              />
-            ))}
-          </div>
-        </section>
-      ) : null}
+        {archived.length ? (
+          <section className="mx-auto mt-10 w-full max-w-4xl">
+            <h2 className="row-label mb-3">{t("Library.empty.archived")}</h2>
+            <div className="flex flex-col gap-2">
+              {archived.map((work) => (
+                <WorkCard
+                  key={work.id}
+                  work={work}
+                  words={wordCounts[work.id] ?? 0}
+                  isCurrent={false}
+                  onOpen={() => undefined}
+                  onRename={openRename}
+                  onArchive={setPendingArchive}
+                  onDelete={setPendingWorkDelete}
+                  onUnarchive={(id) => {
+                    void unarchive(id)
+                      .then(() => toast.success("Library.toast.unarchived"))
+                      .catch(() => toast.error("Library.toast.failed"));
+                  }}
+                />
+              ))}
+            </div>
+          </section>
+        ) : null}
 
       {/* 新建 / 重命名对话框 */}
       <ImportDialog
@@ -713,7 +709,7 @@ export default function Library() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+      </div>
     </div>
   );
 }

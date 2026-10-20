@@ -17,7 +17,7 @@ export default function PageTransition({ children }: { children: ReactNode }) {
 
   return (
     <div
-      key={location.key}
+      key={location.pathname}
       className="page-transition h-full min-h-0 w-full"
       data-direction={direction}
     >

@@ -45,30 +45,41 @@ export default function Titlebar() {
   const { root } = useWorkspace();
   const { openSettings, openAbout } = useSettingsDialog();
 
+  const canOpenPage = (page: AppPage) => {
+    if (page === "home") return true;
+    if (page === "editor") return Boolean(root && currentWorkId);
+    return Boolean(root);
+  };
+
   const destinations: Array<{
     page: AppPage;
     labelKey: string;
     icon: typeof Home;
     enabled: boolean;
   }> = [
-    { page: "home", labelKey: APP_PAGE_LABEL_KEYS.home, icon: Home, enabled: true },
+    {
+      page: "home",
+      labelKey: APP_PAGE_LABEL_KEYS.home,
+      icon: Home,
+      enabled: canOpenPage("home"),
+    },
     {
       page: "library",
       labelKey: APP_PAGE_LABEL_KEYS.library,
       icon: BookOpen,
-      enabled: Boolean(root),
+      enabled: canOpenPage("library"),
     },
     {
       page: "editor",
       labelKey: APP_PAGE_LABEL_KEYS.editor,
       icon: PenLine,
-      enabled: Boolean(root && currentWorkId),
+      enabled: canOpenPage("editor"),
     },
     {
       page: "codex",
       labelKey: APP_PAGE_LABEL_KEYS.codex,
       icon: Database,
-      enabled: Boolean(root),
+      enabled: canOpenPage("codex"),
     },
   ];
 
@@ -93,7 +104,7 @@ export default function Titlebar() {
             <ChevronDown className="size-3 opacity-60" />
           </MenubarTrigger>
           <MenubarContent className="w-56">
-            {backPage ? (
+            {backPage && canOpenPage(backPage) ? (
               <>
                 <MenubarItem onSelect={back}>
                   <ArrowLeft className="icon-sm" />

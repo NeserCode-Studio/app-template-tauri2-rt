@@ -7,6 +7,7 @@ export type PageTransitionDirection = "forward" | "back";
 export interface NavigationLocationState {
   from?: AppPage;
   transition?: PageTransitionDirection;
+  intent?: "create-work";
 }
 
 export const APP_PAGE_PATHS: Record<AppPage, string> = {
@@ -72,12 +73,14 @@ export function navigationStateOf(value: unknown): NavigationLocationState {
       state.transition === "forward" || state.transition === "back"
         ? state.transition
         : undefined,
+    intent: state.intent === "create-work" ? state.intent : undefined,
   };
 }
 
 export interface NavigatePageOptions {
   replace?: boolean;
   transition?: PageTransitionDirection;
+  intent?: NavigationLocationState["intent"];
 }
 
 export function useAppNavigation() {
@@ -100,6 +103,7 @@ export function useAppNavigation() {
           from: currentPage,
           transition:
             options.transition ?? defaultPageTransition(currentPage, page),
+          intent: options.intent,
         } satisfies NavigationLocationState,
       });
     },
@@ -108,8 +112,12 @@ export function useAppNavigation() {
 
   const back = useCallback(() => {
     if (!backPage) return;
-    go(backPage, { transition: "back" });
-  }, [backPage, go]);
+    if (priorPage) {
+      navigate(-1);
+      return;
+    }
+    go(backPage, { replace: true, transition: "back" });
+  }, [backPage, go, navigate, priorPage]);
 
   return useMemo(
     () => ({

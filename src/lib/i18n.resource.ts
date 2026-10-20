@@ -1,7 +1,17 @@
 export const I18nTexts = {
   "en-US": {
     "Titlebar.default.title": "App Template",
+    "Home.title": "Home",
+    "Home.continue": "Continue writing",
+    "Home.updated": "Updated",
+    "Home.activeWorks": "Works",
+    "Home.archivedWorks": "Archived",
+    "Home.recent": "Recent works",
+    "Home.recentHint": "Recently updated in this workspace",
+    "Home.openLibrary": "Open library",
+    "Home.currentWorkspace": "Current workspace",
     "Library.title": "Library",
+    "Library.section.works": "Works",
     "Library.empty.hint":
       "Pick a workspace and create your first work to start writing",
     "Library.workspace.hint": "Choose where your novels are stored",
@@ -22,7 +32,7 @@ export const I18nTexts = {
       "Everything in this workspace — all works, chapters and the material library — moves to the recycle bin inside it.",
     "Library.workspace.renameTitle": "Rename this workspace?",
     "Library.workspace.renameDesc":
-      "The big title at the top of the library changes from",
+      "The workspace name shown at the top changes from",
     "Library.workspace.renameTo": "to",
     "Library.dialog.close": "Close",
     "Library.workspace.recent": "Recent workspaces",
@@ -610,7 +620,17 @@ export const I18nTexts = {
   },
   "zh-CN": {
     "Titlebar.default.title": "应用模板",
+    "Home.title": "首页",
+    "Home.continue": "继续写作",
+    "Home.updated": "更新于",
+    "Home.activeWorks": "作品",
+    "Home.archivedWorks": "已归档",
+    "Home.recent": "最近作品",
+    "Home.recentHint": "当前工作区中最近更新的作品",
+    "Home.openLibrary": "打开作品库",
+    "Home.currentWorkspace": "当前工作区",
     "Library.title": "作品库",
+    "Library.section.works": "作品",
     "Library.empty.hint": "选择工作区并创建第一部作品，开始写作",
     "Library.workspace.hint": "选择存放小说的目录",
     "Library.workspace.pick": "选择工作区文件夹",
@@ -629,7 +649,7 @@ export const I18nTexts = {
     "Library.workspace.deleteDesc":
       "该工作区下的一切——所有作品、章节与素材库——都会移入其中的回收站。",
     "Library.workspace.renameTitle": "更名这个工作区？",
-    "Library.workspace.renameDesc": "作品库顶部的大标题将从",
+    "Library.workspace.renameDesc": "顶部显示的工作区名称将从",
     "Library.workspace.renameTo": "改为",
     "Library.dialog.close": "关闭",
     "Library.workspace.recent": "最近的工作区",
