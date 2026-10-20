@@ -247,6 +247,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
   const boundarySyncFrame = useRef<number | null>(null);
   const scrollSaveTimer = useRef<number | null>(null);
   const lastScrollRatio = useRef(0);
+  const lastScrollApplyAt = useRef(0);
   /**
    * StrictMode 会执行一次“挂载 -> 清理 -> 再挂载”。
    * 首次清理时正文尚未恢复；若直接 flush，会把记忆位置覆盖成 0。
@@ -329,39 +330,114 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    /*
-     * 必须等新章完成布局：activeId 变化的同一帧里 DOM 仍可能保留旧章的
-     * 内容高度。两帧后再应用落点，章尾与按比例恢复才不会被旧尺寸带偏。
-     */
     const target = initialLanding.current;
+    const targetRatio =
+      target === "end"
+        ? 1
+        : target === "start"
+          ? 0
+          : (readScrollRatio(scrollStorageKey) ?? 0);
+    let disposed = false;
+    let restoring = true;
     let secondFrame = 0;
+    let applyFrame = 0;
+    let settleTimer = 0;
+    let maxTimer = 0;
+    let applied = false;
     scrollReadyRef.current = false;
-    const firstFrame = requestAnimationFrame(() => {
-      secondFrame = requestAnimationFrame(() => {
-        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-        if (target === "end") {
-          el.scrollTop = maxScroll;
-          lastScrollRatio.current = 1;
-        } else if (target === "start") {
-          el.scrollTop = 0;
-          lastScrollRatio.current = 0;
-        } else {
-          const ratio = readScrollRatio(scrollStorageKey) ?? 0;
-          el.scrollTop = maxScroll * ratio;
-          lastScrollRatio.current = ratio;
-        }
-        scrollReadyRef.current = true;
+
+    const stopRestoring = () => {
+      restoring = false;
+      if (settleTimer) window.clearTimeout(settleTimer);
+      if (maxTimer) window.clearTimeout(maxTimer);
+      settleTimer = 0;
+      maxTimer = 0;
+    };
+
+    const scheduleStop = () => {
+      if (settleTimer) window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(stopRestoring, 600);
+    };
+
+    const applyLanding = () => {
+      if (disposed || !restoring) return;
+      const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+      const nextScrollTop = maxScroll * targetRatio;
+      if (Math.abs(el.scrollTop - nextScrollTop) > 0.5) {
+        lastScrollApplyAt.current = performance.now();
+        el.scrollTop = nextScrollTop;
+      }
+      lastScrollRatio.current = targetRatio;
+      scrollReadyRef.current = true;
+      if (!applied) {
+        applied = true;
         log.debug("landing applied", {
           activeId,
           target,
           scrollHeight: el.scrollHeight,
           scrollTop: el.scrollTop,
         });
+      }
+      scheduleStop();
+    };
+
+    const queueApply = () => {
+      if (disposed || !restoring || applyFrame) return;
+      applyFrame = window.requestAnimationFrame(() => {
+        applyFrame = 0;
+        applyLanding();
+      });
+    };
+
+    const onScroll = () => {
+      if (!scrollReadyRef.current) return;
+      if (performance.now() - lastScrollApplyAt.current > 80) {
+        stopRestoring();
+      }
+    };
+    const onUserIntent = () => {
+      if (!scrollReadyRef.current) {
+        scrollReadyRef.current = true;
+        lastScrollRatio.current = targetRatio;
+      }
+      stopRestoring();
+    };
+
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => queueApply());
+    observer?.observe(el);
+    if (el.firstElementChild instanceof HTMLElement) {
+      observer?.observe(el.firstElementChild);
+    }
+
+    const firstFrame = requestAnimationFrame(() => {
+      secondFrame = requestAnimationFrame(() => {
+        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+        if (maxScroll === 0) {
+          queueApply();
+          return;
+        }
+        applyLanding();
       });
     });
+    maxTimer = window.setTimeout(stopRestoring, 3000);
+    void document.fonts?.ready.then(queueApply);
+    el.addEventListener("scroll", onScroll, { passive: true });
+    el.addEventListener("wheel", onUserIntent, { passive: true });
+    el.addEventListener("touchstart", onUserIntent, { passive: true });
+
     return () => {
+      disposed = true;
+      stopRestoring();
+      observer?.disconnect();
+      el.removeEventListener("scroll", onScroll);
+      el.removeEventListener("wheel", onUserIntent);
+      el.removeEventListener("touchstart", onUserIntent);
       cancelAnimationFrame(firstFrame);
       if (secondFrame !== 0) cancelAnimationFrame(secondFrame);
+      if (applyFrame !== 0) cancelAnimationFrame(applyFrame);
     };
   }, [activeId, scrollStorageKey]);
 
