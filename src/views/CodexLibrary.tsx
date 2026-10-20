@@ -354,56 +354,41 @@ function EntryCard({
       onClick={onSelect}
       onDoubleClick={onEdit}
       className={[
-        "relative flex min-h-32 w-full min-w-0 flex-col overflow-hidden rounded-md border p-3 text-left transition-colors",
+        "flex min-h-28 w-full min-w-0 flex-col rounded-md border p-3 text-left transition-colors",
         selected
-          ? "border-primary/30 bg-accent/30"
-          : "bg-transparent hover:border-foreground/15 hover:bg-accent/20",
+          ? "border-primary/30 bg-accent/25"
+          : "border-border/50 bg-transparent hover:border-border hover:bg-accent/20",
       ].join(" ")}
     >
-      <span
-        className="absolute inset-y-0 left-0 w-0.5"
-        style={{ backgroundColor: color }}
-      />
-      <div className="flex items-start gap-2">
-        <span
-          className="bg-muted/60 flex size-6 shrink-0 items-center justify-center rounded"
-          style={{ color }}
-        >
-          <TypeGlyph icon={type?.icon} className="size-3.5" />
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="shrink-0" style={{ color }}>
+          <TypeGlyph icon={type?.icon} className="size-4" />
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            <span className="truncate text-sm font-medium">
-              {entry.name || "-"}
-            </span>
-            {conflict ? (
-              <AlertTriangle
-                className="size-3 shrink-0 text-amber-500"
-                aria-label={t("Codex.aliasConflict")}
-              />
-            ) : null}
-          </div>
-          <p className="text-muted-foreground truncate text-xs">
-            {typeLabel(type, t)}
-          </p>
-        </div>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {entry.name || "-"}
+        </span>
+        {conflict ? (
+          <AlertTriangle
+            className="size-3 shrink-0 text-amber-500"
+            aria-label={t("Codex.aliasConflict")}
+          />
+        ) : null}
+        <span className="text-muted-foreground/60 shrink-0 text-[11px] tabular-nums">
+          {mentionCount} {t("Codex.mentions.short")}
+        </span>
+      </div>
+      <div className="text-muted-foreground mt-1 flex min-w-0 items-center gap-2 pl-6 text-[11px]">
+        <span className="truncate">{typeLabel(type, t)}</span>
+        {entry.tags.length ? (
+          <>
+            <span aria-hidden>·</span>
+            <span className="truncate">{entry.tags.slice(0, 2).join(" / ")}</span>
+          </>
+        ) : null}
       </div>
       <p className="text-muted-foreground mt-2 line-clamp-2 min-h-9 text-xs leading-relaxed">
         {entry.summary || entry.aliases.join(" / ") || t("Codex.summaryEmpty")}
       </p>
-      <div className="mt-auto flex min-w-0 items-center gap-1.5 pt-2">
-        {entry.tags.slice(0, 2).map((tag) => (
-          <span
-            key={tag}
-            className="bg-muted text-muted-foreground max-w-20 truncate rounded px-1.5 py-0.5 text-[11px]"
-          >
-            {tag}
-          </span>
-        ))}
-        <span className="text-muted-foreground/60 ml-auto shrink-0 text-[11px] tabular-nums">
-          {mentionCount} {t("Codex.mentions.short")}
-        </span>
-      </div>
     </button>
   );
 }
@@ -495,17 +480,10 @@ function NewEntryCard({
   }
 
   return (
-    <div className="bg-neutral-100/50 dark:bg-neutral-800/20 relative flex min-h-32 flex-col overflow-hidden rounded-md border border-dashed p-3">
-      <span
-        className="absolute inset-y-0 left-0 w-[3px]"
-        style={{ backgroundColor: colorOf(typeId) }}
-      />
+    <div className="flex min-h-28 flex-col rounded-md border border-dashed border-border/70 bg-transparent p-3">
       <div className="flex items-center gap-2">
-        <span
-          className="bg-muted/60 flex size-6 items-center justify-center rounded"
-          style={{ color: colorOf(typeId) }}
-        >
-          <TypeGlyph icon={type?.icon} className="size-3.5" />
+        <span className="shrink-0" style={{ color: colorOf(typeId) }}>
+          <TypeGlyph icon={type?.icon} className="size-4" />
         </span>
         <Select value={typeId} onValueChange={setTypeId}>
           <SelectTrigger className="h-8 flex-1 text-sm">

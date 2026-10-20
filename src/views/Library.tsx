@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BookMarked,
+  Clock3,
   Database,
+  FileText,
   FileUp,
   Folder,
   FolderOpen,
@@ -53,6 +55,13 @@ import { navigationStateOf, useAppNavigation } from "@/lib/navigation";
 import type { Work } from "@/shared/schema";
 
 const log = createLogger("Library");
+
+function formatDate(timestamp: number): string {
+  const date = new Date(timestamp);
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(
+    date.getDate()
+  ).padStart(2, "0")}`;
+}
 
 /** 新建 / 重命名对话框的两种模式。 */
 type DialogMode =
@@ -180,6 +189,16 @@ export default function Library() {
       .filter((w): w is Work => Boolean(w));
   }, [workspace, works]);
 
+  const totalWords = useMemo(
+    () => active.reduce((sum, work) => sum + (wordCounts[work.id] ?? 0), 0),
+    [active, wordCounts]
+  );
+
+  const lastUpdatedAt = useMemo(
+    () => active.reduce((latest, work) => Math.max(latest, work.updatedAt), 0),
+    [active]
+  );
+
   /** 提交新建 / 重命名。 */
   async function submitDialog() {
     if (!dialog) return;
@@ -274,48 +293,76 @@ export default function Library() {
 
   if (!isOpen || !root) return null;
 
-  /* ---------- 已选择工作区：作品网格 ---------- */
+  /* ---------- 已选择工作区：作品管理 ---------- */
   return (
     <div className="view-library scrollbar-app bg-background h-full overflow-y-auto">
-      <div className="px-6 py-10 sm:px-8">
-        <header className="mx-auto flex w-full max-w-4xl items-start gap-3">
-          <span className="border-border/80 bg-muted/35 flex size-10 shrink-0 items-center justify-center rounded-md border">
-            <BookMarked className="icon-md text-muted-foreground" />
-          </span>
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <h1 className="min-w-0 truncate text-2xl font-semibold">{t("Library.title")}</h1>
-              <span className="border-border/70 bg-muted/45 text-muted-foreground rounded border px-1.5 py-0.5 text-[11px] tabular-nums">
-                {active.length}
-              </span>
+      <div className="mx-auto w-full max-w-5xl px-6 py-9 sm:px-8">
+        <header className="border-border/70 border-b pb-7">
+          <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0">
+              <div className="row-label">
+                <BookMarked className="icon-sm" />
+                {t("Library.title")}
+              </div>
+              <h1 className="mt-2 min-w-0 truncate text-2xl font-semibold">
+                {workspace?.alias?.trim() || t("Library.title")}
+              </h1>
+              <div
+                className="text-muted-foreground mt-2 flex min-w-0 items-center gap-2 text-xs"
+                title={root}
+              >
+                <Folder className="icon-sm shrink-0 opacity-60" />
+                <span className="truncate">{root}</span>
+              </div>
             </div>
-            <div className="text-muted-foreground mt-1.5 flex min-w-0 items-center gap-1.5 text-xs">
-              <span className="shrink-0">
-                {workspace?.alias?.trim() || t("Library.action.workspaceSettings")}
-              </span>
-              <span aria-hidden>·</span>
-              <span className="text-muted-foreground/70 min-w-0 truncate" title={root}>
-                {root}
-              </span>
-            </div>
+
+            <dl className="grid shrink-0 grid-cols-3 gap-5 lg:min-w-[25rem] lg:border-l lg:pl-7">
+              <div>
+                <dt className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <BookMarked className="icon-sm opacity-60" />
+                  {t("Home.activeWorks")}
+                </dt>
+                <dd className="mt-2 text-xl font-semibold tabular-nums">
+                  {active.length}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <FileText className="icon-sm opacity-60" />
+                  {t("Library.summary.words")}
+                </dt>
+                <dd className="mt-2 text-xl font-semibold tabular-nums">
+                  {totalWords.toLocaleString()}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <Clock3 className="icon-sm opacity-60" />
+                  {t("Library.summary.updated")}
+                </dt>
+                <dd className="mt-2 text-sm font-medium tabular-nums">
+                  {lastUpdatedAt ? formatDate(lastUpdatedAt) : "-"}
+                </dd>
+              </div>
+            </dl>
           </div>
         </header>
 
-        <div className="border-border/70 mx-auto mt-5 flex w-full max-w-4xl flex-wrap items-center gap-2 border-b pb-5">
-          <Button variant="outline" size="sm" onClick={() => setSettingsOpen(true)}>
+        <div className="border-border/70 flex flex-wrap items-center gap-2 border-b py-4">
+          <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)}>
             <Settings2 className="icon-md" />
             {t("Library.action.workspaceSettings")}
           </Button>
-          {/* 素材库属于工作区，不是某一部作品，所以入口在作品库这一层。 */}
-          <Button variant="outline" size="sm" onClick={() => go("codex")}>
+          {/* 素材库属于工作区，不是某一部作品，所以入口在工作区这一层。 */}
+          <Button variant="ghost" size="sm" onClick={() => go("codex")}>
             <Database className="icon-md" />
             {t("Codex.library.title")}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setTrashOpen(true)}>
+          <Button variant="ghost" size="sm" onClick={() => setTrashOpen(true)}>
             <Trash2 className="icon-md" />
             {t("Trash.title")}
           </Button>
-          <Button variant="outline" size="sm" onClick={() => setImportOpen(true)}>
+          <Button variant="ghost" size="sm" onClick={() => setImportOpen(true)}>
             <FileUp className="icon-md" />
             {t("Import.action")}
           </Button>
@@ -326,14 +373,15 @@ export default function Library() {
         </div>
 
         {active.length ? (
-          <section className="mx-auto mt-6 w-full max-w-4xl">
+          <section className="mt-8 w-full">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="row-label">{t("Library.section.works")}</h2>
               <span className="text-muted-foreground/60 text-[11px] tabular-nums">
                 {active.length}
+                {archived.length ? ` / ${archived.length} ${t("Home.archivedWorks")}` : ""}
               </span>
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="divide-border/70 border-border/70 flex flex-col divide-y border-y">
               {active.map((work) => (
                 <WorkCard
                   key={work.id}
@@ -357,7 +405,7 @@ export default function Library() {
             </div>
           </section>
         ) : (
-          <section className="border-border/80 mx-auto mt-8 flex w-full max-w-4xl flex-col items-center gap-3 border border-dashed py-12 text-center">
+          <section className="border-border/70 mt-8 flex w-full flex-col items-center gap-3 border-y py-12 text-center">
             <BookMarked className="text-muted-foreground/40 h-10 w-10" />
             <p className="text-muted-foreground text-sm">{t("Library.empty.noWorksHint")}</p>
             <Button size="sm" onClick={openCreate}>
@@ -368,9 +416,9 @@ export default function Library() {
         )}
 
         {archived.length ? (
-          <section className="mx-auto mt-10 w-full max-w-4xl">
+          <section className="mt-10 w-full">
             <h2 className="row-label mb-3">{t("Library.empty.archived")}</h2>
-            <div className="flex flex-col gap-2">
+            <div className="divide-border/70 border-border/70 flex flex-col divide-y border-y">
               {archived.map((work) => (
                 <WorkCard
                   key={work.id}

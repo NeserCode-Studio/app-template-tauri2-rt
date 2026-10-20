@@ -14,6 +14,7 @@ import {
 
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/composables";
+import { useCodex } from "@/contexts/codex";
 import { useLibrary } from "@/contexts/library";
 import { useWorkspace } from "@/contexts/workspace";
 import { useAppNavigation } from "@/lib/navigation";
@@ -31,6 +32,7 @@ export default function Home() {
   const { go } = useAppNavigation();
   const { root, recent, isOpen, pick, open } = useWorkspace();
   const { workspace, works, currentWorkId, setCurrentWorkId } = useLibrary();
+  const { entries } = useCodex();
 
   const activeWorks = useMemo<Work[]>(() => {
     if (!workspace) return [];
@@ -51,7 +53,6 @@ export default function Home() {
     null;
 
   const archivedCount = workspace?.archived.length ?? 0;
-  const workspaceName = workspace?.alias?.trim() || t("Home.currentWorkspace");
 
   function openWork(workId: string) {
     setCurrentWorkId(workId);
@@ -60,7 +61,7 @@ export default function Home() {
 
   if (!isOpen || !root) {
     return (
-      <div className="view scrollbar-app bg-background h-full w-full overflow-y-auto">
+      <div className="view scrollbar-app bg-neutral-50 h-full w-full overflow-y-auto dark:bg-neutral-700">
         <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col justify-center px-6 py-12 sm:px-8">
           <div className="row-label">
             <BookMarked className="icon-sm" />
@@ -106,7 +107,7 @@ export default function Home() {
   }
 
   return (
-    <div className="view scrollbar-app bg-background h-full w-full overflow-y-auto">
+    <div className="view scrollbar-app bg-neutral-50 h-full w-full overflow-y-auto dark:bg-neutral-700">
       <div className="mx-auto flex min-h-full w-full max-w-5xl flex-col gap-10 px-6 py-10 sm:px-8">
         <header className="border-border/70 flex flex-col gap-5 border-b pb-6 md:flex-row md:items-end md:justify-between">
           <div className="min-w-0">
@@ -114,15 +115,7 @@ export default function Home() {
               <BookMarked className="icon-sm" />
               {t("Home.title")}
             </div>
-            <h1 className="mt-2 truncate text-2xl font-semibold">
-              {workspaceName}
-            </h1>
-            <p
-              className="text-muted-foreground/75 mt-1 max-w-xl truncate text-xs"
-              title={root}
-            >
-              {root}
-            </p>
+            <h1 className="mt-2 text-2xl font-semibold">{t("Home.studio")}</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="outline" onClick={() => go("library")}>
@@ -136,9 +129,8 @@ export default function Home() {
           </div>
         </header>
 
-        <section className="border-border/80 bg-card relative overflow-hidden rounded-md border">
-          <div className="bg-primary/55 absolute inset-y-0 left-0 w-1" />
-          <div className="grid gap-8 px-6 py-6 md:grid-cols-[minmax(0,1fr)_15rem] md:px-8">
+        <section className="border-border/70 border-y py-7">
+          <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_17rem] lg:items-start">
             <div className="min-w-0">
               <div className="row-label">
                 <PenLine className="icon-sm" />
@@ -187,26 +179,35 @@ export default function Home() {
               )}
             </div>
 
-            <div className="border-border/70 grid grid-cols-2 gap-5 border-t pt-5 md:border-t-0 md:border-l md:pt-0 md:pl-8">
-              <div>
-                <Layers3 className="icon-sm text-muted-foreground/60" />
-                <p className="mt-5 text-2xl font-semibold tabular-nums">
-                  {activeWorks.length}
-                </p>
-                <p className="text-muted-foreground mt-1 text-xs">
+            <dl className="border-border/70 grid grid-cols-3 gap-4 border-t pt-5 lg:grid-cols-1 lg:gap-0 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-7">
+              <div className="flex flex-col gap-1 lg:flex-row lg:items-baseline lg:justify-between lg:border-b lg:border-border/60 lg:py-3">
+                <dt className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <Layers3 className="icon-sm" />
                   {t("Home.activeWorks")}
-                </p>
+                </dt>
+                <dd className="text-lg font-semibold tabular-nums">
+                  {activeWorks.length}
+                </dd>
               </div>
-              <div>
-                <Archive className="icon-sm text-muted-foreground/60" />
-                <p className="mt-5 text-2xl font-semibold tabular-nums">
-                  {archivedCount}
-                </p>
-                <p className="text-muted-foreground mt-1 text-xs">
+              <div className="flex flex-col gap-1 lg:flex-row lg:items-baseline lg:justify-between lg:border-b lg:border-border/60 lg:py-3">
+                <dt className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <Archive className="icon-sm" />
                   {t("Home.archivedWorks")}
-                </p>
+                </dt>
+                <dd className="text-lg font-semibold tabular-nums">
+                  {archivedCount}
+                </dd>
               </div>
-            </div>
+              <div className="flex flex-col gap-1 lg:flex-row lg:items-baseline lg:justify-between lg:py-3">
+                <dt className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <Database className="icon-sm" />
+                  {t("Home.materials")}
+                </dt>
+                <dd className="text-lg font-semibold tabular-nums">
+                  {entries.length}
+                </dd>
+              </div>
+            </dl>
           </div>
         </section>
 

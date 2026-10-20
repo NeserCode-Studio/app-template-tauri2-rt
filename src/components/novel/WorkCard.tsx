@@ -2,8 +2,11 @@ import {
   Archive,
   ArchiveRestore,
   BookOpen,
+  Clock3,
+  FileText,
   MoreHorizontal,
   Pencil,
+  Tag,
   Trash2,
 } from "lucide-react";
 
@@ -57,13 +60,14 @@ export default function WorkCard({
   const { t } = useI18n();
 
   return (
-    <div className="group flex items-center gap-2 rounded-md border px-3 py-2 transition-colors hover:border-foreground/20 hover:bg-accent/30">
+    <div className="group hover:bg-accent/25 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-2 py-3 transition-colors">
       <button
         type="button"
         onClick={() => onOpen(work.id)}
-        className="flex min-w-0 flex-1 flex-col items-start gap-0.5 text-left"
+        disabled={work.archived}
+        className="min-w-0 text-left disabled:cursor-default"
       >
-        <div className="flex w-full items-center gap-2">
+        <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium">{work.title}</span>
           {work.archived ? (
             <span className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground">
@@ -75,33 +79,49 @@ export default function WorkCard({
           ) : null}
         </div>
 
-        <div className="flex w-full items-center gap-1.5 text-xs text-muted-foreground">
-          <span className="shrink-0 tabular-nums">
+        <div className="text-muted-foreground mt-1.5 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          <span className="inline-flex shrink-0 items-center gap-1 tabular-nums">
+            <FileText className="icon-sm opacity-60" />
             {words} {t("Library.card.words")}
           </span>
-          {work.type ? (
-            <>
-              <span aria-hidden>·</span>
-              <span className="truncate">{work.type}</span>
-            </>
-          ) : null}
-          <span className="ml-auto shrink-0 tabular-nums opacity-70">
-            {formatDate(work.updatedAt)}
+          <span className="inline-flex min-w-0 items-center gap-1">
+            <Tag className="icon-sm shrink-0 opacity-60" />
+            <span className="truncate">
+              {work.type || t("Library.card.uncategorized")}
+            </span>
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 tabular-nums">
+            <Clock3 className="icon-sm opacity-60" />
+            {t("Library.card.updated")} {formatDate(work.updatedAt)}
+          </span>
+          <span className="hidden shrink-0 items-center gap-1 tabular-nums opacity-75 md:inline-flex">
+            {t("Library.card.created")} {formatDate(work.createdAt)}
           </span>
         </div>
       </button>
 
       <div className="flex shrink-0 items-center gap-1">
-        <Button
-          size="sm"
-          variant="secondary"
-          className="h-7"
-          onClick={() => onOpen(work.id)}
-          disabled={work.archived}
-        >
-          <BookOpen className="icon-sm" />
-          <span className="hidden sm:inline">{t("Library.action.continue")}</span>
-        </Button>
+        {work.archived ? (
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-7 px-2"
+            onClick={() => onUnarchive(work.id)}
+          >
+            <ArchiveRestore className="icon-sm" />
+            <span className="hidden md:inline">{t("Library.action.unarchive")}</span>
+          </Button>
+        ) : (
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-7 px-2"
+            onClick={() => onOpen(work.id)}
+          >
+            <BookOpen className="icon-sm" />
+            <span className="hidden md:inline">{t("Library.action.continue")}</span>
+          </Button>
+        )}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -129,12 +149,7 @@ export default function WorkCard({
                 {t("Library.action.rename")}
               </DropdownMenuItem>
             )}
-            {work.archived ? (
-              <DropdownMenuItem onSelect={() => onUnarchive(work.id)}>
-                <ArchiveRestore className="icon-sm" />
-                {t("Library.action.unarchive")}
-              </DropdownMenuItem>
-            ) : (
+            {work.archived ? null : (
               <DropdownMenuItem onSelect={() => onArchive(work.id)}>
                 <Archive className="icon-sm" />
                 {t("Library.action.archive")}
