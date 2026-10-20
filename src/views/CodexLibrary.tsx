@@ -21,7 +21,7 @@ import {
   X,
 } from "lucide-react";
 
-import { useI18n, useToast } from "@/composables";
+import { useI18n } from "@/composables";
 import { useCodex } from "@/contexts/codex";
 import {
   typeLabel,
@@ -50,6 +50,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { CodexDetail } from "@/components/novel/codex/CodexDetail";
+import { CodexEntryCreateDialog } from "@/components/novel/codex/CodexEntryCreateDialog";
 import { CodexPreview } from "@/components/novel/codex/CodexPreview";
 import { CodexTypeManager } from "@/components/novel/codex/CodexTypeManager";
 import { TypeGlyph } from "@/components/novel/codex/TypeGlyph";
@@ -463,94 +464,6 @@ function EntryRow({
   );
 }
 
-function NewEntryCard({
-  typeConfigs,
-  initialType,
-  onCancel,
-  onCreate,
-}: {
-  typeConfigs: TypeConfig[];
-  initialType: string;
-  onCancel: () => void;
-  onCreate: (typeId: string, name: string) => Promise<void>;
-}) {
-  const { t } = useI18n();
-  const { colorOf } = useCodex();
-  const [typeId, setTypeId] = useState(initialType);
-  const [name, setName] = useState("");
-  const type = typeConfigs.find((item) => item.id === typeId) ?? null;
-
-  useEffect(() => {
-    if (!typeConfigs.some((item) => item.id === typeId)) {
-      setTypeId(initialType || typeConfigs[0]?.id || "");
-    }
-  }, [initialType, typeConfigs, typeId]);
-
-  async function submit() {
-    if (!typeId || !name.trim()) return;
-    await onCreate(typeId, name);
-    setName("");
-  }
-
-  return (
-    <div className="flex min-h-28 flex-col rounded-md border border-dashed border-border/70 bg-transparent p-3">
-      <div className="flex items-center gap-2">
-        <span className="shrink-0" style={{ color: colorOf(typeId) }}>
-          <TypeGlyph icon={type?.icon} className="size-4" />
-        </span>
-        <Select value={typeId} onValueChange={setTypeId}>
-          <SelectTrigger className="h-8 flex-1 text-sm">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {typeConfigs.map((item) => (
-              <SelectItem key={item.id} value={item.id}>
-                {typeLabel(item, t)}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          onClick={onCancel}
-          aria-label={t("Editor.chapter.cancelRename")}
-        >
-          <X className="size-3.5" />
-        </Button>
-      </div>
-      <Input
-        autoFocus
-        value={name}
-        placeholder={t("Codex.name")}
-        className="mt-2 h-9 text-sm"
-        onChange={(event) => setName(event.target.value)}
-        onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing) return;
-          if (event.key === "Enter") void submit();
-          if (event.key === "Escape") onCancel();
-        }}
-      />
-      <div className="mt-auto flex items-center justify-between pt-2">
-        <span className="text-muted-foreground text-[11px]">
-          {t("Codex.newHint")}
-        </span>
-        <Button
-          type="button"
-          size="sm"
-          className="h-7 px-2 text-sm"
-          disabled={!name.trim() || !typeId}
-          onClick={() => void submit()}
-        >
-          {t("Codex.create")}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function EmptyState({
   filtered,
   onCreate,
@@ -589,7 +502,6 @@ function EmptyState({
 
 export default function CodexLibrary() {
   const { t } = useI18n();
-  const toast = useToast();
   const narrow = useNarrowLayout();
   const {
     entries,
@@ -598,7 +510,6 @@ export default function CodexLibrary() {
     typeConfigs,
     currentEntryId,
     setCurrentEntryId,
-    create,
     colorOf,
   } = useCodex();
   const [query, setQuery] = useState("");
@@ -606,7 +517,7 @@ export default function CodexLibrary() {
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [sortMode, setSortMode] = useState<SortMode>("name");
   const [sortDirection, setSortDirection] = useState<SortDirection>("asc");
-  const [creating, setCreating] = useState(false);
+  const [createOpen, setCreateOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -701,7 +612,7 @@ export default function CodexLibrary() {
   const visibleCount = visibleEntries.length;
 
   function openCreate() {
-    setCreating(true);
+    setCreateOpen(true);
   }
 
   function selectEntry(entryId: string) {
@@ -723,20 +634,6 @@ export default function CodexLibrary() {
   function changeSortMode(value: SortMode) {
     setSortMode(value);
     setSortDirection(value === "updated" ? "desc" : "asc");
-  }
-
-  async function handleCreate(typeId: string, name: string) {
-    try {
-      const created = await create(typeId, name);
-      setCreating(false);
-      if (created) editEntry(created.id);
-    } catch (error) {
-      toast.error(
-        error instanceof Error && error.message === "CODEX_DUPLICATE_NAME"
-          ? "Codex.duplicateName"
-          : "Library.toast.failed"
-      );
-    }
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
@@ -964,18 +861,6 @@ export default function CodexLibrary() {
 
         {viewMode === "timeline" ? (
           <div className="px-4 pb-8">
-            {creating ? (
-              <div className="mx-auto mb-3 w-full max-w-3xl">
-                <NewEntryCard
-                  typeConfigs={
-                    timelineEventType ? [timelineEventType] : typeConfigs
-                  }
-                  initialType={initialNewType}
-                  onCancel={() => setCreating(false)}
-                  onCreate={handleCreate}
-                />
-              </div>
-            ) : null}
             <TimelineView
               events={timelineEvents}
               allEntries={entries}
@@ -986,17 +871,9 @@ export default function CodexLibrary() {
               onCreate={openCreate}
             />
           </div>
-        ) : filtered.length || creating ? (
+        ) : filtered.length ? (
           viewMode === "grid" ? (
             <div className="grid grid-cols-[repeat(auto-fill,minmax(215px,1fr))] gap-2.5 px-4 pb-8">
-              {creating ? (
-                <NewEntryCard
-                  typeConfigs={typeConfigs}
-                  initialType={initialNewType}
-                  onCancel={() => setCreating(false)}
-                  onCreate={handleCreate}
-                />
-              ) : null}
               {filtered.map((entry) => (
                 <EntryCard
                   key={entry.id}
@@ -1030,14 +907,6 @@ export default function CodexLibrary() {
                 </div>
               </div>
               <div className="flex flex-col gap-1 p-1">
-                {creating ? (
-                  <NewEntryCard
-                    typeConfigs={typeConfigs}
-                    initialType={initialNewType}
-                    onCancel={() => setCreating(false)}
-                    onCreate={handleCreate}
-                  />
-                ) : null}
                 {filtered.map((entry) => (
                   <EntryRow
                     key={entry.id}
@@ -1329,6 +1198,13 @@ export default function CodexLibrary() {
         onTypeCreated={(typeId) => {
           setTypeFilter(typeId);
         }}
+      />
+
+      <CodexEntryCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        initialTypeId={initialNewType}
+        onCreated={(entry) => editEntry(entry.id)}
       />
     </div>
   );

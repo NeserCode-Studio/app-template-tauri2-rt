@@ -7,45 +7,19 @@ import {
   Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { useI18n, useToast } from "@/composables";
+import { useI18n } from "@/composables";
 import { useCodex } from "@/contexts/codex";
 import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useAppNavigation } from "@/lib/navigation";
 import { typeLabel } from "@/services/codex";
-
-function parseList(value: string): string[] {
-  return [
-    ...new Set(
-      value
-        .split(/[,，、]/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-    ),
-  ];
-}
+import { CodexEntryCreateDialog } from "./codex/CodexEntryCreateDialog";
 
 interface CodexPaneProps {
   onAppendToText?: (text: string) => void;
@@ -60,7 +34,6 @@ interface CodexPaneProps {
  */
 export default function CodexPane({ onAppendToText }: CodexPaneProps) {
   const { t } = useI18n();
-  const toast = useToast();
   const { go } = useAppNavigation();
   const { currentWorkId } = useLibrary();
   const { currentChapterId } = useOutline();
@@ -72,21 +45,12 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
     currentEntryId,
     colorOf,
     setCurrentEntryId,
-    create,
-    save,
   } = useCodex();
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string | "all">("all");
   const [chapterOnly, setChapterOnly] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newType, setNewType] = useState("character");
-  const [newSummary, setNewSummary] = useState("");
-  const [newAliases, setNewAliases] = useState("");
-  const [newTags, setNewTags] = useState("");
-  const [newBody, setNewBody] = useState("");
   const [flashId, setFlashId] = useState<string | null>(null);
   const chapterMentionIds = useMemo(() => {
     if (!chapterOnly) return null;
@@ -155,43 +119,7 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
     return () => window.clearTimeout(timer);
   }, [currentEntryId]);
   function openCreate() {
-    setNewType(typeFilter === "all" ? "character" : typeFilter);
-    setNewName("");
-    setNewSummary("");
-    setNewAliases("");
-    setNewTags("");
-    setNewBody("");
     setCreateOpen(true);
-  }
-
-  async function submitCreate() {
-    const name = newName.trim();
-    if (!name || submitting) return;
-    setSubmitting(true);
-    try {
-      const created = await create(newType, name);
-      if (!created) return;
-      const summary = newSummary.trim();
-      const aliases = parseList(newAliases);
-      const tags = parseList(newTags);
-      const body = newBody.trim();
-      if (summary || aliases.length || tags.length || body) {
-        try {
-          await save({ ...created, summary, aliases, tags, body });
-        } catch {
-          toast.error("Codex.saveFailed");
-        }
-      }
-      setCreateOpen(false);
-    } catch (error) {
-      toast.error(
-        error instanceof Error && error.message === "CODEX_DUPLICATE_NAME"
-          ? "Codex.duplicateName"
-          : "Codex.saveFailed"
-      );
-    } finally {
-      setSubmitting(false);
-    }
   }
   const chip = (active: boolean) =>
     [
@@ -450,105 +378,11 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
         </div>
       ) : null}
 
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <form
-            className="flex flex-col gap-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void submitCreate();
-            }}
-          >
-            <DialogHeader>
-              <DialogTitle>{t("Codex.new")}</DialogTitle>
-              <DialogDescription>
-                {t("Codex.createDescription")}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium">{t("Codex.type")}</span>
-                <Select value={newType} onValueChange={setNewType}>
-                  <SelectTrigger aria-label={t("Codex.type")}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {typeConfigs.map((type) => (
-                      <SelectItem key={type.id} value={type.id}>
-                        {typeLabel(type, t)}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </label>
-
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium">{t("Codex.name")}</span>
-                <Input
-                  autoFocus
-                  value={newName}
-                  placeholder={t("Codex.name")}
-                  onChange={(event) => setNewName(event.target.value)}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5 sm:col-span-2">
-                <span className="text-xs font-medium">{t("Codex.summary")}</span>
-                <Input
-                  value={newSummary}
-                  placeholder={t("Codex.summaryPlaceholder")}
-                  onChange={(event) => setNewSummary(event.target.value)}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium">{t("Codex.aliases")}</span>
-                <Input
-                  value={newAliases}
-                  onChange={(event) => setNewAliases(event.target.value)}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs font-medium">{t("Codex.tags")}</span>
-                <Input
-                  value={newTags}
-                  onChange={(event) => setNewTags(event.target.value)}
-                />
-              </label>
-
-              <label className="flex flex-col gap-1.5 sm:col-span-2">
-                <span className="text-xs font-medium">{t("Codex.body")}</span>
-                <Textarea
-                  value={newBody}
-                  rows={4}
-                  className="min-h-24 resize-y text-sm leading-relaxed"
-                  placeholder={t("Codex.bodyPlaceholder")}
-                  onChange={(event) => setNewBody(event.target.value)}
-                />
-              </label>
-            </div>
-
-            <DialogFooter>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={submitting}
-                onClick={() => setCreateOpen(false)}
-              >
-                {t("Editor.chapter.cancelRename")}
-              </Button>
-              <Button
-                type="submit"
-                disabled={!newName.trim() || submitting}
-              >
-                {t("Codex.create")}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      <CodexEntryCreateDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        initialTypeId={typeFilter === "all" ? "character" : typeFilter}
+      />
     </div>
   );
 }

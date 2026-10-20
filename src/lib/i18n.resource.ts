@@ -294,6 +294,10 @@ export const I18nTexts = {
     "Codex.new": "New entry",
     "Codex.createDescription":
       "Add a name now; other details can be filled in later.",
+    "Codex.nameRequired": "Enter a name",
+    "Codex.create.typeFields": "Fields for this type",
+    "Codex.create.typeFieldsHint":
+      "These fields follow the selected type and its template.",
     "Codex.newHint": "Enter to create",
     "Codex.create": "Add",
     "Codex.save": "Save",
@@ -925,6 +929,9 @@ export const I18nTexts = {
     "Codex.entries": "条",
     "Codex.new": "新建条目",
     "Codex.createDescription": "先填写名称，其余信息可以稍后补充。",
+    "Codex.nameRequired": "请输入名称",
+    "Codex.create.typeFields": "该类型的字段",
+    "Codex.create.typeFieldsHint": "字段会随所选类型及其模板变化。",
     "Codex.newHint": "回车创建",
     "Codex.create": "添加",
     "Codex.save": "保存",
