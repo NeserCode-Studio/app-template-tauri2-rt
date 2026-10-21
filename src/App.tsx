@@ -35,6 +35,8 @@ import { lifecycle } from "@/lifecycle";
 import SettingsDialog from "@/components/framework/SettingsDialog";
 import { AppNavigationContextMenu } from "@/components/framework/AppNavigationContextMenu";
 import AboutDialog from "@/components/framework/AboutDialog";
+import McpActivityIndicator from "@/components/framework/McpActivityIndicator";
+import McpApprovalDialog from "@/components/framework/McpApprovalDialog";
 import { SettingsDialogContext } from "@/contexts/settings";
 import { createLogger } from "@/lib/logger";
 import { WorkspaceProvider } from "@/contexts/workspace.provider";
@@ -45,6 +47,9 @@ import { CodexProvider } from "@/contexts/codex.provider";
 import { SearchProvider } from "@/contexts/search.provider";
 import { ViewModeProvider } from "@/contexts/viewmode.provider";
 import { LongTaskProvider } from "@/contexts/long-task.provider";
+import { ApplicationHostProvider } from "@/application/host.provider";
+import { McpBridgeProvider } from "@/mcp/bridge.provider";
+import { McpRuntimeProvider } from "@/mcp/runtime.provider";
 import {
   defaultPageTransition,
   pageFromPath,
@@ -222,68 +227,86 @@ function App() {
                         <SettingsDialogContext.Provider value={settingsValue}>
                           <TitleContext.Provider value={titleValue}>
                             <NavigatorContext.Provider value={navigatorValue}>
-                              <main id="app-main" className="app-shell">
-                                <Titlebar />
-                                <CommandDialog />
+                              <McpRuntimeProvider>
+                                <ApplicationHostProvider
+                                  theme={theme}
+                                  setTheme={setThemeMode}
+                                  language={lang}
+                                  setLanguage={setLanguage}
+                                  title={title}
+                                  setTitle={setTitle}
+                                >
+                                  <McpBridgeProvider>
+                                    <main id="app-main" className="app-shell">
+                                      <Titlebar />
+                                      <CommandDialog />
 
-                                <AppNavigationContextMenu>
-                                  <div id="container" className="app-body">
-                                    <Suspense fallback={null}>
-                                      <PageTransition>
-                                        <Routes>
-                                          <Route
-                                            path="/"
-                                            index
-                                            element={<Home />}
-                                          />
-                                          <Route
-                                            path="/library"
-                                            element={<Library />}
-                                          />
-                                          <Route
-                                            path="/codex"
-                                            element={
-                                              <div className="h-full w-full">
-                                                <CodexLibrary />
-                                              </div>
-                                            }
-                                          />
-                                          <Route
-                                            path="/editor"
-                                            element={
-                                              // 编辑器自带三栏可拖拽布局，需要确定高度，
-                                              // 不能套在 ScrollArea 里（radix 滚动视口会让
-                                              // react-resizable-panels 读到 0 高度而崩溃）。
-                                              <div className="h-full w-full">
-                                                <Editor />
-                                              </div>
-                                            }
-                                          />
-                                          <Route
-                                            path="*"
-                                            element={
-                                              <Navigate to="/" replace />
-                                            }
-                                          />
-                                        </Routes>
-                                      </PageTransition>
-                                    </Suspense>
-                                  </div>
-                                </AppNavigationContextMenu>
-                              </main>
-                              <SettingsDialog
-                                open={settingsOpen}
-                                onOpenChange={setSettingsOpen}
-                              />
-                              <AboutDialog
-                                open={aboutOpen}
-                                onOpenChange={setAboutOpen}
-                              />
-                              <Toaster
-                                richColors
-                                theme={theme}
-                                position="bottom-right"
-                              />
+                                      <AppNavigationContextMenu>
+                                        <div
+                                          id="container"
+                                          className="app-body"
+                                        >
+                                          <Suspense fallback={null}>
+                                            <PageTransition>
+                                              <Routes>
+                                                <Route
+                                                  path="/"
+                                                  index
+                                                  element={<Home />}
+                                                />
+                                                <Route
+                                                  path="/library"
+                                                  element={<Library />}
+                                                />
+                                                <Route
+                                                  path="/codex"
+                                                  element={
+                                                    <div className="h-full w-full">
+                                                      <CodexLibrary />
+                                                    </div>
+                                                  }
+                                                />
+                                                <Route
+                                                  path="/editor"
+                                                  element={
+                                                    // 编辑器自带三栏可拖拽布局，需要确定高度，
+                                                    // 不能套在 ScrollArea 里（radix 滚动视口会让
+                                                    // react-resizable-panels 读到 0 高度而崩溃）。
+                                                    <div className="h-full w-full">
+                                                      <Editor />
+                                                    </div>
+                                                  }
+                                                />
+                                                <Route
+                                                  path="*"
+                                                  element={
+                                                    <Navigate to="/" replace />
+                                                  }
+                                                />
+                                              </Routes>
+                                            </PageTransition>
+                                          </Suspense>
+                                        </div>
+                                      </AppNavigationContextMenu>
+                                    </main>
+                                    <SettingsDialog
+                                      open={settingsOpen}
+                                      onOpenChange={setSettingsOpen}
+                                    />
+                                    <AboutDialog
+                                      open={aboutOpen}
+                                      onOpenChange={setAboutOpen}
+                                    />
+                                    <McpApprovalDialog />
+                                    <McpActivityIndicator />
+                                    <Toaster
+                                      richColors
+                                      theme={theme}
+                                      position="bottom-right"
+                                    />
+                                  </McpBridgeProvider>
+                                </ApplicationHostProvider>
+                              </McpRuntimeProvider>
                             </NavigatorContext.Provider>
                           </TitleContext.Provider>
                         </SettingsDialogContext.Provider>

@@ -172,7 +172,7 @@ fn detect_cjk_legacy(bytes: &[u8]) -> &'static str {
      */
     let ratio = (pairs * 2) as f64 / consumed as f64;
     if ratio > 0.7 {
-        "file could not be decoded as utf-8 or gb18030; please convert it to utf-8 before importing"
+        "file looks like GBK/GB18030 text that the decoder rejected; please convert it to utf-8 before importing"
     } else {
         "file could not be decoded as utf-8 or gb18030; please convert it to utf-8 before importing"
     }

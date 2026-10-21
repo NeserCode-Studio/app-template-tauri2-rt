@@ -10,6 +10,8 @@ import type { Work, Workspace } from "@/shared/schema";
 export interface LibraryContextValue {
   /** 工作区清单（作品顺序 + 归档）。 */
   workspace: Workspace | null;
+  /** 已完成装载的工作区根；用于区分旧快照与切换中的状态。 */
+  loadedRoot: string | null;
   /** 当前作品 id。 */
   currentWorkId: string | null;
   /** 所有作品元数据（含归档）。 */
@@ -57,6 +59,7 @@ export interface LibraryContextValue {
 
 export const LibraryContext = createContext<LibraryContextValue>({
   workspace: null,
+  loadedRoot: null,
   currentWorkId: null,
   works: {},
   setWorkspace: () => {},

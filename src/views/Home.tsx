@@ -22,14 +22,14 @@ import { Button } from "@/components/ui/button";
 import { useI18n, useToast } from "@/composables";
 import { useSettingsDialog } from "@/contexts/settings";
 import { useWorkspace } from "@/contexts/workspace";
+import { useLibrary } from "@/contexts/library";
 import { pageFromPath, useAppNavigation } from "@/lib/navigation";
+import { useMcpRuntime } from "@/mcp/runtime";
 import { inspectWorkspace } from "@/services/workspace";
 import {
   WORKSPACE_OPEN_INTERCEPT_EVENT,
   type WorkspaceOpenAction,
 } from "@/lib/workspace-open";
-
-const OPEN_DELAY_MS = 2500;
 
 type WorkspaceOpenIntent = "create" | "change" | "menu" | "recent";
 
@@ -41,56 +41,6 @@ interface PendingWorkspaceOpen {
 
 interface BadRecentWorkspace {
   path: string;
-}
-
-interface ProgressPoint {
-  time: number;
-  value: number;
-}
-
-function createRandomProgressCurve(): ProgressPoint[] {
-  const segmentCount = 7 + Math.floor(Math.random() * 3);
-  const timeWeights = Array.from(
-    { length: segmentCount },
-    () => 0.65 + Math.random() * 0.7
-  );
-  const valueWeights = Array.from(
-    { length: segmentCount },
-    () => 0.45 + Math.random() * 1.1
-  );
-  const totalTime = timeWeights.reduce((sum, weight) => sum + weight, 0);
-  const totalValue = valueWeights.reduce((sum, weight) => sum + weight, 0);
-  const points: ProgressPoint[] = [{ time: 0, value: 0 }];
-  let time = 0;
-  let value = 0;
-
-  for (let index = 0; index < segmentCount; index += 1) {
-    time += timeWeights[index] / totalTime;
-    value += valueWeights[index] / totalValue;
-    points.push({ time, value });
-  }
-
-  points[points.length - 1] = { time: 1, value: 1 };
-  return points;
-}
-
-function sampleProgressCurve(
-  points: ProgressPoint[],
-  currentTime: number
-): number {
-  for (let index = 1; index < points.length; index += 1) {
-    const next = points[index];
-    if (currentTime > next.time) continue;
-    const previous = points[index - 1];
-    const span = Math.max(Number.EPSILON, next.time - previous.time);
-    const localTime = Math.min(
-      1,
-      Math.max(0, (currentTime - previous.time) / span)
-    );
-    const eased = localTime * localTime * (3 - 2 * localTime);
-    return previous.value + (next.value - previous.value) * eased;
-  }
-  return 1;
 }
 
 function workspaceName(path: string): string {
@@ -148,7 +98,7 @@ function WorkspaceRow({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="group hover:bg-accent/55 relative flex w-full items-start gap-3 overflow-hidden rounded-md border border-transparent px-2.5 py-2.5 text-left transition-colors disabled:pointer-events-none disabled:opacity-55 aria-busy:border-primary/25"
+      className="group hover:bg-accent/55 aria-busy:border-primary/25 relative flex w-full items-start gap-3 overflow-hidden rounded-md border border-transparent px-2.5 py-2.5 text-left transition-colors disabled:pointer-events-none disabled:opacity-55"
       aria-busy={busy}
     >
       {busy ? (
@@ -165,7 +115,7 @@ function WorkspaceRow({
             {workspaceName(path)}
           </span>
           {current ? (
-            <span className="bg-emerald-500/12 text-emerald-700 dark:text-emerald-300 shrink-0 rounded border border-emerald-600/20 px-1.5 py-0.5 text-[10px] font-medium">
+            <span className="shrink-0 rounded border border-emerald-600/20 bg-emerald-500/12 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 dark:text-emerald-300">
               {t("Home.currentWorkspace")}
             </span>
           ) : null}
@@ -202,20 +152,18 @@ export default function Home() {
   const toast = useToast();
   const { navigateDirect } = useAppNavigation();
   const { openSettings, openAbout } = useSettingsDialog();
-  const {
-    root,
-    recent,
-    recentOpenedAt,
-    pickPath,
-    open,
-    removeRecent,
-  } = useWorkspace();
-  const [pendingOpen, setPendingOpen] =
-    useState<PendingWorkspaceOpen | null>(null);
+  const library = useLibrary();
+  const mcpRuntime = useMcpRuntime();
+  const { root, recent, recentOpenedAt, pickPath, open, removeRecent } =
+    useWorkspace();
+  const [pendingOpen, setPendingOpen] = useState<PendingWorkspaceOpen | null>(
+    null
+  );
   const [badRecentWorkspace, setBadRecentWorkspace] =
     useState<BadRecentWorkspace | null>(null);
   const [progress, setProgress] = useState(0);
   const openingRef = useRef(false);
+  const finishedRef = useRef(false);
   const rootRef = useRef(root);
   const queuedNavigationRef = useRef<string | null>(null);
   const queuedDialogRef = useRef<"settings" | "about" | null>(null);
@@ -231,6 +179,7 @@ export default function Home() {
   ) {
     if (openingRef.current) return;
     openingRef.current = true;
+    finishedRef.current = false;
     queuedNavigationRef.current = null;
     queuedDialogRef.current = null;
     setProgress(0);
@@ -302,47 +251,51 @@ export default function Home() {
 
   useEffect(() => {
     if (!pendingOpen) return;
-    openingRef.current = true;
-    const startedAt = performance.now();
-    const progressCurve = createRandomProgressCurve();
-    let frame = 0;
-    let cancelled = false;
+    setProgress((value) => Math.max(value, 10));
+    if (rootRef.current !== pendingOpen.path) {
+      open(pendingOpen.path);
+    }
+  }, [open, pendingOpen]);
 
-    const finish = () => {
-      if (cancelled) return;
+  useEffect(() => {
+    if (!pendingOpen || finishedRef.current) return;
+    if (rootRef.current !== pendingOpen.path) {
+      setProgress((value) => Math.max(value, 15));
+      return;
+    }
+    setProgress((value) => Math.max(value, 30));
+    if (library.loadedRoot !== pendingOpen.path) {
+      setProgress((value) => Math.max(value, 55));
+      return;
+    }
+    setProgress((value) => Math.max(value, 72));
+    if (mcpRuntime.phase === "idle" || mcpRuntime.phase === "starting") {
+      setProgress((value) => Math.max(value, 84));
+      return;
+    }
+
+    setProgress(100);
+    const frame = requestAnimationFrame(() => {
+      if (finishedRef.current) return;
+      finishedRef.current = true;
       const navigation =
-        queuedNavigationRef.current ??
-        pendingOpen.targetPath ??
-        "/library";
+        queuedNavigationRef.current ?? pendingOpen.targetPath ?? "/library";
       const dialog = queuedDialogRef.current;
       openingRef.current = false;
       setPendingOpen(null);
-      open(pendingOpen.path);
       navigateDirect(navigation);
       if (dialog === "settings") openSettings();
       if (dialog === "about") openAbout();
-    };
-
-    const tick = (now: number) => {
-      const elapsed = Math.min(1, (now - startedAt) / OPEN_DELAY_MS);
-      setProgress(
-        elapsed >= 1 ? 100 : sampleProgressCurve(progressCurve, elapsed) * 100
-      );
-      if (elapsed < 1) {
-        frame = requestAnimationFrame(tick);
-        return;
-      }
-      setProgress(100);
-      frame = requestAnimationFrame(finish);
-    };
-
-    frame = requestAnimationFrame(tick);
-    return () => {
-      cancelled = true;
-      cancelAnimationFrame(frame);
-      openingRef.current = false;
-    };
-  }, [navigateDirect, open, openAbout, openSettings, pendingOpen]);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    library.loadedRoot,
+    mcpRuntime.phase,
+    navigateDirect,
+    openAbout,
+    openSettings,
+    pendingOpen,
+  ]);
 
   return (
     <div className="view scrollbar-app bg-background h-full w-full overflow-y-auto">
@@ -451,7 +404,7 @@ export default function Home() {
             <AlertDialogTitle>{t("Home.badWorkspaceTitle")}</AlertDialogTitle>
             <AlertDialogDescription className="flex flex-col gap-2">
               <span>{t("Home.badWorkspaceDesc")}</span>
-              <span className="break-all font-medium text-foreground">
+              <span className="text-foreground font-medium break-all">
                 {badRecentWorkspace?.path}
               </span>
             </AlertDialogDescription>

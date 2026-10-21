@@ -1,11 +1,11 @@
-mod fs_bridge;
 mod export_bridge;
+mod fs_bridge;
+mod mcp;
 
 use tauri::{
-    Manager,
     image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Position, Size,
+    Emitter, Manager, Position, Size,
 };
 
 #[tauri::command]
@@ -51,6 +51,7 @@ fn toggle_main_window(app: &tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
+            app.manage(mcp::McpManager::default());
             let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))
                 .expect("Failed to load tray icon");
 
@@ -80,10 +81,13 @@ pub fn run() {
 
                     if is_right {
                         if let Some(window) = tray.app_handle().get_webview_window("main") {
-                            let _ = window.emit("tray-popup", serde_json::json!({
-                                "x": (rx + rw / 2.0) as i32,
-                                "y": ry as i32,
-                            }));
+                            let _ = window.emit(
+                                "tray-popup",
+                                serde_json::json!({
+                                    "x": (rx + rw / 2.0) as i32,
+                                    "y": ry as i32,
+                                }),
+                            );
                         }
                     } else {
                         toggle_main_window(tray.app_handle());
@@ -97,7 +101,6 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![greet, open_devtools])
         .invoke_handler(tauri::generate_handler![
             greet,
             open_devtools,
@@ -113,6 +116,13 @@ pub fn run() {
             fs_bridge::workspace_migrate,
             export_bridge::fs_write_export,
             export_bridge::fs_read_text_auto,
+            mcp::runtime::mcp_start,
+            mcp::runtime::mcp_stop,
+            mcp::runtime::mcp_status,
+            mcp::runtime::mcp_configure,
+            mcp::runtime::mcp_bridge_respond,
+            mcp::runtime::mcp_bridge_progress,
+            mcp::runtime::mcp_notify_resources_changed,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

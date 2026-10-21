@@ -78,11 +78,13 @@ export interface PreferencesContextValue {
     key: K,
     value: WritingPreferences[K]
   ) => void;
+  updatePrefs: (patch: Partial<WritingPreferences>) => WritingPreferences;
 }
 
 export const PreferencesContext = createContext<PreferencesContextValue>({
   prefs: DEFAULT_PREFERENCES,
   setPref: () => {},
+  updatePrefs: () => DEFAULT_PREFERENCES,
 });
 
 export function usePreferences(): PreferencesContextValue {

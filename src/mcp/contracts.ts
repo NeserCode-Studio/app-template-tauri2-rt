@@ -71,6 +71,27 @@ export interface McpBridgeRequest {
   client_info: McpClientInfo;
   deadline_ms: number;
   workspace_session_id: string;
+  risk: RiskLevel;
+  permission: Permission;
+}
+
+export interface McpResourceBridgeRequest {
+  request_id: string;
+  uri: string;
+  client_info: McpClientInfo;
+  workspace_session_id: string;
+}
+
+export interface McpPromptBridgeRequest {
+  request_id: string;
+  prompt_name: string;
+  arguments: Record<string, unknown>;
+  client_info: McpClientInfo;
+  workspace_session_id: string;
+}
+
+export interface McpCancelEvent {
+  request_id: string;
 }
 
 export interface McpBridgeError {
@@ -88,4 +109,20 @@ export interface McpBridgeResponse {
   structured_content?: Record<string, unknown>;
   content?: Array<{ type: "text"; text: string }>;
   is_error?: boolean;
+}
+
+export interface McpServerStatus {
+  running: boolean;
+  endpoint: string | null;
+  port: number | null;
+  token: string | null;
+  accessLevel: Permission;
+  protocolVersion: string;
+  compatibleVersions: string[];
+  startedAt: number | null;
+  workspaceSessionId: string | null;
+  toolCount: number;
+  resourceCount: number;
+  promptCount: number;
+  activeCalls: number;
 }

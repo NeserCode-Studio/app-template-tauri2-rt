@@ -17,7 +17,8 @@ const RESOURCE_DEFINITIONS: McpResourceDefinition[] = [
     uri: "novels://workspace",
     name: "workspace",
     title: "Current workspace",
-    description: "Current workspace summary and readiness without absolute paths.",
+    description:
+      "Current workspace summary and readiness without absolute paths.",
     mimeType: "application/json",
     permission: "read",
     risk: "R0",
@@ -122,6 +123,15 @@ const RESOURCE_DEFINITIONS: McpResourceDefinition[] = [
     risk: "R0",
   },
   {
+    uri: "novels://drafts",
+    name: "drafts",
+    title: "Drafts",
+    description: "Draft entries belonging only to the current workspace.",
+    mimeType: "application/json",
+    permission: "read",
+    risk: "R0",
+  },
+  {
     uri: "novels://settings",
     name: "settings",
     title: "Application settings",
@@ -186,8 +196,7 @@ const PROMPT_DEFINITIONS: McpPromptDefinition[] = [
   {
     name: "novels_outline_plan",
     title: "Plan outline",
-    description:
-      "Produce or revise a volume, chapter and scene structure.",
+    description: "Produce or revise a volume, chapter and scene structure.",
     arguments: [
       {
         name: "work_id",
@@ -236,14 +245,40 @@ function schemaFor(schema: unknown): Record<string, unknown> {
   }) as Record<string, unknown>;
 }
 
-export function buildToolDefinitions(accessLevel: Permission): McpToolDefinition[] {
+function inputSchemaFor(
+  command: (typeof APP_COMMANDS)[number]
+): Record<string, unknown> {
+  const schema = schemaFor(command.input);
+  if (!command.annotations?.readOnlyHint) return schema;
+  const properties =
+    schema.properties && typeof schema.properties === "object"
+      ? (schema.properties as Record<string, unknown>)
+      : {};
+  return {
+    ...schema,
+    properties: {
+      ...properties,
+      response_format: {
+        type: "string",
+        enum: ["json", "markdown"],
+        default: "json",
+        description:
+          "Use json for structured processing or markdown for human-readable text.",
+      },
+    },
+  };
+}
+
+export function buildToolDefinitions(
+  accessLevel: Permission
+): McpToolDefinition[] {
   return APP_COMMANDS.filter((command) =>
     canUsePermission(accessLevel, command.permission)
   ).map((command) => ({
     name: command.id,
     title: command.title,
     description: command.description,
-    inputSchema: schemaFor(command.input),
+    inputSchema: inputSchemaFor(command),
     ...(command.output ? { outputSchema: schemaFor(command.output) } : {}),
     annotations: command.annotations ?? {},
     permission: command.permission,

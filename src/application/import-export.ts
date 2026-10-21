@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 import { AppError } from "./errors";
 import { requireRoot, requireWorkId } from "./helpers";
@@ -40,6 +41,32 @@ function prunePreviews(): void {
   }
 }
 
+export function describeImportPreview(previewId: string) {
+  prunePreviews();
+  const preview = previews.get(previewId);
+  if (!preview) return null;
+  return {
+    preview_id: previewId,
+    expires_at: preview.expiresAt,
+    title: preview.title,
+    file_name: preview.fileName,
+    format: preview.parsed.format,
+    synopsis: preview.parsed.synopsis,
+    card_count: preview.parsed.cards.length,
+    section_count: preview.parsed.sections.length,
+    volumes: preview.parsed.volumes,
+    sections: preview.parsed.sections.map((section) => ({
+      title: section.title,
+      volume_title: section.volumeTitle,
+      card_count: section.cards.length,
+      preview: section.cards
+        .slice(0, 3)
+        .map((card) => card.text.slice(0, 300))
+        .join("\n"),
+    })),
+  };
+}
+
 const exportOptionsSchema = z
   .object({
     include_chapter_title: z.boolean().default(true),
@@ -50,7 +77,9 @@ const exportOptionsSchema = z
   })
   .strict();
 
-function exportOptions(input: z.infer<typeof exportOptionsSchema>): ExportOptions {
+function exportOptions(
+  input: z.infer<typeof exportOptionsSchema>
+): ExportOptions {
   return {
     includeChapterTitle: input.include_chapter_title,
     includeVolumeTitle: input.include_volume_title,
@@ -64,10 +93,9 @@ const importPreview = defineAppCommand({
   id: "novels_import_preview",
   title: "Preview novel import",
   description:
-    "Read a user-approved txt or md file and parse volume, chapter and preface structure without writing workspace data.",
+    "Open the application file picker, then parse the user-selected txt or md file without writing workspace data.",
   input: z
     .object({
-      path: z.string().min(1).max(4096),
       strip_section_numbers: z.boolean().default(false),
       auto_paragraph: z.boolean().default(true),
     })
@@ -82,17 +110,27 @@ const importPreview = defineAppCommand({
   },
   async execute(input) {
     prunePreviews();
-    const decoded = await readTextAuto(input.path);
-    const parsed = parseImportText(input.path, decoded.content, {
+    const selected = await openDialog({
+      multiple: false,
+      directory: false,
+      title: "选择要导入的小说文件",
+      filters: [{ name: "Novel text", extensions: ["txt", "md"] }],
+    });
+    const path = Array.isArray(selected) ? selected[0] : selected;
+    if (!path) {
+      throw new AppError("cancelled", "The user cancelled file selection.");
+    }
+    const decoded = await readTextAuto(path);
+    const parsed = parseImportText(path, decoded.content, {
       stripSectionNumbers: input.strip_section_numbers,
       autoParagraph: input.auto_paragraph,
     });
     const id = crypto.randomUUID();
-    const title = importTitleFromPath(input.path);
+    const title = importTitleFromPath(path);
     previews.set(id, {
       expiresAt: Date.now() + PREVIEW_TTL_MS,
-      path: input.path,
-      fileName: importFileName(input.path),
+      path,
+      fileName: importFileName(path),
       title,
       parsed,
     });

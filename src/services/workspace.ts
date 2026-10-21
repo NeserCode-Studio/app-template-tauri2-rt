@@ -277,6 +277,109 @@ export interface ScanReport {
   recoveredChapters: { workId: string; count: number }[];
 }
 
+export interface ScanPreviewReport {
+  orphans: { id: string; title: string; updatedAt: number }[];
+  missing: { id: string }[];
+  flagMismatches: {
+    id: string;
+    manifestArchived: boolean;
+    workArchived: boolean;
+  }[];
+  danglingChapters: { workId: string; count: number }[];
+  orphanChapterFiles: { workId: string; count: number }[];
+}
+
+/**
+ * Read-only workspace audit. Unlike scanAndRepair this never writes a manifest,
+ * adopts files or reconciles IDs, so an Agent can inspect a workspace safely.
+ */
+export async function scanWorkspaceReadOnly(
+  root: string
+): Promise<ScanPreviewReport> {
+  const fs2 = createFs(root);
+  const raw = await fs2.readText(workspaceFile());
+  const ws = workspaceSchema.parse(JSON.parse(raw));
+  const report: ScanPreviewReport = {
+    orphans: [],
+    missing: [],
+    flagMismatches: [],
+    danglingChapters: [],
+    orphanChapterFiles: [],
+  };
+  const dirNames = (await fs2.exists(WORKS_DIR))
+    ? await fs2.readDir(WORKS_DIR)
+    : [];
+  const onDisk = new Set<string>();
+  for (const name of dirNames) {
+    try {
+      const work = await loadWork(root, name);
+      onDisk.add(name);
+      if (!ws.order.includes(name) && !ws.archived.includes(name)) {
+        report.orphans.push({
+          id: name,
+          title: work.title,
+          updatedAt: work.updatedAt,
+        });
+      }
+    } catch {
+      // Non-work directories are ignored.
+    }
+  }
+  for (const id of [...ws.order, ...ws.archived]) {
+    if (!onDisk.has(id)) report.missing.push({ id });
+    try {
+      const work = await loadWork(root, id);
+      const manifestArchived = ws.archived.includes(id);
+      if ((work.archived ?? false) !== manifestArchived) {
+        report.flagMismatches.push({
+          id,
+          manifestArchived,
+          workArchived: work.archived ?? false,
+        });
+      }
+    } catch {
+      // Missing or unreadable works are already represented by `missing`.
+    }
+  }
+  const ids = [
+    ...ws.order,
+    ...ws.archived,
+    ...report.orphans.map((item) => item.id),
+  ];
+  for (const workId of ids) {
+    try {
+      const outline = await loadOutline(root, workId);
+      let files: string[] = [];
+      try {
+        files = await fs2.readDir(joinRel("works", workId, "chapters"));
+      } catch {
+        // A new work may not have a chapters directory yet.
+      }
+      const diskIds = new Set(
+        files
+          .filter((file) => file.endsWith(".json"))
+          .map((file) => file.slice(0, -".json".length))
+      );
+      const outlineIds = new Set(
+        outline.nodes
+          .filter((node) => node.type === "chapter")
+          .map((node) => node.id)
+      );
+      const dangling = [...outlineIds].filter((id) => !diskIds.has(id)).length;
+      const orphanFiles = [...diskIds].filter(
+        (id) => !outlineIds.has(id)
+      ).length;
+      if (dangling) report.danglingChapters.push({ workId, count: dangling });
+      if (orphanFiles) {
+        report.orphanChapterFiles.push({ workId, count: orphanFiles });
+      }
+    } catch (err) {
+      log.warn("read-only scan: work inspection failed", { workId, err });
+    }
+  }
+  return report;
+}
+
 /**
  * 深度扫描：拿磁盘目录与 novels-yes.json 对账，并就地修复。
  *

@@ -12,6 +12,7 @@ import {
   PenLine,
   Pilcrow,
   Plus,
+  RadioTower,
   Settings2,
   Trash2,
 } from "lucide-react";
@@ -44,6 +45,7 @@ import { Switch } from "@/components/ui/switch";
 import WorkCard from "@/components/novel/WorkCard";
 import TrashDialog from "@/components/novel/TrashDialog";
 import ConfirmDeleteDialog from "@/components/framework/ConfirmDeleteDialog";
+import McpStatusDialog from "@/components/framework/McpStatusDialog";
 import ImportDialog, {
   type ImportPreview,
 } from "@/components/novel/ImportDialog";
@@ -51,6 +53,7 @@ import { useI18n, useToast } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useWorkspace } from "@/contexts/workspace";
 import { useLongTask } from "@/contexts/long-task";
+import { useMcpRuntime } from "@/mcp/runtime";
 import { loadStats, recordWorkWords } from "@/services/stats";
 import {
   countWorkWords,
@@ -90,6 +93,7 @@ export default function Library() {
   const { t } = useI18n();
   const toast = useToast();
   const { run: runLongTask } = useLongTask();
+  const mcpRuntime = useMcpRuntime();
   const { go } = useAppNavigation();
   const location = useLocation();
   const navigate = useNavigate();
@@ -140,6 +144,7 @@ export default function Library() {
     to: string;
   } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
   const [aliasName, setAliasName] = useState("");
   const [wordCounts, setWordCounts] = useState<Record<string, number>>({});
   const [trashOpen, setTrashOpen] = useState(false);
@@ -1001,6 +1006,32 @@ export default function Library() {
               </div>
 
               <div className="flex flex-col gap-2">
+                <div className="border-border/70 flex items-start justify-between gap-4 border-t pt-4">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <RadioTower className="icon-sm" />
+                      {t("Mcp.title")}
+                    </div>
+                    <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+                      {mcpRuntime.phase === "ready"
+                        ? t("Mcp.summary.ready")
+                        : mcpRuntime.phase === "degraded"
+                          ? t("Mcp.summary.degraded")
+                          : t("Mcp.status.starting")}
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() => {
+                      setSettingsOpen(false);
+                      setMcpOpen(true);
+                    }}
+                  >
+                    {t("Mcp.manage")}
+                  </Button>
+                </div>
                 <Button
                   variant="outline"
                   className="justify-start"
@@ -1043,6 +1074,8 @@ export default function Library() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <McpStatusDialog open={mcpOpen} onOpenChange={setMcpOpen} />
 
         <AlertDialog
           open={pendingArchive !== null}

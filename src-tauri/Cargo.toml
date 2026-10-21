@@ -33,3 +33,4 @@ log = "0.4"
 axum = "0.8"
 tower = "0.5"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "net", "time"] }
+tokio-util = "0.7"

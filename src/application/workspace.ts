@@ -8,6 +8,7 @@ import {
   revealWorkspaceDir,
   saveWorkspace,
   scanAndRepair,
+  scanWorkspaceReadOnly,
 } from "@/services/workspace";
 
 const workspaceGet = defineAppCommand({
@@ -142,11 +143,28 @@ const workspaceScan = defineAppCommand({
   async execute(input, context) {
     const root = requireRoot(context);
     if (!input.apply) {
-      throw new Error(
-        "Report-only workspace scanning is not available yet. Use apply=true."
-      );
+      return scanWorkspaceReadOnly(root);
     }
     return scanAndRepair(root);
+  },
+});
+
+const workspaceScanPreview = defineAppCommand({
+  id: "novels_workspace_scan_preview",
+  title: "Preview workspace scan",
+  description:
+    "Inspect workspace manifest, work flags and chapter-file consistency without writing anything.",
+  input: z.object({}).strict(),
+  permission: "read",
+  risk: "R0",
+  annotations: {
+    readOnlyHint: true,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  },
+  async execute(_input, context) {
+    return scanWorkspaceReadOnly(requireRoot(context));
   },
 });
 
@@ -157,4 +175,5 @@ export const WORKSPACE_COMMANDS = [
   workspaceRecentRemove,
   workspaceReveal,
   workspaceScan,
+  workspaceScanPreview,
 ] as const;

@@ -17,6 +17,8 @@ const pending = new Map<
     request: ApprovalRequest;
     resolve: (approved: boolean) => void;
     timer: number;
+    signal?: AbortSignal;
+    onAbort?: () => void;
   }
 >();
 const listeners = new Set<ApprovalListener>();
@@ -35,15 +37,20 @@ export function subscribeApprovals(listener: ApprovalListener): () => void {
 }
 
 export function requestApproval(
-  request: Omit<ApprovalRequest, "id" | "requestedAt" | "expiresAt">
+  request: Omit<ApprovalRequest, "id" | "requestedAt" | "expiresAt">,
+  options?: { signal?: AbortSignal }
 ): Promise<boolean> {
+  if (options?.signal?.aborted) return Promise.resolve(false);
   const id = crypto.randomUUID();
   const requestedAt = Date.now();
   const expiresAt = requestedAt + 120_000;
+  const signal = options?.signal;
+  const onAbort = () => resolveApproval(id, false);
   return new Promise((resolve) => {
     const timer = window.setTimeout(() => {
       const entry = pending.get(id);
       if (!entry) return;
+      signal?.removeEventListener("abort", onAbort);
       pending.delete(id);
       entry.resolve(false);
       notify();
@@ -52,7 +59,14 @@ export function requestApproval(
       request: { ...request, id, requestedAt, expiresAt },
       resolve,
       timer,
+      signal,
+      onAbort,
     });
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) {
+      resolveApproval(id, false);
+      return;
+    }
     notify();
   });
 }
@@ -61,6 +75,9 @@ export function resolveApproval(id: string, approved: boolean): void {
   const entry = pending.get(id);
   if (!entry) return;
   window.clearTimeout(entry.timer);
+  if (entry.signal && entry.onAbort) {
+    entry.signal.removeEventListener("abort", entry.onAbort);
+  }
   pending.delete(id);
   entry.resolve(approved);
   notify();

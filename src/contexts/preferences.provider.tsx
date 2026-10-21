@@ -71,9 +71,18 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     [prefs, setStored]
   );
 
+  const updatePrefs = useCallback(
+    (patch: Partial<WritingPreferences>) => {
+      const next = { ...prefs, ...patch };
+      setStored(next);
+      return next;
+    },
+    [prefs, setStored]
+  );
+
   const value = useMemo<PreferencesContextValue>(
-    () => ({ prefs, setPref }),
-    [prefs, setPref]
+    () => ({ prefs, setPref, updatePrefs }),
+    [prefs, setPref, updatePrefs]
   );
 
   return <PreferencesContext.Provider value={value}>{children}</PreferencesContext.Provider>;

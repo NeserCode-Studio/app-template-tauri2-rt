@@ -84,6 +84,7 @@ async function reloadAll(root: string) {
 export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const { root } = useWorkspace();
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [loadedRoot, setLoadedRoot] = useState<string | null>(null);
   const [works, setWorks] = useState<Record<string, Work>>({});
   const [currentWorkId, setCurrentWorkIdState] = useState<string | null>(() =>
     root ? (readCurrentWorkMap()[root] ?? null) : null
@@ -96,15 +97,18 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!root) {
       setWorkspace(null);
+      setLoadedRoot(null);
       setWorks({});
       setCurrentWorkIdState(null);
       return;
     }
+    setLoadedRoot(null);
     let alive = true;
     reloadAll(root)
       .then(({ ws, works: list }) => {
         if (!alive) return;
         setWorkspace(ws);
+        setLoadedRoot(root);
         setWorks(list);
         const remembered = readCurrentWorkMap()[root];
         const restored = remembered && list[remembered] ? remembered : null;
@@ -255,6 +259,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const value = useMemo<LibraryContextValue>(
     () => ({
       workspace,
+      loadedRoot,
       currentWorkId,
       works,
       setWorkspace,
@@ -272,6 +277,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       workspace,
+      loadedRoot,
       currentWorkId,
       works,
       refresh,
