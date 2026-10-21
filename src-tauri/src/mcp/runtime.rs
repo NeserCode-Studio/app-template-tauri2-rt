@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     path::PathBuf,
     sync::{Arc, Mutex, RwLock},
     time::{SystemTime, UNIX_EPOCH},
@@ -22,7 +23,7 @@ use tokio_util::sync::CancellationToken;
 use super::{
     audit::AuditWriter,
     auth::{hash_token, RateLimiter},
-    bridge::{BridgeHub, BridgeProgress, McpBridgeResponse},
+    bridge::{BridgeHub, BridgeProgress, McpBridgeResponse, McpClientInfo},
     credentials::{load_or_create_token, workspace_key},
     error::{McpResult, McpRuntimeError},
     manifest::McpManifest,
@@ -33,6 +34,22 @@ const DEFAULT_PORT: u16 = 38471;
 const MAX_PORT: u16 = 38480;
 const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_CONCURRENT_CALLS: usize = 8;
+const CLIENT_RETENTION_MS: u128 = 30 * 60 * 1_000;
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpClientStatus {
+    pub name: String,
+    pub version: Option<String>,
+    pub title: Option<String>,
+    pub connected_at: u128,
+    pub last_seen_at: u128,
+}
+
+struct ConnectedClient {
+    peer: Peer<RoleServer>,
+    status: McpClientStatus,
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,6 +67,8 @@ pub struct McpStatus {
     pub resource_count: usize,
     pub prompt_count: usize,
     pub active_calls: usize,
+    pub connected_clients: usize,
+    pub clients: Vec<McpClientStatus>,
 }
 
 impl Default for McpStatus {
@@ -68,6 +87,8 @@ impl Default for McpStatus {
             resource_count: 0,
             prompt_count: 0,
             active_calls: 0,
+            connected_clients: 0,
+            clients: Vec::new(),
         }
     }
 }
@@ -110,7 +131,7 @@ pub struct RuntimeShared {
     pub app: AppHandle,
     pub audit: Arc<AuditWriter>,
     pub workspace_session_id: String,
-    pub clients: Mutex<Vec<Peer<RoleServer>>>,
+    clients: Mutex<HashMap<String, ConnectedClient>>,
     pub semaphore: Arc<Semaphore>,
     pub rate_limiter: RateLimiter,
     pub shutdown: CancellationToken,
@@ -125,12 +146,64 @@ impl RuntimeShared {
             .clone()
     }
 
-    pub fn register_client(&self, peer: Peer<RoleServer>) {
+    pub fn register_client(&self, peer: Peer<RoleServer>, client_info: McpClientInfo) {
+        let now = now_ms();
+        let name = client_info
+            .name
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or_else(|| "unknown".into());
+        let key = format!(
+            "{}:{}:{}",
+            name,
+            client_info.version.as_deref().unwrap_or(""),
+            client_info.title.as_deref().unwrap_or("")
+        );
         let mut clients = self.clients.lock().expect("MCP client lock poisoned");
-        if clients.len() >= 32 {
-            clients.remove(0);
+        clients.retain(|_, client| {
+            now.saturating_sub(client.status.last_seen_at) < CLIENT_RETENTION_MS
+        });
+        if let Some(client) = clients.get_mut(&key) {
+            client.peer = peer;
+            client.status.last_seen_at = now;
+            if client_info.version.is_some() {
+                client.status.version = client_info.version;
+            }
+            if client_info.title.is_some() {
+                client.status.title = client_info.title;
+            }
+        } else {
+            clients.insert(
+                key,
+                ConnectedClient {
+                    peer,
+                    status: McpClientStatus {
+                        name,
+                        version: client_info.version,
+                        title: client_info.title,
+                        connected_at: now,
+                        last_seen_at: now,
+                    },
+                },
+            );
         }
-        clients.push(peer);
+        drop(clients);
+        let _ = self
+            .app
+            .emit("mcp:clients-changed", serde_json::json!({}));
+    }
+
+    pub fn client_statuses(&self) -> Vec<McpClientStatus> {
+        let now = now_ms();
+        let mut clients = self.clients.lock().expect("MCP client lock poisoned");
+        clients.retain(|_, client| {
+            now.saturating_sub(client.status.last_seen_at) < CLIENT_RETENTION_MS
+        });
+        let mut statuses = clients
+            .values()
+            .map(|client| client.status.clone())
+            .collect::<Vec<_>>();
+        statuses.sort_by(|left, right| right.last_seen_at.cmp(&left.last_seen_at));
+        statuses
     }
 
     pub async fn notify_manifest_changed(&self) {
@@ -138,7 +211,9 @@ impl RuntimeShared {
             .clients
             .lock()
             .expect("MCP client lock poisoned")
-            .clone();
+            .values()
+            .map(|client| client.peer.clone())
+            .collect::<Vec<_>>();
         for peer in clients {
             let _ = peer.notify_tool_list_changed().await;
             let _ = peer.notify_resource_list_changed().await;
@@ -151,7 +226,9 @@ impl RuntimeShared {
             .clients
             .lock()
             .expect("MCP client lock poisoned")
-            .clone();
+            .values()
+            .map(|client| client.peer.clone())
+            .collect::<Vec<_>>();
         for peer in clients {
             let _ = peer
                 .notify_resource_updated(ResourceUpdatedNotificationParam::new(uri))
@@ -231,7 +308,7 @@ pub async fn mcp_start(
         app: app.clone(),
         audit,
         workspace_session_id: session_id,
-        clients: Mutex::new(Vec::new()),
+        clients: Mutex::new(HashMap::new()),
         semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_CALLS)),
         rate_limiter: RateLimiter::default(),
         shutdown: shutdown.clone(),
@@ -300,6 +377,8 @@ pub fn mcp_status(manager: State<'_, McpManager>) -> McpStatus {
         .expect("MCP status lock poisoned")
         .clone();
     status.active_calls = shared.bridge.active_count();
+    status.clients = shared.client_statuses();
+    status.connected_clients = status.clients.len();
     status
 }
 
@@ -365,6 +444,24 @@ pub fn mcp_bridge_progress(
 }
 
 #[tauri::command]
+pub fn mcp_bridge_cancel(
+    manager: State<'_, McpManager>,
+    request_id: String,
+) -> Result<bool, String> {
+    let shared = manager
+        .shared()
+        .ok_or_else(|| McpRuntimeError::NotRunning.to_string())?;
+    let cancelled = shared.bridge.cancel(&request_id);
+    if cancelled {
+        let _ = shared.app.emit(
+            "mcp:cancel",
+            serde_json::json!({ "request_id": request_id }),
+        );
+    }
+    Ok(cancelled)
+}
+
+#[tauri::command]
 pub async fn mcp_notify_resources_changed(
     manager: State<'_, McpManager>,
     request: ResourceChangeRequest,
@@ -420,6 +517,8 @@ fn build_status(
         resource_count: manifest.resources_for_permission().count(),
         prompt_count: manifest.prompts.len(),
         active_calls: 0,
+        connected_clients: 0,
+        clients: Vec::new(),
     }
 }
 

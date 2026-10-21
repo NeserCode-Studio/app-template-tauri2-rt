@@ -131,7 +131,9 @@ impl ServerHandler for NovelsServer {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, McpError> {
-        self.shared.register_client(context.peer.clone());
+        let client_info = Self::client_info(&context);
+        self.shared
+            .register_client(context.peer.clone(), client_info);
         let manifest = self.shared.current_manifest();
         let tools = manifest
             .tools_for_permission()
@@ -149,7 +151,9 @@ impl ServerHandler for NovelsServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, McpError> {
-        self.shared.register_client(context.peer.clone());
+        let client_info = Self::client_info(&context);
+        self.shared
+            .register_client(context.peer.clone(), client_info.clone());
         let tool_name = request.name.to_string();
         let manifest = self.shared.current_manifest();
         let Some(tool) = manifest.tool(&tool_name) else {
@@ -176,7 +180,7 @@ impl ServerHandler for NovelsServer {
             request_id: request_id.clone(),
             tool_name: tool_name.clone(),
             arguments: Value::Object(request.arguments.unwrap_or_default()),
-            client_info: Self::client_info(&context),
+            client_info: client_info.clone(),
             deadline_ms: timeout.as_millis() as u64,
             workspace_session_id: self.shared.workspace_session_id.clone(),
             risk: tool.risk.clone(),
@@ -207,7 +211,7 @@ impl ServerHandler for NovelsServer {
         drop(permit);
 
         let duration_ms = started_at.elapsed().as_millis();
-        let client_name = Self::client_info(&context)
+        let client_name = client_info
             .name
             .unwrap_or_else(|| "unknown".into());
         match response {
@@ -268,7 +272,9 @@ impl ServerHandler for NovelsServer {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
-        self.shared.register_client(context.peer.clone());
+        let client_info = Self::client_info(&context);
+        self.shared
+            .register_client(context.peer.clone(), client_info);
         Ok(ListResourcesResult::with_all_items(
             self.shared.current_manifest().rmcp_resources(),
         ))
@@ -279,7 +285,9 @@ impl ServerHandler for NovelsServer {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListResourceTemplatesResult, McpError> {
-        self.shared.register_client(context.peer.clone());
+        let client_info = Self::client_info(&context);
+        self.shared
+            .register_client(context.peer.clone(), client_info);
         Ok(ListResourceTemplatesResult::with_all_items(
             self.shared.current_manifest().rmcp_resource_templates(),
         ))
@@ -290,7 +298,9 @@ impl ServerHandler for NovelsServer {
         request: ReadResourceRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<ReadResourceResponse, McpError> {
-        self.shared.register_client(context.peer.clone());
+        let client_info = Self::client_info(&context);
+        self.shared
+            .register_client(context.peer.clone(), client_info.clone());
         if !request.uri.starts_with("novels://") || request.uri.len() > 2_000 {
             return Err(McpError::resource_not_found(
                 "resource URI is not supported",
@@ -302,7 +312,7 @@ impl ServerHandler for NovelsServer {
         let payload = McpResourceRequest {
             request_id: request_id.clone(),
             uri: request.uri.clone(),
-            client_info: Self::client_info(&context),
+            client_info,
             workspace_session_id: self.shared.workspace_session_id.clone(),
         };
         if self.shared.app.emit("mcp:resource-read", &payload).is_err() {
@@ -367,7 +377,9 @@ impl ServerHandler for NovelsServer {
         _request: Option<PaginatedRequestParams>,
         context: RequestContext<RoleServer>,
     ) -> Result<ListPromptsResult, McpError> {
-        self.shared.register_client(context.peer.clone());
+        let client_info = Self::client_info(&context);
+        self.shared
+            .register_client(context.peer.clone(), client_info);
         Ok(ListPromptsResult::with_all_items(
             self.shared.current_manifest().rmcp_prompts(),
         ))
@@ -378,7 +390,9 @@ impl ServerHandler for NovelsServer {
         request: GetPromptRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<GetPromptResponse, McpError> {
-        self.shared.register_client(context.peer.clone());
+        let client_info = Self::client_info(&context);
+        self.shared
+            .register_client(context.peer.clone(), client_info.clone());
         let manifest = self.shared.current_manifest();
         if manifest.prompt(&request.name).is_none() {
             return Err(McpError::invalid_params("unknown prompt", None));
@@ -389,7 +403,7 @@ impl ServerHandler for NovelsServer {
             request_id: request_id.clone(),
             prompt_name: request.name.clone(),
             arguments: Value::Object(request.arguments.unwrap_or_default()),
-            client_info: Self::client_info(&context),
+            client_info,
             workspace_session_id: self.shared.workspace_session_id.clone(),
         };
         if self.shared.app.emit("mcp:prompt-get", &payload).is_err() {

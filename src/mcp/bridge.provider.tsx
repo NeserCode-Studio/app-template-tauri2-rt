@@ -5,11 +5,12 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AppError, toCommandError } from "@/application/errors";
 import { getAppCommand } from "@/application/registry";
 import type { AppCommandContext } from "@/application/types";
+import { useCodex } from "@/contexts/codex";
 import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useWorkspace } from "@/contexts/workspace";
 import { createLogger } from "@/lib/logger";
-import { beginActivity, endActivity } from "./activity";
+import { beginActivity, finishActivity, updateActivity } from "./activity";
 import { requestApproval } from "./approval";
 import {
   type McpBridgeRequest,
@@ -19,6 +20,12 @@ import {
   type McpResourceBridgeRequest,
 } from "./contracts";
 import { canUsePermission } from "./permissions";
+import {
+  countActivityResult,
+  describeMcpPrompt,
+  describeMcpResource,
+  describeMcpTool,
+} from "./presentation";
 import { getMcpPrompt } from "./prompts";
 import { readMcpResource } from "./resources";
 import { errorResponse, successResponse } from "./result";
@@ -123,12 +130,15 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
   const workspace = useWorkspace();
   const library = useLibrary();
   const outline = useOutline();
+  const codex = useCodex();
   const runtime = useMcpRuntime();
   const controllers = useRef(new Map<string, AbortController>());
   const libraryRef = useRef(library);
   const outlineRef = useRef(outline);
+  const codexRef = useRef(codex);
   libraryRef.current = library;
   outlineRef.current = outline;
+  codexRef.current = codex;
   const state = useRef<BridgeState>({
     root: workspace.root,
     workId: library.currentWorkId,
@@ -174,6 +184,11 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
       controller: AbortController
     ): AppCommandContext => {
       const reporter = new McpTaskReporter((progress) => {
+        updateActivity(requestId, {
+          progress: progress.progress,
+          total: progress.total,
+          detail: progress.message,
+        });
         void invoke("mcp_bridge_progress", {
           request: {
             request_id: requestId,
@@ -203,11 +218,17 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
       if (!lifecycle) {
         const currentLibrary = libraryRef.current;
         const currentOutline = outlineRef.current;
-        await Promise.allSettled([
-          currentLibrary.refresh(),
-          currentOutline.reload(),
-          currentOutline.reloadChapterMetas(),
-        ]);
+        const refreshes: Promise<unknown>[] = [];
+        if (toolName.startsWith("novels_codex_")) {
+          refreshes.push(codexRef.current.reload());
+        } else {
+          refreshes.push(
+            currentLibrary.refresh(),
+            currentOutline.reload(),
+            currentOutline.reloadChapterMetas()
+          );
+        }
+        await Promise.allSettled(refreshes);
         currentLibrary.bumpDataVersion();
       }
       const uris = [
@@ -286,7 +307,12 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
       const controller = new AbortController();
       activeControllers.set(payload.request_id, controller);
       const clientName = payload.client_info.name || "Unknown MCP client";
-      beginActivity(payload.request_id, clientName, command.title);
+      beginActivity(
+        payload.request_id,
+        clientName,
+        payload.client_info.version,
+        describeMcpTool(command.id, payload.arguments)
+      );
       try {
         if (command.risk === "R2" || command.risk === "R3") {
           const approved = await requestApproval(
@@ -323,13 +349,27 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
           )
         );
         if (!command.annotations?.readOnlyHint) {
-          void refreshAfterWrite(command.id);
+          updateActivity(payload.request_id, {
+            refreshing: true,
+            detail: undefined,
+          });
+          await refreshAfterWrite(command.id);
         }
+        finishActivity(payload.request_id, "completed", {
+          resultCount: countActivityResult(command.id, data),
+        });
       } catch (error) {
+        const normalized = normalizeError(error);
+        const cancelled =
+          controller.signal.aborted ||
+          normalized?.code === "cancelled" ||
+          normalized?.code === "confirmation_required";
+        finishActivity(payload.request_id, cancelled ? "cancelled" : "failed", {
+          error: normalized?.message,
+        });
         await sendError(payload.request_id, error);
       } finally {
         activeControllers.delete(payload.request_id);
-        endActivity(payload.request_id);
       }
     };
 
@@ -348,10 +388,12 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
       }
       const controller = new AbortController();
       activeControllers.set(payload.request_id, controller);
+      const clientName = payload.client_info.name || "Unknown MCP client";
       beginActivity(
         payload.request_id,
-        payload.client_info.name || "Unknown MCP client",
-        "Read resource"
+        clientName,
+        payload.client_info.version,
+        describeMcpResource(payload.uri)
       );
       try {
         const data = await readMcpResource(
@@ -366,11 +408,19 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
           content: [{ type: "text", text: data.text }],
           is_error: false,
         });
+        finishActivity(payload.request_id, "completed", {
+          resultCount: countActivityResult("resource", data),
+        });
       } catch (error) {
+        const normalized = normalizeError(error);
+        finishActivity(
+          payload.request_id,
+          controller.signal.aborted ? "cancelled" : "failed",
+          { error: normalized?.message }
+        );
         await sendError(payload.request_id, error);
       } finally {
         activeControllers.delete(payload.request_id);
-        endActivity(payload.request_id);
       }
     };
 
@@ -389,10 +439,12 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
       }
       const controller = new AbortController();
       activeControllers.set(payload.request_id, controller);
+      const clientName = payload.client_info.name || "Unknown MCP client";
       beginActivity(
         payload.request_id,
-        payload.client_info.name || "Unknown MCP client",
-        "Expand prompt"
+        clientName,
+        payload.client_info.version,
+        describeMcpPrompt(payload.prompt_name, payload.arguments)
       );
       try {
         const data = await getMcpPrompt(
@@ -408,16 +460,23 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
           content: [{ type: "text", text: data.messages[0]?.text ?? "" }],
           is_error: false,
         });
+        finishActivity(payload.request_id, "completed", { resultCount: 1 });
       } catch (error) {
+        const normalized = normalizeError(error);
+        finishActivity(
+          payload.request_id,
+          controller.signal.aborted ? "cancelled" : "failed",
+          { error: normalized?.message }
+        );
         await sendError(payload.request_id, error);
       } finally {
         activeControllers.delete(payload.request_id);
-        endActivity(payload.request_id);
       }
     };
 
     const handleCancel = (payload: McpCancelEvent) => {
       activeControllers.get(payload.request_id)?.abort();
+      updateActivity(payload.request_id, { cancelling: true });
     };
 
     let disposed = false;
@@ -451,6 +510,9 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
     return () => {
       disposed = true;
       for (const unlisten of unlisteners) unlisten();
+      for (const requestId of activeControllers.keys()) {
+        finishActivity(requestId, "cancelled");
+      }
       for (const controller of activeControllers.values()) controller.abort();
       activeControllers.clear();
     };

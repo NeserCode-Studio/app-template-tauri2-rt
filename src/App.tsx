@@ -37,6 +37,7 @@ import { AppNavigationContextMenu } from "@/components/framework/AppNavigationCo
 import AboutDialog from "@/components/framework/AboutDialog";
 import McpActivityIndicator from "@/components/framework/McpActivityIndicator";
 import McpApprovalDialog from "@/components/framework/McpApprovalDialog";
+import McpTaskCoordinator from "@/components/framework/McpTaskCoordinator";
 import { SettingsDialogContext } from "@/contexts/settings";
 import { createLogger } from "@/lib/logger";
 import { WorkspaceProvider } from "@/contexts/workspace.provider";
@@ -298,6 +299,7 @@ function App() {
                                       onOpenChange={setAboutOpen}
                                     />
                                     <McpApprovalDialog />
+                                    <McpTaskCoordinator />
                                     <McpActivityIndicator />
                                     <Toaster
                                       richColors

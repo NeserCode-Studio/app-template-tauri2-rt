@@ -37,6 +37,8 @@ export const EMPTY_MCP_STATUS: McpServerStatus = {
   resourceCount: 0,
   promptCount: 0,
   activeCalls: 0,
+  connectedClients: 0,
+  clients: [],
 };
 
 export const McpRuntimeContext = createContext<McpRuntimeContextValue | null>(

@@ -125,4 +125,14 @@ export interface McpServerStatus {
   resourceCount: number;
   promptCount: number;
   activeCalls: number;
+  connectedClients: number;
+  clients: McpClientStatus[];
+}
+
+export interface McpClientStatus {
+  name: string;
+  version?: string | null;
+  title?: string | null;
+  connectedAt: number;
+  lastSeenAt: number;
 }

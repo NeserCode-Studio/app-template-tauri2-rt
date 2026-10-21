@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { useLocalStorageState } from "ahooks";
 
 import type { Permission } from "@/application/types";
@@ -166,6 +167,22 @@ export function McpRuntimeProvider({ children }: { children: ReactNode }) {
     }, 5_000);
     return () => window.clearInterval(timer);
   }, [phase, root]);
+
+  useEffect(() => {
+    if (!root) return;
+    let disposed = false;
+    const unlisten = listen("mcp:clients-changed", () => {
+      void invoke<McpServerStatus>("mcp_status")
+        .then((next) => {
+          if (!disposed) setStatus(next);
+        })
+        .catch(() => undefined);
+    });
+    return () => {
+      disposed = true;
+      void unlisten.then((fn) => fn());
+    };
+  }, [root]);
 
   const value = useMemo<McpRuntimeContextValue>(
     () => ({

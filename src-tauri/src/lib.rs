@@ -122,6 +122,7 @@ pub fn run() {
             mcp::runtime::mcp_configure,
             mcp::runtime::mcp_bridge_respond,
             mcp::runtime::mcp_bridge_progress,
+            mcp::runtime::mcp_bridge_cancel,
             mcp::runtime::mcp_notify_resources_changed,
         ])
         .run(tauri::generate_context!())

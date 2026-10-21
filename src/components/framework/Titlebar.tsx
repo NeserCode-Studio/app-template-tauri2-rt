@@ -11,13 +11,7 @@ import {
 import TitlebarOperations, {
   ThemeIcon,
 } from "@/components/framework/TitlebarOperations";
-import {
-  ArrowLeft,
-  BookOpen,
-  Check,
-  ChevronDown,
-  Home,
-} from "lucide-react";
+import { ArrowLeft, BookOpen, Check, ChevronDown, Home } from "lucide-react";
 import { useContext } from "react";
 import { ThemeContext } from "@/contexts/theme";
 import { useLibrary } from "@/contexts/library";
@@ -26,6 +20,7 @@ import TitlebarTitle from "./TitlebarTitle";
 import { useI18n } from "@/composables";
 import { useSettingsDialog } from "@/contexts/settings";
 import * as editorActions from "@/lib/editor.actions";
+import McpConnectionMenu from "./McpConnectionMenu";
 import {
   APP_PAGE_LABEL_KEYS,
   useAppNavigation,
@@ -117,7 +112,9 @@ export default function Titlebar() {
                 >
                   <Icon className="icon-sm" />
                   <span>{t(item.labelKey)}</span>
-                  {current ? <Check className="ml-auto size-3.5 opacity-60" /> : null}
+                  {current ? (
+                    <Check className="ml-auto size-3.5 opacity-60" />
+                  ) : null}
                 </MenubarItem>
               );
             })}
@@ -198,6 +195,8 @@ export default function Titlebar() {
             </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
+
+        <McpConnectionMenu />
       </Menubar>
 
       <TitlebarTitle data-tauri-drag-region />

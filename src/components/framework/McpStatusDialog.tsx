@@ -109,7 +109,7 @@ export default function McpStatusDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[88vh] w-[clamp(20rem,55vw,34rem)] max-w-[calc(100vw-2rem)] min-w-[20rem] gap-3 overflow-y-auto p-5 sm:max-w-[34rem]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Server className="icon-md" />
@@ -118,8 +118,8 @@ export default function McpStatusDialog({
           <DialogDescription>{t("Mcp.description")}</DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_12rem]">
-          <div className="border-border/70 flex flex-col gap-3 rounded-md border p-4">
+        <div className="grid gap-2 sm:grid-cols-2">
+          <div className="border-border/70 flex flex-col gap-2 rounded-md border p-3">
             <div className="flex items-center justify-between gap-3">
               <span className="text-muted-foreground text-xs">
                 {t("Mcp.statusLabel")}
@@ -152,6 +152,21 @@ export default function McpStatusDialog({
                 {runtime.status.activeCalls}
               </span>
             </div>
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-muted-foreground text-xs">
+                {t("Mcp.connections.clients").replace(
+                  "{count}",
+                  String(runtime.status.connectedClients)
+                )}
+              </span>
+              <span className="min-w-0 truncate text-right text-xs">
+                {runtime.status.clients.length
+                  ? runtime.status.clients
+                      .map((client) => client.title || client.name)
+                      .join(", ")
+                  : t("Mcp.connections.noClients")}
+              </span>
+            </div>
             {runtime.error ? (
               <p className="text-destructive text-xs leading-relaxed">
                 {runtime.error}
@@ -159,7 +174,7 @@ export default function McpStatusDialog({
             ) : null}
           </div>
 
-          <div className="border-border/70 flex flex-col gap-2 rounded-md border p-4">
+          <div className="border-border/70 flex flex-col gap-2 rounded-md border p-3">
             <span className="flex items-center gap-2 text-xs font-medium">
               <Shield className="icon-sm" />
               {t("Mcp.permission")}
@@ -227,7 +242,7 @@ export default function McpStatusDialog({
               </Button>
             </div>
           </div>
-          <code className="bg-muted/35 block min-h-9 overflow-hidden rounded-md border px-3 py-2 text-xs break-all">
+          <code className="bg-muted/35 block min-h-8 overflow-hidden rounded-md border px-2.5 py-2 text-xs break-all">
             {revealToken
               ? (runtime.status.token ?? t("Mcp.tokenUnavailable"))
               : "********************************"}
@@ -251,7 +266,7 @@ export default function McpStatusDialog({
               {copied ? t("Mcp.copied") : t("Mcp.copyConfig")}
             </Button>
           </div>
-          <pre className="bg-muted/35 max-h-56 overflow-auto rounded-md border p-3 text-[11px] leading-relaxed">
+          <pre className="bg-muted/35 max-h-40 overflow-auto rounded-md border p-2 text-[11px] leading-snug">
             {displayedConfig}
           </pre>
         </div>
