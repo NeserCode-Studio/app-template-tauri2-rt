@@ -8,7 +8,9 @@ import {
 } from "react";
 import { useLocalStorageState } from "ahooks";
 
+import { useI18n } from "@/composables";
 import { OutlineContext, type OutlineContextValue } from "./outline";
+import { useLongTask } from "./long-task";
 import { useWorkspace } from "./workspace";
 import { useLibrary } from "./library";
 import {
@@ -16,7 +18,7 @@ import {
   reconcileChapterIds,
   saveOutline,
 } from "@/services/outline";
-import { loadChapterMetas } from "@/services/chapter";
+import { loadChapterMeta, loadChapterMetas } from "@/services/chapter";
 import { createLogger } from "@/lib/logger";
 import type { OutlineNode } from "@/shared/schema";
 import type { ChapterMeta } from "@/services/chapter";
@@ -26,6 +28,8 @@ const log = createLogger("OutlineProvider");
 const LAST_CHAPTER_KEY = "novels-yes:last-chapter";
 
 export function OutlineProvider({ children }: { children: ReactNode }) {
+  const { t } = useI18n();
+  const { run: runLongTask } = useLongTask();
   const { root } = useWorkspace();
   const { currentWorkId, setCurrentWorkId, dataVersion } = useLibrary();
 
@@ -158,6 +162,16 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
     setChapterMetas(await loadChapterMetas(root, currentWorkId));
   }, [root, currentWorkId]);
 
+  const refreshChapterMeta = useCallback(
+    async (chapterId: string) => {
+      if (!root || !currentWorkId) return;
+      const meta = await loadChapterMeta(root, currentWorkId, chapterId);
+      if (!meta) return;
+      setChapterMetas((prev) => ({ ...prev, [chapterId]: meta }));
+    },
+    [root, currentWorkId]
+  );
+
   /** 便捷方法：把变更后的树写盘（Context 只暴露命令，不暴露 setOutline 直接落盘）。 */
   const persist = useCallback(
     async (next: { nodes: OutlineNode[] }) => {
@@ -188,7 +202,36 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
     [chapters]
   );
   useEffect(() => {
-    void reloadChapterMetas();
+    if (!root || !currentWorkId) {
+      setChapterMetas({});
+      return;
+    }
+    let alive = true;
+    void runLongTask(
+      {
+        title: t("LongTask.chapterIndex.title"),
+        description: t("LongTask.chapterIndex.description"),
+      },
+      async (task) => {
+        const next = await loadChapterMetas(root, currentWorkId, (progress) => {
+          task.update({
+            done: progress.done,
+            total: progress.total,
+            detail: progress.title
+              ? `${progress.done}/${progress.total} · ${progress.title}`
+              : t(
+                  progress.phase === "write"
+                    ? "LongTask.chapterIndex.writing"
+                    : "LongTask.chapterIndex.scanning"
+                ),
+          });
+        });
+        if (alive) setChapterMetas(next);
+      }
+    ).catch((err) => log.error("chapter index load failed", err));
+    return () => {
+      alive = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [root, currentWorkId, metasKey]);
 
@@ -206,6 +249,7 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
       openChapter,
       reload,
       reloadChapterMetas,
+      refreshChapterMeta,
     }),
     [
       outline,
@@ -218,6 +262,7 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
       openChapter,
       reload,
       reloadChapterMetas,
+      refreshChapterMeta,
     ]
   );
 

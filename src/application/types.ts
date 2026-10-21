@@ -41,12 +41,40 @@ export type CommandResult<T> = CommandSuccess<T> | CommandFailure;
 
 export interface AppCommandDefinition<TInput = unknown, TOutput = unknown> {
   id: string;
+  title: string;
+  description: string;
   input: z.ZodType<TInput>;
   output?: z.ZodType<TOutput>;
   permission: Permission;
   risk: RiskLevel;
+  annotations?: {
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
   execute: (
     input: TInput,
     context: AppCommandContext
   ) => Promise<TOutput>;
+}
+
+export function defineAppCommand<
+  TSchema extends z.ZodTypeAny,
+  TOutput,
+>(definition: {
+  id: string;
+  title: string;
+  description: string;
+  input: TSchema;
+  output?: z.ZodType<TOutput>;
+  permission: Permission;
+  risk: RiskLevel;
+  annotations?: AppCommandDefinition["annotations"];
+  execute: (
+    input: z.infer<TSchema>,
+    context: AppCommandContext
+  ) => Promise<TOutput>;
+}): AppCommandDefinition<z.infer<TSchema>, TOutput> {
+  return definition as AppCommandDefinition<z.infer<TSchema>, TOutput>;
 }

@@ -83,15 +83,17 @@ import {
   createChapter as createChapterFile,
   countWorkWords,
   loadChapter,
+  removeChapterIndexEntries,
   renameChapter as renameChapterFile,
 } from "@/services/chapter";
 import { chapterFile, chapterTextFile } from "@/services/paths";
 import { moveToTrash } from "@/services/trash";
 import { useCodex } from "@/contexts/codex";
-import { recordWorkWords } from "@/services/stats";
+import { adjustWorkWords, recordWorkWords } from "@/services/stats";
 import { createLogger } from "@/lib/logger";
 import { useAppNavigation } from "@/lib/navigation";
-import type { Chapter, OutlineNode } from "@/shared/schema";
+import { orderedChapterNodes } from "@/lib/outline-sequence";
+import type { Chapter } from "@/shared/schema";
 
 const log = createLogger("Editor");
 
@@ -128,20 +130,24 @@ export default function Editor() {
   const { root } = useWorkspace();
   const { setCurrentEntryId } = useCodex();
   const { currentWorkId, works } = useLibrary();
+  const draftWorkIds = useMemo(() => new Set(Object.keys(works)), [works]);
   const {
     chapters,
     volumes,
     currentChapterId,
     setCurrentChapterId,
+    openChapter,
     setOutline,
-    reloadChapterMetas,
+    refreshChapterMeta,
   } = useOutline();
 
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [words, setWords] = useState(0);
   const [loading, setLoading] = useState(false);
   /** 新建章节对话框：打开时只做命名，命名后才真正建章。 */
-  const [newChapterFor, setNewChapterFor] = useState<string | null | undefined>(undefined);
+  const [newChapterFor, setNewChapterFor] = useState<string | null | undefined>(
+    undefined
+  );
   const [draftOpen, setDraftOpen] = useState(false);
   /** 章节重命名：行内输入态。 */
   const [renaming, setRenaming] = useState(false);
@@ -149,7 +155,9 @@ export default function Editor() {
   /** 待确认删除的章节。 */
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   /** 待确认删除的卷 id（连同其下所有章进回收站）。 */
-  const [pendingVolumeDelete, setPendingVolumeDelete] = useState<string | null>(null);
+  const [pendingVolumeDelete, setPendingVolumeDelete] = useState<string | null>(
+    null
+  );
   /** 右栏页签：章节信息 / 素材库。 */
   const [storedSideTab, setSideTab] = useLocalStorageState<SideTab>(
     "novels-yes:editor:side-tab",
@@ -317,11 +325,14 @@ export default function Editor() {
   );
 
   /** 导入确认后直接追加到当前控制器，保留草稿、历史与自动保存。 */
-  const importIntoChapter = useCallback((preview: ImportPreview) => {
-    const added = chapterStreamRef.current?.appendCards(preview.cards) ?? 0;
-    if (!added) throw new Error("chapter import target is unavailable");
-    toast.success("Import.toast.imported");
-  }, [toast]);
+  const importIntoChapter = useCallback(
+    (preview: ImportPreview) => {
+      const added = chapterStreamRef.current?.appendCards(preview.cards) ?? 0;
+      if (!added) throw new Error("chapter import target is unavailable");
+      toast.success("Import.toast.imported");
+    },
+    [toast]
+  );
 
   /* 作品切换后回到作品库，避免空编辑器。 */
   useEffect(() => {
@@ -425,9 +436,21 @@ export default function Editor() {
 
   /** 结构树拖放：排序与升降级。 */
   const moveOutline = useCallback(
-    async (nodeId: string, targetParentId: string | null, targetIndex: number) => {
+    async (
+      nodeId: string,
+      targetParentId: string | null,
+      targetIndex: number
+    ) => {
       if (!root || !currentWorkId) return;
-      setOutline(await moveOutlineNode(root, currentWorkId, nodeId, targetParentId, targetIndex));
+      setOutline(
+        await moveOutlineNode(
+          root,
+          currentWorkId,
+          nodeId,
+          targetParentId,
+          targetIndex
+        )
+      );
     },
     [root, currentWorkId, setOutline]
   );
@@ -439,6 +462,7 @@ export default function Editor() {
       patch: {
         status?: "draft" | "revising" | "final";
         synopsis?: string;
+        preface?: string;
         plotSummary?: string;
       }
     ) => {
@@ -449,30 +473,20 @@ export default function Editor() {
   );
 
   /*
-   * 翻章用的章节序列：按结构树的视觉顺序排，即
-   * 「顶层的游离章 → 各卷，卷按 order、卷内章按 order」。
+   * 翻章用的章节序列必须与结构树看到的顺序一致：
+   * 顶层卷和游离章按 order 交错，卷内章再按 order 展开。
    *
    * 不能直接用 context 里的 chapters：那是把所有章拍平后只按 order 排的，
    * 同一卷内的章 order 是 0,1,2…，不同卷又是另一组 0,1,2…，
-   * 拍平排序的结果与树上看到的顺序无关。于是"首卷第一章"点下一章会
-   * 跳到某个游离章（截图里的 bug），而不是首卷第二章。
+   * 拍平排序的结果与树上看到的顺序无关，会把边界章判错。
    */
   const chapterSequence = useMemo(() => {
-    const byParent = new Map<string | null, OutlineNode[]>();
-    for (const c of chapters) {
-      const list = byParent.get(c.parentId);
-      if (list) list.push(c);
-      else byParent.set(c.parentId, [c]);
-    }
-    /* 游离章排在所有卷之前，与结构树的渲染顺序一致。 */
-    return [
-      ...(byParent.get(null) ?? []),
-      ...volumes.flatMap((v) => byParent.get(v.id) ?? []),
-    ];
+    return orderedChapterNodes(chapters, volumes);
   }, [chapters, volumes]);
 
   const chapterIndex = chapterSequence.findIndex((c) => c.id === chapter?.id);
-  const prevId = chapterIndex > 0 ? chapterSequence[chapterIndex - 1]?.id : null;
+  const prevId =
+    chapterIndex > 0 ? chapterSequence[chapterIndex - 1]?.id : null;
   const nextId =
     chapterIndex >= 0 && chapterIndex < chapterSequence.length - 1
       ? chapterSequence[chapterIndex + 1]?.id
@@ -495,7 +509,12 @@ export default function Editor() {
       setRenaming(false);
       return;
     }
-    const updated = await renameChapterFile(root, currentWorkId, chapter, title);
+    const updated = await renameChapterFile(
+      root,
+      currentWorkId,
+      chapter,
+      title
+    );
     setChapter(updated);
     setOutline(await updateNode(root, currentWorkId, updated.id, { title }));
     setRenameDraft("");
@@ -540,12 +559,17 @@ export default function Editor() {
           }
         : null,
     });
+    await removeChapterIndexEntries(root, currentWorkId, [chapter.id]).catch(
+      (err) => log.warn("chapter index removal failed", err)
+    );
     const next = await removeNode(root, currentWorkId, chapter.id);
     setOutline(next);
     /* 选中相邻的章；没有别的章就回到空态。 */
-    selectChapter(next.nodes.some((n) => n.id === chapter.id)
-      ? null
-      : (chapters[index - 1]?.id ?? chapters[index + 1]?.id ?? null));
+    selectChapter(
+      next.nodes.some((n) => n.id === chapter.id)
+        ? null
+        : (chapters[index - 1]?.id ?? chapters[index + 1]?.id ?? null)
+    );
     setChapter(null);
     setPendingDelete(null);
   }, [root, currentWorkId, chapter, chapters, setOutline, selectChapter]);
@@ -584,19 +608,23 @@ export default function Editor() {
           order: n.order,
           status: n.status,
           synopsis: n.synopsis,
+          preface: n.preface,
           plotSummary: n.plotSummary,
           createdAt: n.createdAt,
           updatedAt: n.updatedAt,
         })),
       });
+      await removeChapterIndexEntries(
+        root,
+        currentWorkId,
+        kids.map((child) => child.id)
+      ).catch((err) => log.warn("volume index removal failed", err));
       /* removeNode 级联删除卷与其下所有章节点。 */
       const next = await removeNode(root, currentWorkId, volumeId);
       setOutline(next);
       /* 正在编辑的章若随卷被删，切到别的章或回到空态。 */
       if (chapter && kids.some((c) => c.id === chapter.id)) {
-        const fallback = next.nodes.find(
-          (n) => n.type === "chapter"
-        );
+        const fallback = next.nodes.find((n) => n.type === "chapter");
         selectChapter(fallback?.id ?? null, "start");
         setChapter(null);
       }
@@ -619,19 +647,49 @@ export default function Editor() {
   /**
    * 章落盘后更新作品库字数。
    *
-   * 作品总字数是全书各章之和，且作品库可能已经打开了别的章，
-   * 因此按磁盘全量重算最可靠——靠累加增量只会在多章轮流编辑时算错。
+   * 保存链路已经给出当前章改动前后的字数，因此正常路径只应用差值，
+   * 并只刷新当前章的元信息。stats 没有作品字数基线时才全量校准一次。
    */
   const commitWords = useCallback(
-    async () => {
+    async (
+      chapterId: string,
+      chapterWords: number,
+      previousChapterWords?: number
+    ) => {
       if (!root || !currentWorkId) return;
-      const total = await countWorkWords(root, currentWorkId);
-      /* delta 由服务内部按上一版作品字数求差，调用点不参与。 */
-      await recordWorkWords(root, currentWorkId, total);
-      /* 侧栏卡片上的字数与"多久之前"跟着正文走。 */
-      await reloadChapterMetas();
+      const startedAt = performance.now();
+      const delta =
+        previousChapterWords === undefined
+          ? undefined
+          : chapterWords - previousChapterWords;
+      let mode: "incremental" | "full" = "incremental";
+      if (delta !== undefined) {
+        const adjusted = await adjustWorkWords(root, currentWorkId, delta);
+        /* 没有作品字数基线时只校准一次，之后继续走增量。 */
+        if (!adjusted) mode = "full";
+      } else {
+        mode = "full";
+      }
+      if (mode === "full") {
+        const total = await countWorkWords(root, currentWorkId);
+        await recordWorkWords(root, currentWorkId, total);
+      }
+      const statsWrittenAt = performance.now();
+      await refreshChapterMeta(chapterId);
+      const metasReloadedAt = performance.now();
+      log.info("post-save refresh timing", {
+        workId: currentWorkId,
+        chapterId,
+        mode,
+        chapterWords,
+        previousChapterWords,
+        delta,
+        statsMs: Math.round(statsWrittenAt - startedAt),
+        chapterMetaMs: Math.round(metasReloadedAt - statsWrittenAt),
+        totalMs: Math.round(metasReloadedAt - startedAt),
+      });
     },
-    [root, currentWorkId, reloadChapterMetas]
+    [root, currentWorkId, refreshChapterMeta]
   );
 
   if (!currentWorkId || !root) return null;
@@ -673,16 +731,26 @@ export default function Editor() {
           </Button>
         ) : null}
         <Separator orientation="vertical" className="h-4" />
-        <span className="truncate text-sm font-medium">{work?.title ?? ""}</span>
+        <span className="truncate text-sm font-medium">
+          {work?.title ?? ""}
+        </span>
         <div className="ml-auto flex items-center gap-2">
-          <Select value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
-            <SelectTrigger className="h-7 w-28 text-xs" aria-label={t("Focus.mode")}>
+          <Select
+            value={viewMode}
+            onValueChange={(v) => setViewMode(v as ViewMode)}
+          >
+            <SelectTrigger
+              className="h-7 w-28 text-xs"
+              aria-label={t("Focus.mode")}
+            >
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="off">{t("Focus.off")}</SelectItem>
               <SelectItem value="focus">{t("Focus.focus")}</SelectItem>
-              <SelectItem value="typewriter">{t("Focus.typewriter")}</SelectItem>
+              <SelectItem value="typewriter">
+                {t("Focus.typewriter")}
+              </SelectItem>
               <SelectItem value="zen">{t("Focus.zen")}</SelectItem>
             </SelectContent>
           </Select>
@@ -735,41 +803,44 @@ export default function Editor() {
          * 让正文只拿到 1/3 而非满宽。
          */}
         {!zen ? (
-        <>
-        {/* 左栏：结构树 */}
-        <ResizablePanel
-          ref={outlinePanelRef}
-          collapsible
-          collapsedSize={0}
-          defaultSize={outlineDefaultSize}
-          minSize={OUTLINE_WIDTH_MIN}
-          maxSize={OUTLINE_WIDTH_MAX}
-          onCollapse={() => setOutlineCollapsed(true)}
-          onExpand={() => setOutlineCollapsed(false)}
-          onResize={persistOutlineWidth}
-        >
-          {/*
-           * 面板自身不再画边框：ResizableHandle 就是那道分隔线。
-           * 两者都画会露出两条线，中间还夹着 handle 的宽度形成空隙。
-           */}
-          <div className="h-full">
-            <OutlinePane
-              onSelectChapter={selectChapter}
-              onCreateChapter={createChapter}
-              onCreateVolume={createVolume}
-              onMoveNode={moveOutline}
-              onUpdateNode={updateOutlineMeta}
-              onDeleteVolume={(id) => setPendingVolumeDelete(id)}
-            />
-          </div>
-        </ResizablePanel>
+          <>
+            {/* 左栏：结构树 */}
+            <ResizablePanel
+              ref={outlinePanelRef}
+              collapsible
+              collapsedSize={0}
+              defaultSize={outlineDefaultSize}
+              minSize={OUTLINE_WIDTH_MIN}
+              maxSize={OUTLINE_WIDTH_MAX}
+              onCollapse={() => setOutlineCollapsed(true)}
+              onExpand={() => setOutlineCollapsed(false)}
+              onResize={persistOutlineWidth}
+            >
+              {/*
+               * 面板自身不再画边框：ResizableHandle 就是那道分隔线。
+               * 两者都画会露出两条线，中间还夹着 handle 的宽度形成空隙。
+               */}
+              <div className="h-full">
+                <OutlinePane
+                  onSelectChapter={selectChapter}
+                  onCreateChapter={createChapter}
+                  onCreateVolume={createVolume}
+                  onMoveNode={moveOutline}
+                  onUpdateNode={updateOutlineMeta}
+                  onDeleteVolume={(id) => setPendingVolumeDelete(id)}
+                />
+              </div>
+            </ResizablePanel>
 
-        <ResizableHandle withHandle />
-        </>
+            <ResizableHandle withHandle />
+          </>
         ) : null}
 
         {/* 中栏：卡片区 */}
-        <ResizablePanel defaultSize={centerDefaultSize} minSize={CENTER_WIDTH_MIN}>
+        <ResizablePanel
+          defaultSize={centerDefaultSize}
+          minSize={CENTER_WIDTH_MIN}
+        >
           {/*
            * 必须包一层「flex + h-full」。
            *
@@ -792,8 +863,7 @@ export default function Editor() {
               <ChapterStream
                 ref={chapterStreamRef}
                 landing={
-                  chapter &&
-                  pendingLandingRef.current?.chapterId === chapter.id
+                  chapter && pendingLandingRef.current?.chapterId === chapter.id
                     ? pendingLandingRef.current.landing
                     : "remember"
                 }
@@ -804,7 +874,9 @@ export default function Editor() {
                 workId={currentWorkId}
                 onWordsChange={setWords}
                 onSaved={setChapter}
-                onWordsCommitted={() => void commitWords()}
+                onWordsCommitted={(chapterWords, previousChapterWords) =>
+                  commitWords(chapter.id, chapterWords, previousChapterWords)
+                }
                 onRename={() => {
                   setRenameDraft(chapter.title);
                   setRenaming(true);
@@ -817,7 +889,9 @@ export default function Editor() {
               />
             ) : (
               <div className="flex h-full flex-col items-center justify-center gap-3">
-                <p className="text-sm text-muted-foreground">{t("Editor.side.emptyWork")}</p>
+                <p className="text-muted-foreground text-sm">
+                  {t("Editor.side.emptyWork")}
+                </p>
                 <Button size="sm" onClick={() => setNewChapterFor(null)}>
                   <Plus className="icon-md" />
                   {t("Editor.side.addChapter")}
@@ -830,223 +904,233 @@ export default function Editor() {
         {!zen ? <ResizableHandle withHandle /> : null}
 
         {!zen ? (
-        <>
-        {/* 右栏：翻章 + 摘要 */}
-        <ResizablePanel
-          ref={sidePanelRef}
-          collapsible
-          collapsedSize={0}
-          defaultSize={sideDefaultSize}
-          minSize={SIDE_WIDTH_MIN}
-          maxSize={SIDE_WIDTH_MAX}
-          onCollapse={() => setSideCollapsed(true)}
-          onExpand={() => setSideCollapsed(false)}
-          onResize={persistSideWidth}
-        >
-          {/* 同左栏：分隔线由 ResizableHandle 负责，这里不再重复画。 */}
-          <div className="flex h-full min-h-0 flex-col gap-3 p-4">
-            {/*
-             * 右栏三个页签：章节 / 素材 / 进度。
-             *
-             * 页签都承载"写作时的旁查资料"，同处一栏避免开第四栏。
-             * 草稿箱独立于页签，固定在右栏底部，需要时再用 Popover 展开。
-             */}
-            <div className="flex shrink-0 items-center gap-1">
-              <Button
-                size="sm"
-                variant="ghost"
-                className={[
-                  "h-7 flex-1 border text-xs",
-                  sideTab === "chapter"
-                    ? "border-primary/25 bg-accent text-accent-foreground"
-                    : "border-transparent",
-                ].join(" ")}
-                aria-pressed={sideTab === "chapter"}
-                onClick={() => setSideTab("chapter")}
-              >
-                {t("Editor.side.jump")}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className={[
-                  "h-7 flex-1 border text-xs",
-                  sideTab === "codex"
-                    ? "border-primary/25 bg-accent text-accent-foreground"
-                    : "border-transparent",
-                ].join(" ")}
-                aria-pressed={sideTab === "codex"}
-                onClick={() => setSideTab("codex")}
-              >
-                {t("Editor.side.codex")}
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                className={[
-                  "h-7 flex-1 border text-xs",
-                  sideTab === "progress"
-                    ? "border-primary/25 bg-accent text-accent-foreground"
-                    : "border-transparent",
-                ].join(" ")}
-                aria-pressed={sideTab === "progress"}
-                onClick={() => setSideTab("progress")}
-              >
-                {t("Editor.side.progress")}
-              </Button>
-            </div>
-
-            {sideTab === "chapter" ? (
-              <div className="scrollbar-app flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
-                <section className="flex flex-col gap-2">
-                  <h2 className="row-label">{t("Editor.side.jump")}</h2>
-                  <p className="text-sm text-muted-foreground">
-                    {chapterIndex >= 0 ? chapterIndex + 1 : 0} /{" "}
-                    {chapterSequence.length}
-                  </p>
-                  <p className="text-xs text-muted-foreground/70 tabular-nums">
-                    {words} {t("Editor.chapter.words")}
-                  </p>
-                </section>
-
-                <Separator />
-
+          <>
+            {/* 右栏：翻章 + 摘要 */}
+            <ResizablePanel
+              ref={sidePanelRef}
+              collapsible
+              collapsedSize={0}
+              defaultSize={sideDefaultSize}
+              minSize={SIDE_WIDTH_MIN}
+              maxSize={SIDE_WIDTH_MAX}
+              onCollapse={() => setSideCollapsed(true)}
+              onExpand={() => setSideCollapsed(false)}
+              onResize={persistSideWidth}
+            >
+              {/* 同左栏：分隔线由 ResizableHandle 负责，这里不再重复画。 */}
+              <div className="flex h-full min-h-0 flex-col gap-3 p-4">
                 {/*
-                 * 章节内容：状态、一句话摘要、情节小结。
+                 * 右栏三个页签：章节 / 素材 / 进度。
                  *
-                 * 这些属性在详情 Dialog 里编辑，右栏只做只读展示——
-                 * 右栏是"这一章现在什么状况"的仪表盘，不该和左栏的
-                 * 结构树争同一个编辑入口。
+                 * 页签都承载"写作时的旁查资料"，同处一栏避免开第四栏。
+                 * 草稿箱独立于页签，固定在右栏底部，需要时再用 Popover 展开。
                  */}
-                {currentChapterNode ? (
-                  <section className="flex flex-col gap-2">
-                    <h2 className="row-label">
-                      {t("Editor.side.chapterInfo")}
-                    </h2>
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={[
-                          "size-1.5 shrink-0 rounded-full",
-                          currentChapterNode.status === "final"
-                            ? "bg-emerald-500"
-                            : currentChapterNode.status === "revising"
-                              ? "bg-amber-500"
-                              : "bg-muted-foreground/40",
-                        ].join(" ")}
-                      />
-                      <span className="text-xs text-muted-foreground">
-                        {t(`Editor.node.status.${currentChapterNode.status}`)}
-                      </span>
-                    </div>
-                    {currentChapterNode.synopsis ? (
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        {currentChapterNode.synopsis}
-                      </p>
-                    ) : null}
-                    {currentChapterNode.plotSummary ? (
-                      <p className="max-h-40 overflow-y-auto text-xs leading-relaxed text-muted-foreground/80">
-                        {currentChapterNode.plotSummary}
-                      </p>
-                    ) : null}
-                    {!currentChapterNode.synopsis &&
-                    !currentChapterNode.plotSummary ? (
-                      <p className="text-[11px] text-muted-foreground/60">
-                        {t("Editor.node.plotSummaryHint")}
-                      </p>
-                    ) : null}
-                  </section>
-                ) : null}
-
-                <section className="flex flex-col gap-2">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1"
-                      disabled={!prevId}
-                      onClick={() => prevId && selectChapter(prevId, "end")}
-                    >
-                      <ChevronLeft className="icon-md" />
-                      {t("Editor.nav.prev")}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="flex-1"
-                      disabled={!nextId}
-                      onClick={() => nextId && selectChapter(nextId, "start")}
-                    >
-                      {t("Editor.nav.next")}
-                      <ChevronRight className="icon-md" />
-                    </Button>
-                  </div>
-
-                  {!nextId ? (
-                    <Button size="sm" onClick={() => setNewChapterFor(null)}>
-                      <Plus className="icon-md" />
-                      {t("Editor.chapter.new")}
-                    </Button>
-                  ) : null}
-                </section>
-              </div>
-            ) : (
-              <div className="min-h-0 flex-1">
-                {sideTab === "codex" ? (
-                  <CodexPane
-                    onAppendToText={chapter ? appendCodexName : undefined}
-                  />
-                ) : null}
-                {sideTab === "progress" ? (
-                  <ProgressPane chapterWords={words} />
-                ) : null}
-              </div>
-            )}
-
-            {loading ? (
-              <p className="text-xs text-muted-foreground">{t("Editor.status.saving")}</p>
-            ) : null}
-
-            <div className="shrink-0 border-t pt-3">
-              <Popover open={draftOpen} onOpenChange={setDraftOpen}>
-                <div className="relative overflow-hidden rounded-md">
-                  <PopoverTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-8 w-full justify-start gap-2 text-xs"
-                    >
-                      <FileText className="icon-sm" />
-                      {t("Editor.draft.title")}
-                      <ChevronUp className="text-muted-foreground ml-auto size-3.5" />
-                    </Button>
-                  </PopoverTrigger>
-                  <DraftFlashOverlay />
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={[
+                      "h-7 flex-1 border text-xs",
+                      sideTab === "chapter"
+                        ? "border-primary/25 bg-accent text-accent-foreground"
+                        : "border-transparent",
+                    ].join(" ")}
+                    aria-pressed={sideTab === "chapter"}
+                    onClick={() => setSideTab("chapter")}
+                  >
+                    {t("Editor.side.jump")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={[
+                      "h-7 flex-1 border text-xs",
+                      sideTab === "codex"
+                        ? "border-primary/25 bg-accent text-accent-foreground"
+                        : "border-transparent",
+                    ].join(" ")}
+                    aria-pressed={sideTab === "codex"}
+                    onClick={() => setSideTab("codex")}
+                  >
+                    {t("Editor.side.codex")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className={[
+                      "h-7 flex-1 border text-xs",
+                      sideTab === "progress"
+                        ? "border-primary/25 bg-accent text-accent-foreground"
+                        : "border-transparent",
+                    ].join(" ")}
+                    aria-pressed={sideTab === "progress"}
+                    onClick={() => setSideTab("progress")}
+                  >
+                    {t("Editor.side.progress")}
+                  </Button>
                 </div>
-                <PopoverContent
-                  side="top"
-                  align="end"
-                  sideOffset={8}
-                  className="w-[min(22rem,calc(100vw-2rem))] max-h-[min(24rem,55vh)] overflow-y-auto p-0"
-                >
-                  <div className="bg-popover sticky top-0 z-10 flex items-center gap-2 border-b px-3 py-2">
-                    <FileText className="text-muted-foreground icon-sm" />
-                    <h2 className="text-sm font-semibold">
-                      {t("Editor.draft.title")}
-                    </h2>
+
+                {sideTab === "chapter" ? (
+                  <div className="scrollbar-app flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-1">
+                    <section className="flex flex-col gap-2">
+                      <h2 className="row-label">{t("Editor.side.jump")}</h2>
+                      <p className="text-muted-foreground text-sm">
+                        {chapterIndex >= 0 ? chapterIndex + 1 : 0} /{" "}
+                        {chapterSequence.length}
+                      </p>
+                      <p className="text-muted-foreground/70 text-xs tabular-nums">
+                        {words} {t("Editor.chapter.words")}
+                      </p>
+                    </section>
+
+                    <Separator />
+
+                    {/*
+                     * 章节内容：状态、一句话摘要、情节小结。
+                     *
+                     * 这些属性在详情 Dialog 里编辑，右栏只做只读展示——
+                     * 右栏是"这一章现在什么状况"的仪表盘，不该和左栏的
+                     * 结构树争同一个编辑入口。
+                     */}
+                    {currentChapterNode ? (
+                      <section className="flex flex-col gap-2">
+                        <h2 className="row-label">
+                          {t("Editor.side.chapterInfo")}
+                        </h2>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={[
+                              "size-1.5 shrink-0 rounded-full",
+                              currentChapterNode.status === "final"
+                                ? "bg-emerald-500"
+                                : currentChapterNode.status === "revising"
+                                  ? "bg-amber-500"
+                                  : "bg-muted-foreground/40",
+                            ].join(" ")}
+                          />
+                          <span className="text-muted-foreground text-xs">
+                            {t(
+                              `Editor.node.status.${currentChapterNode.status}`
+                            )}
+                          </span>
+                        </div>
+                        {currentChapterNode.synopsis ? (
+                          <p className="text-muted-foreground text-xs leading-relaxed">
+                            {currentChapterNode.synopsis}
+                          </p>
+                        ) : null}
+                        {currentChapterNode.plotSummary ? (
+                          <p className="text-muted-foreground/80 max-h-40 overflow-y-auto text-xs leading-relaxed">
+                            {currentChapterNode.plotSummary}
+                          </p>
+                        ) : null}
+                        {!currentChapterNode.synopsis &&
+                        !currentChapterNode.plotSummary ? (
+                          <p className="text-muted-foreground/60 text-[11px]">
+                            {t("Editor.node.plotSummaryHint")}
+                          </p>
+                        ) : null}
+                      </section>
+                    ) : null}
+
+                    <section className="flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          disabled={!prevId}
+                          onClick={() => prevId && selectChapter(prevId, "end")}
+                        >
+                          <ChevronLeft className="icon-md" />
+                          {t("Editor.nav.prev")}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="flex-1"
+                          disabled={!nextId}
+                          onClick={() =>
+                            nextId && selectChapter(nextId, "start")
+                          }
+                        >
+                          {t("Editor.nav.next")}
+                          <ChevronRight className="icon-md" />
+                        </Button>
+                      </div>
+
+                      {!nextId ? (
+                        <Button
+                          size="sm"
+                          onClick={() => setNewChapterFor(null)}
+                        >
+                          <Plus className="icon-md" />
+                          {t("Editor.chapter.new")}
+                        </Button>
+                      ) : null}
+                    </section>
                   </div>
-                  <DraftBox
-                    onOpenChapter={(chapterId) => {
-                      selectChapter(chapterId, "remember");
-                      setDraftOpen(false);
-                    }}
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-          </div>
-        </ResizablePanel>
-        </>
+                ) : (
+                  <div className="min-h-0 flex-1">
+                    {sideTab === "codex" ? (
+                      <CodexPane
+                        onAppendToText={chapter ? appendCodexName : undefined}
+                      />
+                    ) : null}
+                    {sideTab === "progress" ? (
+                      <ProgressPane chapterWords={words} />
+                    ) : null}
+                  </div>
+                )}
+
+                {loading ? (
+                  <p className="text-muted-foreground text-xs">
+                    {t("Editor.status.saving")}
+                  </p>
+                ) : null}
+
+                <div className="shrink-0 border-t pt-3">
+                  <Popover open={draftOpen} onOpenChange={setDraftOpen}>
+                    <div className="relative overflow-hidden rounded-md">
+                      <PopoverTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-8 w-full justify-start gap-2 text-xs"
+                        >
+                          <FileText className="icon-sm" />
+                          {t("Editor.draft.title")}
+                          <ChevronUp className="text-muted-foreground ml-auto size-3.5" />
+                        </Button>
+                      </PopoverTrigger>
+                      <DraftFlashOverlay />
+                    </div>
+                    <PopoverContent
+                      side="top"
+                      align="end"
+                      sideOffset={8}
+                      className="max-h-[min(24rem,55vh)] w-[min(22rem,calc(100vw-2rem))] overflow-y-auto p-0"
+                    >
+                      <div className="bg-popover sticky top-0 z-10 flex items-center gap-2 border-b px-3 py-2">
+                        <FileText className="text-muted-foreground icon-sm" />
+                        <h2 className="text-sm font-semibold">
+                          {t("Editor.draft.title")}
+                        </h2>
+                      </div>
+                      <DraftBox
+                        workIds={draftWorkIds}
+                        onOpenChapter={(workId, chapterId) => {
+                          openChapter(workId, chapterId);
+                          setDraftOpen(false);
+                        }}
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            </ResizablePanel>
+          </>
         ) : null}
       </ResizablePanelGroup>
 
@@ -1083,7 +1167,10 @@ export default function Editor() {
             <Button variant="ghost" onClick={() => setRenaming(false)}>
               {t("Editor.chapter.cancelRename")}
             </Button>
-            <Button disabled={!renameDraft.trim()} onClick={() => void renameChapter()}>
+            <Button
+              disabled={!renameDraft.trim()}
+              onClick={() => void renameChapter()}
+            >
               {t("Editor.chapter.confirmRename")}
             </Button>
           </DialogFooter>
@@ -1101,6 +1188,9 @@ export default function Editor() {
       <ImportDialog
         open={importOpen}
         target="chapter"
+        defaultAutoParagraph={
+          currentWorkId ? works[currentWorkId]?.autoParagraph : undefined
+        }
         onOpenChange={setImportOpen}
         onConfirm={importIntoChapter}
       />
@@ -1140,7 +1230,10 @@ export default function Editor() {
             <AlertDialogDescription>
               {t("Editor.volume.deleteConfirm").replace(
                 "{count}",
-                String(chapters.filter((c) => c.parentId === pendingVolumeDelete).length)
+                String(
+                  chapters.filter((c) => c.parentId === pendingVolumeDelete)
+                    .length
+                )
               )}
             </AlertDialogDescription>
 
@@ -1151,9 +1244,11 @@ export default function Editor() {
              * 分两套实现必然会长歪。只列标题不列正文，正文在编辑器里随时可看。
              */}
             {pendingVolumeDelete ? (
-              <div className="scrollbar-app mt-2 max-h-48 overflow-y-auto rounded-md border bg-muted/20 px-3 py-2">
+              <div className="scrollbar-app bg-muted/20 mt-2 max-h-48 overflow-y-auto rounded-md border px-3 py-2">
                 <SubtreePreview
-                  volume={volumes.find((v) => v.id === pendingVolumeDelete) ?? null}
+                  volume={
+                    volumes.find((v) => v.id === pendingVolumeDelete) ?? null
+                  }
                   chapters={chapters
                     .filter((c) => c.parentId === pendingVolumeDelete)
                     .sort((a, b) => a.order - b.order)}

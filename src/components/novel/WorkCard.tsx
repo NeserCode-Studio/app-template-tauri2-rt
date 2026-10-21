@@ -5,7 +5,7 @@ import {
   Clock3,
   FileText,
   MoreHorizontal,
-  Pencil,
+  Settings2,
   Tag,
   Trash2,
 } from "lucide-react";
@@ -26,7 +26,7 @@ export interface WorkCardProps {
   /** 是否为当前正在写的作品。 */
   isCurrent: boolean;
   onOpen: (workId: string) => void;
-  onRename: (workId: string) => void;
+  onSettings: (workId: string) => void;
   onArchive: (workId: string) => void;
   onUnarchive: (workId: string) => void;
   onDelete: (workId: string) => void;
@@ -52,7 +52,7 @@ export default function WorkCard({
   words,
   isCurrent,
   onOpen,
-  onRename,
+  onSettings,
   onArchive,
   onUnarchive,
   onDelete,
@@ -70,16 +70,24 @@ export default function WorkCard({
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate text-sm font-medium">{work.title}</span>
           {work.archived ? (
-            <span className="shrink-0 rounded border border-border px-1 text-[10px] text-muted-foreground">
+            <span className="border-border text-muted-foreground shrink-0 rounded border px-1 text-[10px]">
               {t("Library.card.archivedBadge")}
             </span>
           ) : null}
           {isCurrent ? (
-            <span className="size-1.5 shrink-0 rounded-full bg-primary" aria-hidden />
+            <span
+              className="bg-primary size-1.5 shrink-0 rounded-full"
+              aria-hidden
+            />
           ) : null}
         </div>
 
         <div className="text-muted-foreground mt-1.5 flex min-w-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+          {work.synopsis.trim() ? (
+            <span className="text-muted-foreground/80 line-clamp-1 min-w-0 basis-full">
+              {work.synopsis.trim()}
+            </span>
+          ) : null}
           <span className="inline-flex shrink-0 items-center gap-1 tabular-nums">
             <FileText className="icon-sm opacity-60" />
             {words} {t("Library.card.words")}
@@ -109,7 +117,9 @@ export default function WorkCard({
             onClick={() => onUnarchive(work.id)}
           >
             <ArchiveRestore className="icon-sm" />
-            <span className="hidden md:inline">{t("Library.action.unarchive")}</span>
+            <span className="hidden md:inline">
+              {t("Library.action.unarchive")}
+            </span>
           </Button>
         ) : (
           <Button
@@ -119,7 +129,9 @@ export default function WorkCard({
             onClick={() => onOpen(work.id)}
           >
             <BookOpen className="icon-sm" />
-            <span className="hidden md:inline">{t("Library.action.continue")}</span>
+            <span className="hidden md:inline">
+              {t("Library.action.continue")}
+            </span>
           </Button>
         )}
 
@@ -137,16 +149,16 @@ export default function WorkCard({
           <DropdownMenuContent align="end">
             {work.archived ? null : (
               /*
-               * 归档作品不给改名。
+               * 归档作品不给打开书本设置。
                *
                * 归档的含义是"收起来、不再动"，继续写作按钮已经禁用了，
-               * 留着改名入口等于在这个状态下还允许改作品本身。这里在菜单层
+               * 留着设置入口等于在这个状态下还允许改作品本身。这里在菜单层
                * 直接不给，而不是点进去再报错——归档是明确的静默状态，
                * 不该有"你不能这么做"的错误提示来打断它。
                */
-              <DropdownMenuItem onSelect={() => onRename(work.id)}>
-                <Pencil className="icon-sm" />
-                {t("Library.action.rename")}
+              <DropdownMenuItem onSelect={() => onSettings(work.id)}>
+                <Settings2 className="icon-sm" />
+                {t("Library.action.settings")}
               </DropdownMenuItem>
             )}
             {work.archived ? null : (

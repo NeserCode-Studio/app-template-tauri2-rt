@@ -14,15 +14,18 @@ import {
   ChevronRight,
   Grid2X2,
   List,
+  Loader2,
   MousePointerClick,
   Plus,
+  Radar,
   Search,
   Settings2,
   X,
 } from "lucide-react";
 
-import { useI18n } from "@/composables";
+import { useI18n, useToast } from "@/composables";
 import { useCodex } from "@/contexts/codex";
+import { useLongTask } from "@/contexts/long-task";
 import {
   typeLabel,
   type Entry,
@@ -55,6 +58,7 @@ import { CodexPreview } from "@/components/novel/codex/CodexPreview";
 import { CodexTypeManager } from "@/components/novel/codex/CodexTypeManager";
 import { TypeGlyph } from "@/components/novel/codex/TypeGlyph";
 import { useJumpHighlight } from "@/hooks/useJumpHighlight";
+import { createLogger } from "@/lib/logger";
 
 type ViewMode = "grid" | "list" | "timeline";
 type SortMode = "name" | "updated" | "type";
@@ -62,6 +66,7 @@ type SortDirection = "asc" | "desc";
 
 const LIST_GRID_CLASS =
   "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_5rem] items-center gap-3 sm:grid-cols-[minmax(10rem,1fr)_7rem_minmax(10rem,1.4fr)_5.5rem]";
+const log = createLogger("CodexLibrary");
 
 function useNarrowLayout() {
   const [narrow, setNarrow] = useState(
@@ -231,7 +236,7 @@ function TimelineView({
                   ? "border-primary/30 bg-accent/45"
                   : related
                     ? "border-border bg-muted/15 hover:bg-accent/30"
-                    : "bg-transparent hover:border-foreground/15 hover:bg-accent/25",
+                    : "hover:border-foreground/15 hover:bg-accent/25 bg-transparent",
               ].join(" ")}
             >
               <div className="flex min-w-0 items-center gap-2">
@@ -255,10 +260,7 @@ function TimelineView({
                   style={{ backgroundColor: color }}
                 />
                 <div className="min-w-0 flex-1">
-                  <p
-                    className="truncate text-sm font-medium"
-                    style={{ color }}
-                  >
+                  <p className="truncate text-sm font-medium" style={{ color }}>
                     {event.name}
                   </p>
                   <p className="text-muted-foreground mt-0.5 line-clamp-2 text-xs leading-relaxed">
@@ -313,8 +315,8 @@ function TypeRailItem({
       className={[
         "group flex min-h-9 w-full items-center gap-2 rounded-md border px-2 text-left text-sm transition-colors",
         active
-          ? "border-primary/30 bg-accent font-medium text-accent-foreground"
-          : "border-transparent text-muted-foreground hover:bg-accent/55 hover:text-foreground",
+          ? "border-primary/30 bg-accent text-accent-foreground font-medium"
+          : "text-muted-foreground hover:bg-accent/55 hover:text-foreground border-transparent",
       ].join(" ")}
     >
       <span
@@ -370,7 +372,7 @@ function EntryCard({
         highlighted ? "jump-highlight" : "",
         selected
           ? "border-primary/30 bg-accent/25"
-          : "border-border/50 bg-transparent hover:border-border hover:bg-accent/20",
+          : "border-border/50 hover:border-border hover:bg-accent/20 bg-transparent",
       ].join(" ")}
     >
       <div className="flex min-w-0 items-center gap-2">
@@ -398,7 +400,9 @@ function EntryCard({
         {entry.tags.length ? (
           <>
             <span aria-hidden>·</span>
-            <span className="truncate">{entry.tags.slice(0, 2).join(" / ")}</span>
+            <span className="truncate">
+              {entry.tags.slice(0, 2).join(" / ")}
+            </span>
           </>
         ) : null}
       </div>
@@ -466,7 +470,7 @@ function EntryRow({
       <span className="text-muted-foreground/75 hidden truncate text-[13px] sm:block">
         {entry.summary || entry.tags.join(" · ") || "-"}
       </span>
-      <span className="text-muted-foreground/60 flex min-w-0 items-center justify-end gap-1 overflow-hidden whitespace-nowrap text-[11px] tabular-nums">
+      <span className="text-muted-foreground/60 flex min-w-0 items-center justify-end gap-1 overflow-hidden text-[11px] whitespace-nowrap tabular-nums">
         {mentionCount} {t("Codex.mentions.short")}
         <ChevronRight className="size-3 opacity-50" />
       </span>
@@ -487,7 +491,11 @@ function EmptyState({
   return (
     <div className="flex min-h-80 flex-col items-center justify-center gap-3 px-6 text-center">
       <div className="bg-muted text-muted-foreground flex size-12 items-center justify-center rounded-full">
-        {filtered ? <Search className="size-5" /> : <BookOpen className="size-5" />}
+        {filtered ? (
+          <Search className="size-5" />
+        ) : (
+          <BookOpen className="size-5" />
+        )}
       </div>
       <div>
         <p className="text-sm font-medium">
@@ -512,6 +520,8 @@ function EmptyState({
 
 export default function CodexLibrary() {
   const { t } = useI18n();
+  const toast = useToast();
+  const { run: runLongTask } = useLongTask();
   const narrow = useNarrowLayout();
   const {
     entries,
@@ -521,6 +531,7 @@ export default function CodexLibrary() {
     currentEntryId,
     setCurrentEntryId,
     colorOf,
+    scanAllMentions,
   } = useCodex();
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string | "all">("all");
@@ -530,6 +541,11 @@ export default function CodexLibrary() {
   const [createOpen, setCreateOpen] = useState(false);
   const [managerOpen, setManagerOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [scanProgress, setScanProgress] = useState<{
+    done: number;
+    total: number;
+  } | null>(null);
   const { highlightId, jumpTo } = useJumpHighlight("data-codex-entry");
 
   const current = entries.find((entry) => entry.id === currentEntryId) ?? null;
@@ -555,6 +571,38 @@ export default function CodexLibrary() {
       setViewMode("grid");
     }
   }, [typeFilter, viewMode]);
+
+  async function scanMentions() {
+    if (scanning) return;
+    setScanning(true);
+    setScanProgress(null);
+    try {
+      const report = await runLongTask(
+        {
+          title: t("LongTask.mentionScan.title"),
+          description: t("LongTask.mentionScan.description"),
+        },
+        async (task) =>
+          scanAllMentions((progress) => {
+            setScanProgress({ done: progress.done, total: progress.total });
+            task.update({
+              done: progress.done,
+              total: progress.total,
+              detail: t("Codex.scan.running"),
+            });
+          })
+      );
+      if (!report) throw new Error("workspace is unavailable");
+      log.info("mention scan completed", report);
+      toast.success("Codex.scan.done");
+    } catch (err) {
+      log.error("mention scan failed", err);
+      toast.error("Codex.scan.failed");
+    } finally {
+      setScanning(false);
+      setScanProgress(null);
+    }
+  }
 
   const conflictIds = useMemo(() => {
     const owners = new Map<string, Set<string>>();
@@ -780,8 +828,8 @@ export default function CodexLibrary() {
             className={[
               "shrink-0 rounded border px-2 py-1 text-sm",
               typeFilter === "all"
-                ? "border-primary/30 bg-accent font-medium text-accent-foreground"
-                : "border-transparent text-muted-foreground hover:bg-accent/60",
+                ? "border-primary/30 bg-accent text-accent-foreground font-medium"
+                : "text-muted-foreground hover:bg-accent/60 border-transparent",
             ].join(" ")}
             onClick={() => setTypeFilter("all")}
           >
@@ -799,8 +847,8 @@ export default function CodexLibrary() {
               className={[
                 "flex shrink-0 items-center gap-1 rounded border px-2 py-1 text-sm",
                 typeFilter === type.id
-                  ? "border-primary/30 bg-accent font-medium text-accent-foreground"
-                  : "border-transparent text-muted-foreground hover:bg-accent/60",
+                  ? "border-primary/30 bg-accent text-accent-foreground font-medium"
+                  : "text-muted-foreground hover:bg-accent/60 border-transparent",
               ].join(" ")}
               onClick={() => setTypeFilter(type.id)}
             >
@@ -825,8 +873,8 @@ export default function CodexLibrary() {
                   className={[
                     "flex shrink-0 items-center gap-1 rounded border px-2 py-1 text-sm",
                     typeFilter === type.id
-                      ? "border-primary/30 bg-accent font-medium text-accent-foreground"
-                      : "border-transparent text-muted-foreground hover:bg-accent/60",
+                      ? "border-primary/30 bg-accent text-accent-foreground font-medium"
+                      : "text-muted-foreground hover:bg-accent/60 border-transparent",
                   ].join(" ")}
                   onClick={() => setTypeFilter(type.id)}
                 >
@@ -857,11 +905,11 @@ export default function CodexLibrary() {
             {viewMode === "timeline"
               ? typeLabel(timelineEventType, t)
               : typeFilter === "all"
-              ? t("Codex.all")
-              : typeLabel(
-                  typeConfigs.find((type) => type.id === typeFilter),
-                  t
-                )}
+                ? t("Codex.all")
+                : typeLabel(
+                    typeConfigs.find((type) => type.id === typeFilter),
+                    t
+                  )}
           </p>
           <span className="text-muted-foreground/60 text-[11px] tabular-nums">
             {visibleCount}
@@ -922,7 +970,7 @@ export default function CodexLibrary() {
                 <div
                   className={[
                     LIST_GRID_CLASS,
-                    "bg-neutral-100/60 dark:bg-neutral-800/35 text-muted-foreground rounded-md border px-3 py-2 text-xs font-medium",
+                    "text-muted-foreground rounded-md border bg-neutral-100/60 px-3 py-2 text-xs font-medium dark:bg-neutral-800/35",
                   ].join(" ")}
                 >
                   <span>{t("Codex.name")}</span>
@@ -967,9 +1015,7 @@ export default function CodexLibrary() {
   const searchBox = (
     <div
       className={
-        narrow
-          ? "relative w-full"
-          : "relative w-[min(20rem,28vw)] min-w-44"
+        narrow ? "relative w-full" : "relative w-[min(20rem,28vw)] min-w-44"
       }
     >
       <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
@@ -977,7 +1023,7 @@ export default function CodexLibrary() {
         value={query}
         placeholder={t("Codex.searchShort")}
         aria-label={t("Codex.search")}
-        className="bg-neutral-100/70 dark:bg-neutral-800/35 h-9 pr-3 pl-9 text-sm"
+        className="h-9 bg-neutral-100/70 pr-3 pl-9 text-sm dark:bg-neutral-800/35"
         onChange={(event) => setQuery(event.target.value)}
       />
     </div>
@@ -1003,7 +1049,30 @@ export default function CodexLibrary() {
 
   const actionGroups = (
     <div className="flex shrink-0 items-center gap-2">
-      <div className="bg-neutral-100/60 dark:bg-neutral-800/35 flex items-center rounded-md border p-0.5">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="h-9 px-2.5"
+        disabled={scanning || entries.length === 0}
+        onClick={() => void scanMentions()}
+        aria-label={t("Codex.scan")}
+        title={t("Codex.scanHint")}
+      >
+        {scanning ? (
+          <Loader2 className="size-3.5 animate-spin" />
+        ) : (
+          <Radar className="size-3.5" />
+        )}
+        <span className="hidden text-xs sm:inline">
+          {scanning
+            ? scanProgress
+              ? `${t("Codex.scan.running")} ${scanProgress.done}/${scanProgress.total}`
+              : t("Codex.scan.running")
+            : t("Codex.scan")}
+        </span>
+      </Button>
+      <div className="flex items-center rounded-md border bg-neutral-100/60 p-0.5 dark:bg-neutral-800/35">
         <button
           type="button"
           aria-pressed={viewMode === "grid"}
@@ -1011,7 +1080,7 @@ export default function CodexLibrary() {
             "flex size-7 items-center justify-center rounded border",
             viewMode === "grid"
               ? "border-primary/30 bg-accent text-accent-foreground"
-              : "border-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+              : "text-muted-foreground hover:bg-accent/40 hover:text-foreground border-transparent",
           ].join(" ")}
           onClick={() => setViewMode("grid")}
           aria-label={t("Codex.view.grid")}
@@ -1026,7 +1095,7 @@ export default function CodexLibrary() {
             "flex size-7 items-center justify-center rounded border",
             viewMode === "list"
               ? "border-primary/30 bg-accent text-accent-foreground"
-              : "border-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+              : "text-muted-foreground hover:bg-accent/40 hover:text-foreground border-transparent",
           ].join(" ")}
           onClick={() => setViewMode("list")}
           aria-label={t("Codex.view.list")}
@@ -1042,7 +1111,7 @@ export default function CodexLibrary() {
               "flex size-7 items-center justify-center rounded border",
               viewMode === "timeline"
                 ? "border-primary/30 bg-accent text-accent-foreground"
-                : "border-transparent text-muted-foreground hover:bg-accent/40 hover:text-foreground",
+                : "text-muted-foreground hover:bg-accent/40 hover:text-foreground border-transparent",
             ].join(" ")}
             onClick={() => {
               setViewMode("timeline");
@@ -1057,14 +1126,14 @@ export default function CodexLibrary() {
       </div>
 
       {viewMode !== "timeline" ? (
-        <div className="bg-neutral-100/60 dark:bg-neutral-800/35 flex h-9 items-center rounded-md border p-0.5">
+        <div className="flex h-9 items-center rounded-md border bg-neutral-100/60 p-0.5 dark:bg-neutral-800/35">
           <Select
             value={sortMode}
             onValueChange={(value) => changeSortMode(value as SortMode)}
           >
             <SelectTrigger
               className={[
-                "text-muted-foreground hover:bg-accent/40 data-[state=open]:bg-accent/40 h-8 border-0 bg-transparent px-2 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent dark:hover:bg-accent/40",
+                "text-muted-foreground hover:bg-accent/40 data-[state=open]:bg-accent/40 dark:hover:bg-accent/40 h-8 border-0 bg-transparent px-2 text-xs shadow-none focus-visible:ring-0 dark:bg-transparent",
                 narrow ? "w-9 [&>svg:last-child]:hidden" : "w-40",
               ].join(" ")}
               aria-label={t("Codex.sort")}
@@ -1159,7 +1228,7 @@ export default function CodexLibrary() {
 
       <div className="flex min-h-0 w-full flex-1">
         {!narrow ? (
-          <aside className="bg-neutral-100/55 dark:bg-neutral-800/35 w-44 shrink-0 border-r">
+          <aside className="w-44 shrink-0 border-r bg-neutral-100/55 dark:bg-neutral-800/35">
             {rail}
           </aside>
         ) : null}
@@ -1180,7 +1249,7 @@ export default function CodexLibrary() {
             />
             <ResizablePanel defaultSize={22} minSize={16} maxSize={24}>
               <aside
-                className="bg-neutral-100/45 dark:bg-neutral-800/30 h-full"
+                className="h-full bg-neutral-100/45 dark:bg-neutral-800/30"
                 aria-label={t("Codex.preview.title")}
               >
                 <CodexPreview

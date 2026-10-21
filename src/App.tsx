@@ -4,10 +4,24 @@ import Titlebar from "@/components/framework/Titlebar";
 import CommandDialog from "@/components/framework/CommandDialog";
 import PageTransition from "@/components/framework/PageTransition";
 import { Toaster } from "@/components/ui/sonner";
-import { Navigate, Routes, Route, useLocation, useNavigate } from "react-router";
+import {
+  Navigate,
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+} from "react-router";
 
 import { useTheme, useI18nLogic } from "@/composables";
-import { lazy, Suspense, useEffect, useMemo, useState, useCallback, useRef } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import { useLocalStorageState } from "ahooks";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -30,6 +44,7 @@ import { OutlineProvider } from "@/contexts/outline.provider";
 import { CodexProvider } from "@/contexts/codex.provider";
 import { SearchProvider } from "@/contexts/search.provider";
 import { ViewModeProvider } from "@/contexts/viewmode.provider";
+import { LongTaskProvider } from "@/contexts/long-task.provider";
 import {
   defaultPageTransition,
   pageFromPath,
@@ -194,73 +209,94 @@ function App() {
   }
 
   return (
-    <PreferencesProvider>
-      <ViewModeProvider>
-      <WorkspaceProvider>
-        <LibraryProvider>
-          <OutlineProvider>
-          <ThemeContext.Provider value={themeValue}>
-          <CodexProvider>
-          <SearchProvider>
-        <SettingsDialogContext.Provider value={settingsValue}>
-        <I18nContext.Provider value={i18nValue}>
-            <TitleContext.Provider value={titleValue}>
-              <NavigatorContext.Provider value={navigatorValue}>
-                <main id="app-main" className="app-shell">
-                  <Titlebar />
-                  <CommandDialog />
+    <I18nContext.Provider value={i18nValue}>
+      <LongTaskProvider>
+        <PreferencesProvider>
+          <ViewModeProvider>
+            <WorkspaceProvider>
+              <LibraryProvider>
+                <OutlineProvider>
+                  <ThemeContext.Provider value={themeValue}>
+                    <CodexProvider>
+                      <SearchProvider>
+                        <SettingsDialogContext.Provider value={settingsValue}>
+                          <TitleContext.Provider value={titleValue}>
+                            <NavigatorContext.Provider value={navigatorValue}>
+                              <main id="app-main" className="app-shell">
+                                <Titlebar />
+                                <CommandDialog />
 
-                  <AppNavigationContextMenu>
-                  <div id="container" className="app-body">
-                    <Suspense fallback={null}>
-                      <PageTransition>
-                        <Routes>
-                          <Route path="/" index element={<Home />} />
-                          <Route path="/library" element={<Library />} />
-                          <Route
-                            path="/codex"
-                            element={
-                              <div className="h-full w-full">
-                                <CodexLibrary />
-                              </div>
-                            }
-                          />
-                          <Route
-                            path="/editor"
-                            element={
-                              // 编辑器自带三栏可拖拽布局，需要确定高度，
-                              // 不能套在 ScrollArea 里（radix 滚动视口会让
-                              // react-resizable-panels 读到 0 高度而崩溃）。
-                              <div className="h-full w-full">
-                                <Editor />
-                              </div>
-                            }
-                          />
-                          <Route path="*" element={<Navigate to="/" replace />} />
-                        </Routes>
-                      </PageTransition>
-                    </Suspense>
-                  </div>
-                  </AppNavigationContextMenu>
-                </main>
-                <SettingsDialog
-                  open={settingsOpen}
-                  onOpenChange={setSettingsOpen}
-                />
-                <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
-                <Toaster richColors theme={theme} position="bottom-right" />
-              </NavigatorContext.Provider>
-            </TitleContext.Provider>
-        </I18nContext.Provider>
-        </SettingsDialogContext.Provider>
-          </SearchProvider>
-          </CodexProvider>
-          </ThemeContext.Provider>
-          </OutlineProvider>
-        </LibraryProvider>
-      </WorkspaceProvider>
-      </ViewModeProvider>
-    </PreferencesProvider>
+                                <AppNavigationContextMenu>
+                                  <div id="container" className="app-body">
+                                    <Suspense fallback={null}>
+                                      <PageTransition>
+                                        <Routes>
+                                          <Route
+                                            path="/"
+                                            index
+                                            element={<Home />}
+                                          />
+                                          <Route
+                                            path="/library"
+                                            element={<Library />}
+                                          />
+                                          <Route
+                                            path="/codex"
+                                            element={
+                                              <div className="h-full w-full">
+                                                <CodexLibrary />
+                                              </div>
+                                            }
+                                          />
+                                          <Route
+                                            path="/editor"
+                                            element={
+                                              // 编辑器自带三栏可拖拽布局，需要确定高度，
+                                              // 不能套在 ScrollArea 里（radix 滚动视口会让
+                                              // react-resizable-panels 读到 0 高度而崩溃）。
+                                              <div className="h-full w-full">
+                                                <Editor />
+                                              </div>
+                                            }
+                                          />
+                                          <Route
+                                            path="*"
+                                            element={
+                                              <Navigate to="/" replace />
+                                            }
+                                          />
+                                        </Routes>
+                                      </PageTransition>
+                                    </Suspense>
+                                  </div>
+                                </AppNavigationContextMenu>
+                              </main>
+                              <SettingsDialog
+                                open={settingsOpen}
+                                onOpenChange={setSettingsOpen}
+                              />
+                              <AboutDialog
+                                open={aboutOpen}
+                                onOpenChange={setAboutOpen}
+                              />
+                              <Toaster
+                                richColors
+                                theme={theme}
+                                position="bottom-right"
+                              />
+                            </NavigatorContext.Provider>
+                          </TitleContext.Provider>
+                        </SettingsDialogContext.Provider>
+                      </SearchProvider>
+                    </CodexProvider>
+                  </ThemeContext.Provider>
+                </OutlineProvider>
+              </LibraryProvider>
+            </WorkspaceProvider>
+          </ViewModeProvider>
+        </PreferencesProvider>
+      </LongTaskProvider>
+    </I18nContext.Provider>
   );
 }
 

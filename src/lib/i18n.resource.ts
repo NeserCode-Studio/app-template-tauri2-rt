@@ -15,6 +15,14 @@ export const I18nTexts = {
     "Home.recentHint": "Recently updated in this workspace",
     "Home.openLibrary": "Open workspace",
     "Home.openingWorkspace": "Opening workspace",
+    "Home.workspaceMissing":
+      "This folder is not a workspace yet. Use Create workspace to initialize it.",
+    "Home.workspaceInvalid":
+      "The workspace manifest cannot be read. Choose another workspace.",
+    "Home.badWorkspaceTitle": "Remove this workspace record?",
+    "Home.badWorkspaceDesc":
+      "This workspace is missing or unreadable. Remove it from recent workspaces? Files on disk will not be deleted.",
+    "Home.badWorkspaceRemove": "Remove record",
     "Home.currentWorkspace": "Current",
     "Home.otherRecentWorkspaces": "Switch to another recent workspace",
     "Home.openedAt": "Opened {time}",
@@ -34,6 +42,15 @@ export const I18nTexts = {
     "Library.workspace.pick": "Create workspace",
     "Library.workspace.change": "Change workspace",
     "Library.workspace.open": "Open workspace",
+    "Library.workspace.migrate": "Migrate workspace",
+    "Library.workspace.migrateTitle": "Migrate this workspace?",
+    "Library.workspace.migrateDesc":
+      "All workspace data will be moved to the selected empty folder, and this workspace will switch to the new location.",
+    "Library.workspace.migrateAction": "Migrate",
+    "Library.workspace.migrateDone": "Workspace migrated",
+    "Library.workspace.migrateSourceKept":
+      "The workspace was copied, but the original folder could not be removed. Check the logs and remove it manually.",
+    "Library.workspace.migrateFailed": "Workspace migration failed",
     "Library.workspace.openDir": "Open this folder in the file manager",
     "Library.workspace.settings": "Workspace settings",
     "Library.workspace.aliasLabel": "Workspace name",
@@ -46,7 +63,9 @@ export const I18nTexts = {
       "The whole work moves to the recycle bin with all its chapters. You can restore it later.",
     "ConfirmDelete.prompt": "Type",
     "Library.workspace.deleteDesc":
-      "Everything in this workspace — all works, chapters and the material library — moves to the recycle bin inside it.",
+      "This permanently deletes the workspace directory and everything in it. This action cannot be undone.",
+    "Library.workspace.deleteDone": "Workspace permanently deleted",
+    "Library.workspace.deleteFailed": "Failed to delete the workspace",
     "Library.workspace.renameTitle": "Rename this workspace?",
     "Library.workspace.renameDesc":
       "The workspace name shown at the top changes from",
@@ -56,6 +75,7 @@ export const I18nTexts = {
     "Library.action.new": "New work",
     "Library.action.continue": "Continue writing",
     "Library.action.rename": "Rename",
+    "Library.action.settings": "Book settings",
     "Library.action.archive": "Archive",
     "Library.action.unarchive": "Restore",
     "Library.action.confirmArchive": "Archive this work?",
@@ -67,15 +87,35 @@ export const I18nTexts = {
     "Library.empty.archived": "Archived works",
     "Library.dialog.newTitle": "New work",
     "Library.dialog.renameTitle": "Rename work",
+    "Library.dialog.newDesc": "Set the basic information for this work.",
+    "Library.dialog.settingsTitle": "Book settings",
+    "Library.dialog.settingsDesc":
+      "Edit the work information and its text formatting preferences.",
     "Library.dialog.nameLabel": "Title",
     "Library.dialog.namePlaceholder": "Untitled work",
     "Library.dialog.typeLabel": "Genre (optional)",
+    "Library.dialog.synopsisLabel": "Synopsis",
+    "Library.dialog.synopsisPlaceholder": "A short introduction to this work",
     "Library.dialog.typePlaceholder": "Fantasy, romance, sci-fi...",
+    "Library.dialog.autoParagraphLabel": "Auto paragraphs on import",
+    "Library.dialog.autoParagraphHint":
+      "Applies to later imports into this work. Existing chapters are never changed by this switch.",
+    "Library.dialog.reparagraph": "Reparagraph existing text",
+    "Library.dialog.reparagraphHint":
+      "Short paragraphs stay intact. Long blocks and hard-wrapped lines are reorganized, and changed chapters keep a history snapshot.",
+    "Library.dialog.reparagraphConfirm":
+      "Reparagraph every chapter in this work? Existing paragraph boundaries stay separate, but long blocks may be split. You can roll back changed chapters from their history.",
+    "Library.dialog.reparagraphStart": "Reparagraph",
+    "Library.dialog.reparagraphing": "Reparagraphing",
+    "Library.dialog.reparagraphPreparing": "Preparing chapters...",
     "Library.dialog.create": "Create",
     "Library.dialog.save": "Save",
     "Library.dialog.cancel": "Cancel",
     "Library.toast.created": "Work created",
     "Library.toast.renamed": "Work renamed",
+    "Library.toast.settingsSaved": "Book settings saved",
+    "Library.toast.reparagraphed": "Text reparagraphed",
+    "Library.toast.reparagraphFailed": "Could not reparagraph this work",
     "Library.toast.archived": "Work archived",
     "Library.toast.unarchived": "Work restored",
     "Library.toast.failed": "Operation failed",
@@ -96,11 +136,15 @@ export const I18nTexts = {
     "Import.noFile": "No file selected",
     "Import.noFileHint": "TXT and Markdown (.md) are supported.",
     "Import.reading": "Reading and checking the text...",
-    "Import.preview": "Paragraph preview",
-    "Import.previewLimit": "The first 5 paragraphs are shown.",
+    "Import.options": "Import options",
+    "Import.stripSectionNumbers": "Remove section numbers",
+    "Import.autoParagraph": "Auto paragraphs",
+    "Import.preview": "Import preview",
+    "Import.previewLimit": "The first 5 items are shown.",
     "Import.format": "Format",
     "Import.encoding": "Encoding",
     "Import.paragraphs": "Paragraphs",
+    "Import.sections": "Sections",
     "Import.encoding.utf8": "UTF-8",
     "Import.encoding.utf8Bom": "UTF-8 BOM",
     "Import.encoding.gb18030": "GB18030 / GBK",
@@ -111,10 +155,11 @@ export const I18nTexts = {
       "No readable paragraphs were found. Check that this is a non-empty text file.",
     "Import.error.read":
       "The file could not be read as text. Check its encoding and try again.",
-    "Import.error.confirm":
-      "Import failed. Check the preview and try again.",
+    "Import.error.confirm": "Import failed. Check the preview and try again.",
     "Import.toast.imported": "Manuscript imported",
     "Import.defaultChapter": "Main text",
+    "Import.frontMatter": "Front matter",
+    "Import.untitledSection": "Untitled section",
     "Import.untitledWork": "Imported manuscript",
     "Prefs.tab.writing": "Writing",
     "Prefs.tab.appearance": "Appearance",
@@ -131,6 +176,9 @@ export const I18nTexts = {
     "Prefs.article.mentions": "Highlight material mentions",
     "Prefs.article.preview": "Preview",
     "Prefs.navigation.section": "Chapter navigation",
+    "Prefs.navigation.snapEnabled": "Paragraph snap scrolling",
+    "Prefs.navigation.snapEnabledHint":
+      "Scroll freely with the mouse wheel or trackpad. After you stop near a middle paragraph start, it settles into place with a short ease-out. The first and last paragraphs are left untouched.",
     "Prefs.navigation.turnEnabled": "Scroll wheel chapter turning",
     "Prefs.navigation.turnEnabledHint":
       "Allow the mouse wheel or trackpad to turn chapters at the document edge. Buttons and outline navigation remain available when this is off.",
@@ -206,6 +254,9 @@ export const I18nTexts = {
     "Editor.node.synopsisPlaceholder": "One line for the outline",
     "Editor.node.synopsisHint": "Shown in the sidebar next to the title.",
     "Editor.node.plotSummary": "Plot summary",
+    "Editor.node.preface": "Volume preface",
+    "Editor.node.prefacePlaceholder":
+      "Content shown at the beginning of this volume",
     "Editor.node.plotSummaryPlaceholder":
       "What happens in this chapter, and why",
     "Editor.node.plotSummaryHint":
@@ -222,6 +273,8 @@ export const I18nTexts = {
     "Editor.status.dirty": "Unsaved",
     "Editor.save.manual": "Save",
     "Editor.save.failed": "Save failed. Please retry.",
+    "Editor.save.conflict":
+      "This chapter changed elsewhere. Reload it before saving again.",
     "Editor.history.open": "History",
     "Editor.history.title": "Version history",
     "Editor.history.empty":
@@ -329,8 +382,7 @@ export const I18nTexts = {
     "Codex.deleteTitle": "Delete material",
     "Codex.deleteFailed": "Could not delete this entry",
     "Codex.deleteConfirm": "Delete this material entry? This cannot be undone.",
-    "Codex.deleteConfirmHint":
-      "Type \"{name}\" to confirm deletion.",
+    "Codex.deleteConfirmHint": 'Type "{name}" to confirm deletion.',
     "Codex.deleteConfirmPlaceholder": "Enter the entry name",
     "Codex.deleteHint":
       "Relations and chapter mentions pointing to this entry are removed too.",
@@ -454,6 +506,12 @@ export const I18nTexts = {
       "This entry has not been mentioned in a saved chapter yet.",
     "Codex.library.title": "Materials",
     "Codex.library.back": "Back to works",
+    "Codex.scan": "Detect mentions",
+    "Codex.scanHint":
+      "Scan every chapter in this workspace and rebuild the material mention index.",
+    "Codex.scan.running": "Scanning",
+    "Codex.scan.done": "Material mentions updated",
+    "Codex.scan.failed": "Could not scan the manuscript",
     "Codex.library.colors": "Highlight color per type",
     "Codex.library.scopeHint":
       "Entries are shared by every work in this workspace.",
@@ -655,6 +713,32 @@ export const I18nTexts = {
     "Tray.menu.settings": "Settings",
     "Tray.menu.quit": "Quit",
 
+    "LongTask.chapterIndex.title": "Updating chapter index",
+    "LongTask.chapterIndex.description":
+      "Large works are indexed once so opening and statistics stay fast. Keep this window open.",
+    "LongTask.chapterIndex.scanning": "Scanning chapters",
+    "LongTask.chapterIndex.writing": "Writing chapter index",
+    "LongTask.library.title": "Checking work statistics",
+    "LongTask.library.description":
+      "Recalculating word counts for this workspace. Keep this window open.",
+    "LongTask.import.title": "Importing the work",
+    "LongTask.import.description":
+      "Writing chapters and building the structure. Keep this window open.",
+    "LongTask.import.chapters": "Saving chapters",
+    "LongTask.import.index": "Building chapter index",
+    "LongTask.reparagraph.title": "Reflowing the work",
+    "LongTask.reparagraph.description":
+      "Updating paragraph boundaries chapter by chapter. Keep this window open.",
+    "LongTask.mentionScan.title": "Scanning material mentions",
+    "LongTask.mentionScan.description":
+      "Reading every chapter to rebuild the material index. Keep this window open.",
+    "LongTask.workspace.migrate.title": "Migrating workspace",
+    "LongTask.workspace.migrate.description":
+      "Moving all workspace files to the new folder. Keep this window open.",
+    "LongTask.workspace.delete.title": "Deleting workspace",
+    "LongTask.workspace.delete.description":
+      "Permanently removing the workspace directory. Keep this window open.",
+
     "About.title": "About {name}",
     "About.tagline": "A Tauri + React application template",
     "About.version": "Version",
@@ -667,7 +751,8 @@ export const I18nTexts = {
     "Titlebar.default.title": "应用模板",
     "Home.title": "首页",
     "Home.workspacePicker": "工作区",
-    "Home.workspacePickerHint": "创建工作区、更改到其他工作区，或继续当前工作区",
+    "Home.workspacePickerHint":
+      "创建工作区、更改到其他工作区，或继续当前工作区",
     "Home.studio": "写作台",
     "Home.continue": "继续写作",
     "Home.updated": "更新于",
@@ -678,6 +763,13 @@ export const I18nTexts = {
     "Home.recentHint": "当前工作区中最近更新的作品",
     "Home.openLibrary": "打开工作区",
     "Home.openingWorkspace": "正在打开工作区",
+    "Home.workspaceMissing":
+      "该目录还不是工作区，需要初始化请使用“创建工作区”。",
+    "Home.workspaceInvalid": "工作区清单无法读取，请选择其他工作区。",
+    "Home.badWorkspaceTitle": "移除这个工作区记录？",
+    "Home.badWorkspaceDesc":
+      "该工作区缺失或无法读取。是否从最近工作区中移除？磁盘文件不会被删除。",
+    "Home.badWorkspaceRemove": "移除记录",
     "Home.currentWorkspace": "当前",
     "Home.otherRecentWorkspaces": "切换其他最近的工作区",
     "Home.openedAt": "打开于 {time}",
@@ -695,6 +787,15 @@ export const I18nTexts = {
     "Library.workspace.pick": "创建工作区",
     "Library.workspace.change": "更换工作区",
     "Library.workspace.open": "打开工作区",
+    "Library.workspace.migrate": "迁移工作区",
+    "Library.workspace.migrateTitle": "迁移这个工作区？",
+    "Library.workspace.migrateDesc":
+      "整个工作区会移动到所选空目录，并切换到新位置。",
+    "Library.workspace.migrateAction": "迁移",
+    "Library.workspace.migrateDone": "工作区已迁移",
+    "Library.workspace.migrateSourceKept":
+      "工作区已复制到新位置，但原目录未能删除。请查看日志并手动清理原目录。",
+    "Library.workspace.migrateFailed": "工作区迁移失败",
     "Library.workspace.openDir": "在文件管理器中打开该目录",
     "Library.workspace.settings": "工作区设置",
     "Library.workspace.aliasLabel": "工作区名称",
@@ -707,7 +808,9 @@ export const I18nTexts = {
       "整部作品连同所有章节会移入回收站，之后可以恢复。",
     "ConfirmDelete.prompt": "请输入",
     "Library.workspace.deleteDesc":
-      "该工作区下的一切——所有作品、章节与素材库——都会移入其中的回收站。",
+      "该工作区目录及其中的全部作品、章节与素材库都会被永久删除，且无法恢复。",
+    "Library.workspace.deleteDone": "工作区已永久删除",
+    "Library.workspace.deleteFailed": "删除工作区失败",
     "Library.workspace.renameTitle": "更名这个工作区？",
     "Library.workspace.renameDesc": "顶部显示的工作区名称将从",
     "Library.workspace.renameTo": "改为",
@@ -716,6 +819,7 @@ export const I18nTexts = {
     "Library.action.new": "新建作品",
     "Library.action.continue": "继续写作",
     "Library.action.rename": "重命名",
+    "Library.action.settings": "书本设置",
     "Library.action.archive": "归档",
     "Library.action.unarchive": "恢复",
     "Library.action.confirmArchive": "确定归档这部作品？",
@@ -726,15 +830,34 @@ export const I18nTexts = {
     "Library.empty.archived": "已归档作品",
     "Library.dialog.newTitle": "新建作品",
     "Library.dialog.renameTitle": "重命名作品",
+    "Library.dialog.newDesc": "填写这部作品的基础信息。",
+    "Library.dialog.settingsTitle": "书本设置",
+    "Library.dialog.settingsDesc": "统一编辑作品信息与正文整理偏好。",
     "Library.dialog.nameLabel": "标题",
     "Library.dialog.namePlaceholder": "未命名作品",
     "Library.dialog.typeLabel": "类型（可选）",
+    "Library.dialog.synopsisLabel": "简介",
+    "Library.dialog.synopsisPlaceholder": "这部作品的简短介绍",
     "Library.dialog.typePlaceholder": "奇幻、言情、科幻……",
+    "Library.dialog.autoParagraphLabel": "导入时自动分段",
+    "Library.dialog.autoParagraphHint":
+      "只影响这部作品之后的导入，不会因为切换开关而静默改写现有正文。",
+    "Library.dialog.reparagraph": "整理现有正文",
+    "Library.dialog.reparagraphHint":
+      "短段保持原样，只重组长块与硬换行；发生改动的章节会保留历史快照。",
+    "Library.dialog.reparagraphConfirm":
+      "要重新整理这部作品的全部章节吗？已有段落边界会保留，但长块可能被拆成多个自然段。改动过的章节可从历史版本回滚。",
+    "Library.dialog.reparagraphStart": "开始整理",
+    "Library.dialog.reparagraphing": "正在整理",
+    "Library.dialog.reparagraphPreparing": "正在准备章节……",
     "Library.dialog.create": "创建",
     "Library.dialog.save": "保存",
     "Library.dialog.cancel": "取消",
     "Library.toast.created": "作品已创建",
     "Library.toast.renamed": "作品已重命名",
+    "Library.toast.settingsSaved": "书本设置已保存",
+    "Library.toast.reparagraphed": "正文已重新分段",
+    "Library.toast.reparagraphFailed": "正文整理失败",
     "Library.toast.archived": "作品已归档",
     "Library.toast.unarchived": "作品已恢复",
     "Library.toast.failed": "操作失败",
@@ -755,25 +878,28 @@ export const I18nTexts = {
     "Import.noFile": "尚未选择文件",
     "Import.noFileHint": "支持 TXT 与 Markdown（.md）。",
     "Import.reading": "正在读取并检查文本……",
-    "Import.preview": "段落预览",
-    "Import.previewLimit": "仅展示前 5 个段落。",
+    "Import.options": "导入设置",
+    "Import.stripSectionNumbers": "去除卷章节编号",
+    "Import.autoParagraph": "自动分段",
+    "Import.preview": "导入预览",
+    "Import.previewLimit": "仅展示前 5 项。",
     "Import.format": "格式",
     "Import.encoding": "编码",
     "Import.paragraphs": "段落数",
+    "Import.sections": "分节数",
     "Import.encoding.utf8": "UTF-8",
     "Import.encoding.utf8Bom": "UTF-8 BOM",
     "Import.encoding.gb18030": "GB18030 / GBK",
     "Import.confirm": "导入",
     "Import.error.unsupported":
       "目前只支持 TXT 与 Markdown。Word、RTF 等格式请先转换为纯文本。",
-    "Import.error.empty":
-      "没有读到可导入的段落。请确认文件并非空文件。",
-    "Import.error.read":
-      "无法按文本读取该文件，请检查文件编码后重试。",
-    "Import.error.confirm":
-      "导入失败，请检查预览后重试。",
+    "Import.error.empty": "没有读到可导入的段落。请确认文件并非空文件。",
+    "Import.error.read": "无法按文本读取该文件，请检查文件编码后重试。",
+    "Import.error.confirm": "导入失败，请检查预览后重试。",
     "Import.toast.imported": "文稿已导入",
     "Import.defaultChapter": "正文",
+    "Import.frontMatter": "作品信息",
+    "Import.untitledSection": "未命名章节",
     "Import.untitledWork": "导入的文稿",
     "Prefs.tab.writing": "写作",
     "Prefs.tab.appearance": "外观",
@@ -790,6 +916,9 @@ export const I18nTexts = {
     "Prefs.article.mentions": "高亮正文中的素材提及",
     "Prefs.article.preview": "预览",
     "Prefs.navigation.section": "翻章",
+    "Prefs.navigation.snapEnabled": "段落惯性吸附",
+    "Prefs.navigation.snapEnabledHint":
+      "滚轮和触控板保持自由滚动，停下时若接近中间自然段的开头会短距离缓出对齐；首段和末段不吸附。关闭后完全使用原生滚动。",
     "Prefs.navigation.turnEnabled": "滚动翻章总开关",
     "Prefs.navigation.turnEnabledHint":
       "关闭后，滚轮和触控板不会在章节边缘翻章；上一章、下一章按钮和结构树导航仍然可用。",
@@ -880,6 +1009,8 @@ export const I18nTexts = {
     "Editor.node.synopsisPlaceholder": "给结构树扫读用的一句话",
     "Editor.node.synopsisHint": "显示在侧栏标题旁边。",
     "Editor.node.plotSummary": "情节小结",
+    "Editor.node.preface": "卷首语",
+    "Editor.node.prefacePlaceholder": "显示在这一卷开头的内容",
     "Editor.node.plotSummaryPlaceholder": "这一章发生了什么，为什么",
     "Editor.node.plotSummaryHint": "比一句话摘要长，用于日后回看。",
     "Editor.split.title": "按标点拆分",
@@ -894,6 +1025,7 @@ export const I18nTexts = {
     "Editor.status.dirty": "未保存",
     "Editor.save.manual": "保存",
     "Editor.save.failed": "保存失败，请重试。",
+    "Editor.save.conflict": "本章已在其它位置更新，请重新载入后再保存。",
     "Editor.chapter.words": "字",
     "Editor.chapter.new": "新建章节",
     "Editor.chapter.nameTitle": "章节命名",
@@ -1085,6 +1217,11 @@ export const I18nTexts = {
     "Codex.mentions.empty": "已保存的正文中还没有出现这条素材。",
     "Codex.library.title": "素材库",
     "Codex.library.back": "返回作品库",
+    "Codex.scan": "素材探知",
+    "Codex.scanHint": "扫描本工作区的全部章节，重建素材出场索引。",
+    "Codex.scan.running": "正在探知",
+    "Codex.scan.done": "素材出场索引已更新",
+    "Codex.scan.failed": "素材探知失败",
     "Codex.library.colors": "各类高亮颜色",
     "Codex.library.scopeHint": "条目在本工作区内所有作品间共享。",
     "Codex.sort": "排序",
@@ -1275,6 +1412,32 @@ export const I18nTexts = {
     "Tray.menu.about": "关于",
     "Tray.menu.settings": "设置",
     "Tray.menu.quit": "退出",
+
+    "LongTask.chapterIndex.title": "正在更新章节索引",
+    "LongTask.chapterIndex.description":
+      "大部头作品只需建立一次索引，之后打开作品和统计字数都会更快。请保持窗口开启。",
+    "LongTask.chapterIndex.scanning": "正在扫描章节",
+    "LongTask.chapterIndex.writing": "正在写入章节索引",
+    "LongTask.library.title": "正在校验作品统计",
+    "LongTask.library.description":
+      "正在重新核对当前工作区的作品字数，请保持窗口开启。",
+    "LongTask.import.title": "正在导入作品",
+    "LongTask.import.description":
+      "正在写入章节并建立作品结构，请保持窗口开启。",
+    "LongTask.import.chapters": "正在保存章节",
+    "LongTask.import.index": "正在建立章节索引",
+    "LongTask.reparagraph.title": "正在整理全书段落",
+    "LongTask.reparagraph.description":
+      "正在逐章更新段落边界，请保持窗口开启。",
+    "LongTask.mentionScan.title": "正在扫描素材出场",
+    "LongTask.mentionScan.description":
+      "正在读取全部章节并重建素材索引，请保持窗口开启。",
+    "LongTask.workspace.migrate.title": "正在迁移工作区",
+    "LongTask.workspace.migrate.description":
+      "正在把工作区文件移动到新目录，请保持窗口开启。",
+    "LongTask.workspace.delete.title": "正在删除工作区",
+    "LongTask.workspace.delete.description":
+      "正在永久移除工作区目录，请保持窗口开启。",
 
     "About.title": "关于 {name}",
     "About.tagline": "Tauri + React 桌面应用模板",

@@ -8,11 +8,22 @@ import {
   LoaderCircle,
 } from "lucide-react";
 
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
-import { useI18n } from "@/composables";
+import { useI18n, useToast } from "@/composables";
 import { useSettingsDialog } from "@/contexts/settings";
 import { useWorkspace } from "@/contexts/workspace";
 import { pageFromPath, useAppNavigation } from "@/lib/navigation";
+import { inspectWorkspace } from "@/services/workspace";
 import {
   WORKSPACE_OPEN_INTERCEPT_EVENT,
   type WorkspaceOpenAction,
@@ -26,6 +37,10 @@ interface PendingWorkspaceOpen {
   path: string;
   intent: WorkspaceOpenIntent;
   targetPath: string | null;
+}
+
+interface BadRecentWorkspace {
+  path: string;
 }
 
 interface ProgressPoint {
@@ -184,6 +199,7 @@ function WorkspaceRow({
 
 export default function Home() {
   const { t } = useI18n();
+  const toast = useToast();
   const { navigateDirect } = useAppNavigation();
   const { openSettings, openAbout } = useSettingsDialog();
   const {
@@ -192,9 +208,12 @@ export default function Home() {
     recentOpenedAt,
     pickPath,
     open,
+    removeRecent,
   } = useWorkspace();
   const [pendingOpen, setPendingOpen] =
     useState<PendingWorkspaceOpen | null>(null);
+  const [badRecentWorkspace, setBadRecentWorkspace] =
+    useState<BadRecentWorkspace | null>(null);
   const [progress, setProgress] = useState(0);
   const openingRef = useRef(false);
   const rootRef = useRef(root);
@@ -218,11 +237,35 @@ export default function Home() {
     setPendingOpen({ path, intent, targetPath });
   }
 
+  async function openExistingWorkspace(
+    path: string,
+    intent: Exclude<WorkspaceOpenIntent, "create">
+  ) {
+    if (openingRef.current) return;
+    const status = await inspectWorkspace(path);
+    if (status !== "ready") {
+      if (intent === "recent") {
+        setBadRecentWorkspace({ path });
+        return;
+      }
+      toast.error(
+        status === "missing" ? "Home.workspaceMissing" : "Home.workspaceInvalid"
+      );
+      return;
+    }
+    queueWorkspaceOpen(path, intent);
+  }
+
   async function chooseWorkspace(
     intent: Exclude<WorkspaceOpenIntent, "menu" | "recent">
   ) {
     const selected = await pickPath();
-    if (selected) queueWorkspaceOpen(selected, intent);
+    if (!selected) return;
+    if (intent === "create") {
+      queueWorkspaceOpen(selected, intent);
+      return;
+    }
+    await openExistingWorkspace(selected, intent);
   }
 
   useEffect(() => {
@@ -328,7 +371,7 @@ export default function Home() {
               progress={progress}
               openedAt={recentOpenedAt[selectedRoot]}
               disabled={Boolean(pendingOpen)}
-              onClick={() => queueWorkspaceOpen(selectedRoot, "recent")}
+              onClick={() => void openExistingWorkspace(selectedRoot, "recent")}
             />
           </div>
         ) : null}
@@ -340,7 +383,7 @@ export default function Home() {
                 size="lg"
                 disabled={Boolean(pendingOpen)}
                 onClick={() => {
-                  if (root) queueWorkspaceOpen(root, "recent");
+                  if (root) void openExistingWorkspace(root, "recent");
                 }}
               >
                 <BookOpen className="icon-md" />
@@ -388,7 +431,7 @@ export default function Home() {
                     progress={0}
                     openedAt={recentOpenedAt[path]}
                     disabled={Boolean(pendingOpen)}
-                    onClick={() => queueWorkspaceOpen(path, "recent")}
+                    onClick={() => void openExistingWorkspace(path, "recent")}
                   />
                 ))}
               </div>
@@ -396,6 +439,37 @@ export default function Home() {
           ) : null}
         </div>
       </div>
+
+      <AlertDialog
+        open={badRecentWorkspace !== null}
+        onOpenChange={(openState) => {
+          if (!openState) setBadRecentWorkspace(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("Home.badWorkspaceTitle")}</AlertDialogTitle>
+            <AlertDialogDescription className="flex flex-col gap-2">
+              <span>{t("Home.badWorkspaceDesc")}</span>
+              <span className="break-all font-medium text-foreground">
+                {badRecentWorkspace?.path}
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("Library.dialog.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (!badRecentWorkspace) return;
+                removeRecent(badRecentWorkspace.path);
+                setBadRecentWorkspace(null);
+              }}
+            >
+              {t("Home.badWorkspaceRemove")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

@@ -22,9 +22,19 @@ export interface LibraryContextValue {
   /** 设置工作区别名（留空即清除）。 */
   setWorkspaceAlias: (alias: string) => Promise<void>;
   /** 新建作品并设为当前作品。 */
-  create: (title: string, type: string) => Promise<Work | null>;
-  /** 重命名作品。 */
-  rename: (workId: string, title: string) => Promise<void>;
+  create: (
+    title: string,
+    type: string,
+    synopsis?: string,
+    autoParagraph?: boolean
+  ) => Promise<Work | null>;
+  /** 更新作品信息与导入偏好。 */
+  updateWork: (
+    workId: string,
+    changes: Partial<
+      Pick<Work, "title" | "type" | "synopsis" | "autoParagraph">
+    >
+  ) => Promise<Work | null>;
   /** 归档作品。 */
   archive: (workId: string) => Promise<void>;
   /** 恢复已归档作品。 */
@@ -55,7 +65,7 @@ export const LibraryContext = createContext<LibraryContextValue>({
   refresh: async () => {},
   setWorkspaceAlias: async () => {},
   create: async () => null,
-  rename: async () => {},
+  updateWork: async () => null,
   archive: async () => {},
   unarchive: async () => {},
   remove: async () => {},

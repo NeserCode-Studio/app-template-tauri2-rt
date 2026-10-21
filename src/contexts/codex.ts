@@ -9,6 +9,8 @@ import { createContext, useContext } from "react";
 import type {
   Entry,
   MentionIndex,
+  MentionScanProgress,
+  MentionScanReport,
   Relation,
   TypeConfig,
 } from "@/services/codex";
@@ -51,6 +53,10 @@ export interface CodexContextValue {
     chapterId: string,
     text: string
   ) => Promise<void>;
+  /** 扫描当前工作区全部作品正文，重建素材提及索引。 */
+  scanAllMentions: (
+    onProgress?: (progress: MentionScanProgress) => void
+  ) => Promise<MentionScanReport | null>;
 }
 
 export const CodexContext = createContext<CodexContextValue | null>(null);

@@ -74,7 +74,7 @@ export const trashItemSchema = z.object({
    * 再恢复，它跑到列表最后，顺序得手工重排。下标记的是删除那一刻的位置，
    * 恢复时若清单已被后续操作改变（中间又插了作品），按 clamp 到末尾处理。
    */
- deletedAt: z.number().int(),
+  deletedAt: z.number().int(),
   /**
    * 被一并删掉的子节点（卷 → 其下所有章）。
    *
@@ -92,6 +92,7 @@ export const trashItemSchema = z.object({
         order: z.number().int(),
         status: z.string().optional(),
         synopsis: z.string().optional(),
+        preface: z.string().optional(),
         plotSummary: z.string().optional(),
         createdAt: z.number().int(),
         updatedAt: z.number().int(),
@@ -114,6 +115,7 @@ export const trashItemSchema = z.object({
       order: z.number().int(),
       status: z.string().optional(),
       synopsis: z.string().optional(),
+      preface: z.string().optional(),
       /**
        * 情节小结（章节详情 Dialog 里编辑的那段自由文本）。
        *
@@ -197,7 +199,7 @@ export async function moveToTrash(
     order: input.order ?? 0,
     manifestIndex: input.manifestIndex ?? null,
     manifestSection: input.manifestSection ?? null,
-   subtree: input.subtree ?? [],
+    subtree: input.subtree ?? [],
     node: input.node ?? null,
     deletedAt: Date.now(),
   });
@@ -219,7 +221,10 @@ export async function moveToTrash(
     moved.push({ rel: p, dest });
   }
 
-  await fs2.writeText(trashItemFile(item.itemId), JSON.stringify({ ...item, moved }, null, 2));
+  await fs2.writeText(
+    trashItemFile(item.itemId),
+    JSON.stringify({ ...item, moved }, null, 2)
+  );
   await writeIndex(root, [...(await readIndex(root)), item.itemId]);
   log.info("moved to trash", { kind: input.kind, title: input.title });
   return item;
@@ -234,7 +239,10 @@ export async function moveToTrash(
  * 各自移进 `.trash/<itemId>.<序号>`，并把这份映射记进回收记录，
  * 恢复时按映射逐项搬回原位。等于把根目录"摊平"进回收站。
  */
-export async function moveWorkspaceToTrash(root: string, title: string): Promise<TrashItem> {
+export async function moveWorkspaceToTrash(
+  root: string,
+  title: string
+): Promise<TrashItem> {
   const fs2 = createFs(root);
   const item = trashItemSchema.parse({
     itemId: crypto.randomUUID(),
@@ -259,7 +267,10 @@ export async function moveWorkspaceToTrash(root: string, title: string): Promise
     moved.push({ rel, dest });
   }
 
-  await fs2.writeText(trashItemFile(item.itemId), JSON.stringify({ ...item, moved }, null, 2));
+  await fs2.writeText(
+    trashItemFile(item.itemId),
+    JSON.stringify({ ...item, moved }, null, 2)
+  );
   /*
    * index.json 在 .trash/ 里，而回收站自身被显式跳过、仍留在原处，
    * 所以这里可以直接写。但清单（novels-yes.json）刚被搬走了——
@@ -295,7 +306,10 @@ export async function listTrash(root: string): Promise<TrashItem[]> {
  * 所属作品可能也被删了，此时 parentId 指向的卷已不存在，
  * 故校验父节点存在才挂上去，否则降级为根层章。
  */
-export async function restoreFromTrash(root: string, itemId: string): Promise<boolean> {
+export async function restoreFromTrash(
+  root: string,
+  itemId: string
+): Promise<boolean> {
   const fs2 = createFs(root);
   const file = trashItemFile(itemId);
   if (!(await fs2.exists(file))) return false;
@@ -343,9 +357,12 @@ export async function restoreFromTrash(root: string, itemId: string): Promise<bo
  *
  * 删一卷会产生 N+1 条记录（卷 + 每章各一条）。恢复卷时 subtree 整棵挂回，
  * 那些单章记录的正文已回到磁盘，留着只会让用户再次点击时报
-   * 「原位置已被占用」——而这个报错对他毫无意义，因为他没想再恢复一次。
-   */
-async function dropRolledUpChildren(root: string, item: TrashItem): Promise<void> {
+ * 「原位置已被占用」——而这个报错对他毫无意义，因为他没想再恢复一次。
+ */
+async function dropRolledUpChildren(
+  root: string,
+  item: TrashItem
+): Promise<void> {
   if (item.kind !== "volume") return;
   const childIds = new Set(item.subtree.map((n) => n.id));
   if (!childIds.size) return;
@@ -366,7 +383,11 @@ async function dropRolledUpChildren(root: string, item: TrashItem): Promise<void
      * 同一部作品才认。理论上不同作品的章 id 不会相重，但清理是
      * 不可逆的，多一道校验比赌一次好。
      */
-    if (other.workId !== null && item.workId !== null && other.workId !== item.workId) {
+    if (
+      other.workId !== null &&
+      item.workId !== null &&
+      other.workId !== item.workId
+    ) {
       continue;
     }
     if (!childIds.has(other.originId)) continue;
@@ -381,7 +402,6 @@ async function dropRolledUpChildren(root: string, item: TrashItem): Promise<void
     });
   }
 }
-
 
 /**
  * 把恢复的作品重新登记进工作区清单。
@@ -406,7 +426,8 @@ async function reattachWork(root: string, item: TrashItem): Promise<void> {
     };
     const order = raw.order ?? [];
     const archived = raw.archived ?? [];
-    if (order.includes(item.originId) || archived.includes(item.originId)) return;
+    if (order.includes(item.originId) || archived.includes(item.originId))
+      return;
 
     /*
      * 按删除时记下的分区与下标插回原位，而不是追加到末尾。
@@ -434,7 +455,11 @@ async function reattachWork(root: string, item: TrashItem): Promise<void> {
      * 但恢复进 archived 分区的作品相反：它必须保持归档态，
      * 否则会同时出现在常规列表和归档区里。所以这里按分区决定抹不抹。
      */
-    await setWorkArchivedFlag(root, item.originId, item.manifestSection === "archived");
+    await setWorkArchivedFlag(
+      root,
+      item.originId,
+      item.manifestSection === "archived"
+    );
     log.info("work re-registered in manifest", { id: item.originId });
   } catch (err) {
     /* 清单坏了就跳过：文件已经搬回去了，冷启动的目录兜底还能救回来。 */
@@ -483,7 +508,8 @@ async function reattachNode(root: string, item: TrashItem): Promise<void> {
   const raw = JSON.parse(await fs2.readText(file)) as { nodes: unknown[] };
   if (!Array.isArray(raw.nodes)) return;
   /* 已经回到树里（用户手工改过）：不重复添加。 */
-  if (raw.nodes.some((n) => (n as { id?: string }).id === item.originId)) return;
+  if (raw.nodes.some((n) => (n as { id?: string }).id === item.originId))
+    return;
 
   /*
    * parentId 指向的卷可能连同作品一起被删了。先确认父节点还在，
@@ -507,6 +533,7 @@ async function reattachNode(root: string, item: TrashItem): Promise<void> {
     order: item.order,
     status: item.node?.status ?? "draft",
     synopsis: item.node?.synopsis ?? "",
+    preface: item.node?.preface ?? "",
     plotSummary: item.node?.plotSummary ?? "",
     collapsed: false,
     createdAt: item.node?.createdAt ?? now,
@@ -546,7 +573,10 @@ async function reattachNode(root: string, item: TrashItem): Promise<void> {
  * 搜不到就放弃并记日志：结构树是唯一的入口，猜一个作品挂进去
  * 比不挂更糟——正文会出现在一部不相干的作品里。
  */
-async function resolveWorkId(root: string, item: TrashItem): Promise<string | null> {
+async function resolveWorkId(
+  root: string,
+  item: TrashItem
+): Promise<string | null> {
   if (item.workId) return item.workId;
   const fs2 = createFs(root);
 
@@ -554,12 +584,21 @@ async function resolveWorkId(root: string, item: TrashItem): Promise<string | nu
   if (parts[0] === "works" && parts.length >= 2) return parts[1];
 
   /* 卷无文件：从记录下来的子树标题反查，遍历 works/ 逐个比对。 */
-  const names = (await fs2.exists(WORKS_DIR)) ? await fs2.readDir(WORKS_DIR) : [];
+  const names = (await fs2.exists(WORKS_DIR))
+    ? await fs2.readDir(WORKS_DIR)
+    : [];
   for (const name of names) {
     if (name === item.originId) continue;
     try {
-      const raw = JSON.parse(await fs2.readText(outlineFile(name))) as { nodes?: unknown[] };
-      if ((raw.nodes ?? []).some((n) => (n as { id?: string }).id === item.originId)) return name;
+      const raw = JSON.parse(await fs2.readText(outlineFile(name))) as {
+        nodes?: unknown[];
+      };
+      if (
+        (raw.nodes ?? []).some(
+          (n) => (n as { id?: string }).id === item.originId
+        )
+      )
+        return name;
     } catch {
       /* 不是作品目录或结构树损坏，继续找。 */
     }
@@ -568,12 +607,17 @@ async function resolveWorkId(root: string, item: TrashItem): Promise<string | nu
 }
 
 /** 彻底删除（不可恢复）。 */
-export async function purgeFromTrash(root: string, itemId: string): Promise<void> {
+export async function purgeFromTrash(
+  root: string,
+  itemId: string
+): Promise<void> {
   const fs2 = createFs(root);
   const file = trashItemFile(itemId);
   if (await fs2.exists(file)) {
     try {
-      const raw = JSON.parse(await fs2.readText(file)) as { moved?: { dest: string }[] };
+      const raw = JSON.parse(await fs2.readText(file)) as {
+        moved?: { dest: string }[];
+      };
       for (const m of raw.moved ?? []) {
         const p = joinRel(TRASH_DIR, m.dest);
         if (await fs2.exists(p)) await fs2.remove(p);

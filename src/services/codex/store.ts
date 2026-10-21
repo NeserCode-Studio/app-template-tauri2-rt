@@ -29,9 +29,11 @@ import {
   codexRelationsFile,
   codexRootDir,
   codexTypesFile,
+  WORKS_DIR,
   workDir,
 } from "../paths";
 import { createLogger } from "@/lib/logger";
+import { loadWorkspace } from "../workspace";
 
 import {
   BUILTIN_TYPE_SET,
@@ -458,18 +460,70 @@ export async function saveMentions(
   );
 }
 
-/** 统计某个词在文本里的非重叠出现次数。 */
-function countOccurrences(text: string, needle: string): number {
-  if (!needle) return 0;
-  let count = 0;
-  let from = 0;
-  for (;;) {
-    const at = text.indexOf(needle, from);
-    if (at < 0) break;
-    count += 1;
-    from = at + needle.length;
+interface MentionTrieNode {
+  children: Map<string, MentionTrieNode>;
+  entryIds?: string[];
+}
+
+function createMentionTrie(entries: Entry[]): MentionTrieNode {
+  const root: MentionTrieNode = { children: new Map() };
+  const add = (word: string, entryId: string) => {
+    const trimmed = word.trim();
+    if (!trimmed) return;
+    let node = root;
+    for (const char of trimmed) {
+      let next = node.children.get(char);
+      if (!next) {
+        next = { children: new Map() };
+        node.children.set(char, next);
+      }
+      node = next;
+    }
+    node.entryIds = [...(node.entryIds ?? []), entryId];
+  };
+
+  for (const entry of entries) {
+    add(entry.name, entry.id);
+    for (const alias of entry.aliases) add(alias, entry.id);
   }
-  return count;
+  return root;
+}
+
+/**
+ * 一次遍历正文，优先匹配最长的非冲突名称。
+ *
+ * 这比“每个名字各 indexOf 一遍”更快，也避免「林」和「林风」同时命中
+ * 同一处。别名冲突（同一词属于多个条目）仍按既有规则跳过。
+ */
+function countMentions(
+  text: string,
+  trie: MentionTrieNode
+): Map<string, number> {
+  const counts = new Map<string, number>();
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    let node: MentionTrieNode | undefined = trie;
+    let bestEntryId: string | null = null;
+    let bestLength = 0;
+
+    for (let index = cursor; index < text.length; index += 1) {
+      node = node.children.get(text[index]);
+      if (!node) break;
+      if (node.entryIds?.length === 1) {
+        bestEntryId = node.entryIds[0];
+        bestLength = index - cursor + 1;
+      }
+    }
+
+    if (bestEntryId) {
+      counts.set(bestEntryId, (counts.get(bestEntryId) ?? 0) + 1);
+      cursor += bestLength;
+    } else {
+      cursor += 1;
+    }
+  }
+  return counts;
 }
 
 /**
@@ -487,27 +541,13 @@ export async function syncChapterMentions(
   chapterId: string,
   text: string,
   entries: Entry[]
-): Promise<void> {
-  /* 名称 / 别名 → 条目 id。同一词指向多条时标记为歧义，不计数。 */
-  const nameToIds = new Map<string, string[]>();
-  const push = (word: string, id: string) => {
-    const key = word.trim();
-    if (!key) return;
-    nameToIds.set(key, [...(nameToIds.get(key) ?? []), id]);
-  };
-  for (const e of entries) {
-    push(e.name, e.id);
-    for (const alias of e.aliases) push(alias, e.id);
-  }
-
-  const counts = new Map<string, number>();
-  for (const [word, ids] of nameToIds) {
-    if (ids.length > 1) continue;
-    const n = countOccurrences(text, word);
-    if (n > 0) counts.set(ids[0], (counts.get(ids[0]) ?? 0) + n);
-  }
+): Promise<MentionIndex> {
+  const startedAt = performance.now();
+  const counts = countMentions(text, createMentionTrie(entries));
+  const countedAt = performance.now();
 
   const index = await loadMentions(root);
+  const loadedAt = performance.now();
   let dirty = false;
   const now = Date.now();
 
@@ -544,7 +584,147 @@ export async function syncChapterMentions(
     dirty = true;
   }
 
+  const changedAt = performance.now();
   if (dirty) await saveMentions(root, index);
+  log.info("chapter mention index synced", {
+    workId,
+    chapterId,
+    textChars: text.length,
+    entries: entries.length,
+    matches: counts.size,
+    dirty,
+    countMs: Math.round(countedAt - startedAt),
+    loadMs: Math.round(loadedAt - countedAt),
+    updateMs: Math.round(changedAt - loadedAt),
+    saveMs: Math.round(performance.now() - changedAt),
+    totalMs: Math.round(performance.now() - startedAt),
+  });
+  return index;
+}
+
+export interface MentionScanProgress {
+  done: number;
+  total: number;
+  workId: string;
+  chapterId: string;
+}
+
+export interface MentionScanReport {
+  works: number;
+  chapters: number;
+  skippedChapters: number;
+  entriesMatched: number;
+  mentionRecords: number;
+  occurrences: number;
+}
+
+export interface MentionScanResult {
+  index: MentionIndex;
+  report: MentionScanReport;
+}
+
+/**
+ * 全盘重建工作区提及索引。
+ *
+ * 扫描清单中的全部作品（含归档），从章卡片正文重新统计，并一次性写盘。
+ * 已删除章节/作品留下的旧记录会自然消失；同一章已有记录保留 firstSeenAt。
+ */
+export async function scanWorkspaceMentions(
+  root: string,
+  entries: Entry[],
+  onProgress?: (progress: MentionScanProgress) => void
+): Promise<MentionScanResult> {
+  const fs2 = createFs(root);
+  const workspace = await loadWorkspace(root);
+  const knownWorks = new Set([...workspace.order, ...workspace.archived]);
+  try {
+    for (const name of await fs2.readDir(WORKS_DIR)) knownWorks.add(name);
+  } catch {
+    /* 还没有 works 目录时只扫描清单。 */
+  }
+  const workIds = [...knownWorks];
+  const chapterFiles: { workId: string; name: string }[] = [];
+
+  for (const workId of workIds) {
+    const dir = joinRel("works", workId, "chapters");
+    try {
+      const names = (await fs2.readDir(dir))
+        .filter((name) => name.endsWith(".json"))
+        .sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+      for (const name of names) chapterFiles.push({ workId, name });
+    } catch {
+      /* 作品目录可能尚未建立章目录，不视为扫描失败。 */
+    }
+  }
+
+  const previous = await loadMentions(root);
+  const previousFirstSeen = new Map<string, number>();
+  for (const [entryId, records] of Object.entries(previous)) {
+    for (const record of records) {
+      previousFirstSeen.set(
+        `${entryId}:${record.workId}:${record.chapterId}`,
+        record.firstSeenAt
+      );
+    }
+  }
+
+  const trie = createMentionTrie(entries);
+  const next: MentionIndex = {};
+  const report: MentionScanReport = {
+    works: workIds.length,
+    chapters: 0,
+    skippedChapters: 0,
+    entriesMatched: 0,
+    mentionRecords: 0,
+    occurrences: 0,
+  };
+  const now = Date.now();
+
+  for (let index = 0; index < chapterFiles.length; index += 1) {
+    const { workId, name } = chapterFiles[index];
+    const chapterId = name.slice(0, -".json".length);
+    try {
+      const parsed = chapterSchema.safeParse(
+        JSON.parse(
+          await fs2.readText(joinRel("works", workId, "chapters", name))
+        )
+      );
+      if (!parsed.success) {
+        report.skippedChapters += 1;
+      } else {
+        report.chapters += 1;
+        const text = parsed.data.cards.map((card) => card.text).join("\n");
+        const counts = countMentions(text, trie);
+        for (const [entryId, count] of counts) {
+          const firstSeenAt =
+            previousFirstSeen.get(`${entryId}:${workId}:${chapterId}`) ?? now;
+          next[entryId] = [
+            ...(next[entryId] ?? []),
+            { workId, chapterId, count, firstSeenAt },
+          ];
+          report.occurrences += count;
+        }
+      }
+    } catch (err) {
+      report.skippedChapters += 1;
+      log.warn("mention scan: chapter unreadable", workId, chapterId, err);
+    }
+    onProgress?.({
+      done: index + 1,
+      total: chapterFiles.length,
+      workId,
+      chapterId,
+    });
+  }
+
+  report.entriesMatched = Object.keys(next).length;
+  report.mentionRecords = Object.values(next).reduce(
+    (total, records) => total + records.length,
+    0
+  );
+  await saveMentions(root, next);
+  log.info("workspace mentions scanned", report);
+  return { index: next, report };
 }
 
 /** 某个条目出现在哪几章（按记录时间倒序）。 */

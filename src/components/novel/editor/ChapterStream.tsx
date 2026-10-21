@@ -19,6 +19,7 @@ import {
 } from "@/contexts/preferences";
 import { useViewMode } from "@/contexts/viewmode";
 import { createLogger } from "@/lib/logger";
+import { orderedChapterNodes } from "@/lib/outline-sequence";
 import type { Card, Chapter, OutlineNode } from "@/shared/schema";
 import ChapterBody from "./ChapterBody";
 import ChapterHeader from "./ChapterHeader";
@@ -26,6 +27,7 @@ import ComposerInput from "./ComposerInput";
 import HistoryDialog from "./HistoryDialog";
 import SplitDialog from "./SplitDialog";
 import { useChapterController } from "./useChapterController";
+import { useParagraphSnap } from "./useParagraphSnap";
 
 const log = createLogger("ChapterStream");
 
@@ -57,10 +59,7 @@ function readScrollRatio(key: string): number | null {
 
 function writeScrollRatio(key: string, ratio: number): void {
   try {
-    window.localStorage.setItem(
-      key,
-      String(Math.min(1, Math.max(0, ratio)))
-    );
+    window.localStorage.setItem(key, String(Math.min(1, Math.max(0, ratio))));
   } catch {
     /* 存储被禁用或已满时，滚动记忆退化为本次会话内不可用。 */
   }
@@ -100,7 +99,10 @@ export interface ChapterStreamProps {
   landing?: ChapterLanding;
   onWordsChange: (words: number) => void;
   onSaved: (chapter: Chapter) => void;
-  onWordsCommitted: (words: number) => void;
+  onWordsCommitted: (
+    words: number,
+    previousWords?: number
+  ) => void | Promise<void>;
   onRename: () => void;
   onDelete: () => void;
   onOpenCodexEntry: (entryId: string) => void;
@@ -136,19 +138,19 @@ function ChapterTurnCue({
         side === "start" ? "top-3" : "bottom-3",
       ].join(" ")}
     >
-      <div className="animate-in fade-in relative max-w-full min-w-0 overflow-hidden rounded-full border border-border/60 bg-muted/45 text-xs text-muted-foreground shadow-none backdrop-blur-sm duration-150">
+      <div className="animate-in fade-in border-border/60 bg-muted/45 text-muted-foreground relative max-w-full min-w-0 overflow-hidden rounded-full border text-xs shadow-none backdrop-blur-sm duration-150">
         {showProgress ? (
           <span
             aria-hidden="true"
-            className="absolute inset-0 origin-left bg-muted-foreground/15 transition-transform duration-100 ease-out"
+            className="bg-muted-foreground/15 absolute inset-0 origin-left transition-transform duration-100 ease-out"
             style={{ transform: `scaleX(${percent / 100})` }}
           />
         ) : null}
         <div className="relative z-10 flex min-w-0 items-center gap-2.5 px-3 py-1.5">
           {side === "start" ? (
-            <ChevronUp className="icon-sm shrink-0 text-muted-foreground/60" />
+            <ChevronUp className="icon-sm text-muted-foreground/60 shrink-0" />
           ) : (
-            <ChevronDown className="icon-sm shrink-0 text-muted-foreground/60" />
+            <ChevronDown className="icon-sm text-muted-foreground/60 shrink-0" />
           )}
           <span className="min-w-0 truncate">{label}</span>
         </div>
@@ -174,588 +176,596 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
     },
     ref
   ) {
-  const { t } = useI18n();
-  const { chapters, volumes, setReadingChapterId } = useOutline();
-  const { prefs } = usePreferences();
-  const { mode } = useViewMode();
-  const turnEnabled = prefs.chapterTurnEnabled;
-  const showTurnHints = turnEnabled && prefs.chapterTurnHintsEnabled;
-  const turnThreshold = Number.isFinite(prefs.chapterTurnThreshold)
-    ? Math.max(
-        CHAPTER_TURN_THRESHOLD_MIN,
-        Math.min(CHAPTER_TURN_THRESHOLD_MAX, prefs.chapterTurnThreshold)
-      )
-    : DEFAULT_CHAPTER_TURN_THRESHOLD;
-  const c = useChapterController({
-    chapter,
-    root,
-    workId,
-    onWordsChange,
-    onSaved,
-    onWordsCommitted,
-  });
-
-  /*
-   * 阅读顺序：与结构树的视觉顺序一致（游离章在前，再按卷展开）。
-   *
-   * volumes 必须从 context 取，不能从 chapters 里过滤——context 的
-   * chapters 只含 chapter 节点（见 outline.provider 的 filter），
-   * 从它里面找 volume 永远得到空数组，卷内章会整批从序列里消失。
-   */
-  const sequence = useMemo<OutlineNode[]>(() => {
-    const byParent = new Map<string | null, OutlineNode[]>();
-    for (const n of chapters) {
-      const list = byParent.get(n.parentId);
-      if (list) list.push(n);
-      else byParent.set(n.parentId, [n]);
-    }
-    const ordered = [...volumes].sort((a, b) => a.order - b.order);
-    return [
-      ...(byParent.get(null) ?? []),
-      ...ordered.flatMap((v) => byParent.get(v.id) ?? []),
-    ];
-  }, [chapters, volumes]);
-
-  const activeId = chapter.id;
-  const activeIndex = sequence.findIndex((n) => n.id === activeId);
-  /*
-   * 活动章不在序列里时必须当故障处理：那会让正文区一片空白，
-   * 而用户只会以为"我的字丢了"。
-   */
-  if (activeIndex < 0) {
-    log.error("active chapter missing from sequence", {
-      activeId,
-      sequence: sequence.map((n) => n.id),
-      chapters: chapters.length,
+    const { t } = useI18n();
+    const { chapters, volumes, setReadingChapterId } = useOutline();
+    const { prefs } = usePreferences();
+    const { mode } = useViewMode();
+    const turnEnabled = prefs.chapterTurnEnabled;
+    const showTurnHints = turnEnabled && prefs.chapterTurnHintsEnabled;
+    const turnThreshold = Number.isFinite(prefs.chapterTurnThreshold)
+      ? Math.max(
+          CHAPTER_TURN_THRESHOLD_MIN,
+          Math.min(CHAPTER_TURN_THRESHOLD_MAX, prefs.chapterTurnThreshold)
+        )
+      : DEFAULT_CHAPTER_TURN_THRESHOLD;
+    const c = useChapterController({
+      chapter,
+      root,
+      workId,
+      onWordsChange,
+      onSaved,
+      onWordsCommitted,
     });
-  }
 
-  const scrollRef = useRef<HTMLDivElement | null>(null);
-  const [turnProgress, setTurnProgress] = useState<{
-    side: "start" | "end";
-    progress: number;
-  } | null>(null);
-  const [boundaries, setBoundaries] = useState({
-    atTop: false,
-    atBottom: false,
-  });
-  const turnDistanceRef = useRef<{ direction: -1 | 1; distance: number }>({
-    direction: 1,
-    distance: 0,
-  });
-  const turnResetTimer = useRef<number | null>(null);
-  const boundarySyncFrame = useRef<number | null>(null);
-  const scrollSaveTimer = useRef<number | null>(null);
-  const lastScrollRatio = useRef(0);
-  const lastScrollApplyAt = useRef(0);
-  /**
-   * StrictMode 会执行一次“挂载 -> 清理 -> 再挂载”。
-   * 首次清理时正文尚未恢复；若直接 flush，会把记忆位置覆盖成 0。
-   */
-  const scrollReadyRef = useRef(false);
-  const scrollStorageKey = scrollMemoryKey(workId, activeId);
+    /*
+     * 阅读顺序：与结构树的视觉顺序一致（顶层交错，再按卷展开）。
+     *
+     * volumes 必须从 context 取，不能从 chapters 里过滤——context 的
+     * chapters 只含 chapter 节点（见 outline.provider 的 filter），
+     * 从它里面找 volume 永远得到空数组，卷内章会整批从序列里消失。
+     */
+    const sequence = useMemo<OutlineNode[]>(() => {
+      return orderedChapterNodes(chapters, volumes);
+    }, [chapters, volumes]);
 
-  const resetTurnProgress = useCallback(() => {
-    if (turnResetTimer.current !== null) {
-      window.clearTimeout(turnResetTimer.current);
-      turnResetTimer.current = null;
+    const activeId = chapter.id;
+    const activeIndex = sequence.findIndex((n) => n.id === activeId);
+    /*
+     * 活动章不在序列里时必须当故障处理：那会让正文区一片空白，
+     * 而用户只会以为"我的字丢了"。
+     */
+    if (activeIndex < 0) {
+      log.error("active chapter missing from sequence", {
+        activeId,
+        sequence: sequence.map((n) => n.id),
+        chapters: chapters.length,
+      });
     }
-    turnDistanceRef.current = { direction: 1, distance: 0 };
-    setTurnProgress(null);
-  }, []);
 
-  /** 读取真实滚动位置，只在边界状态变化时触发一次渲染。 */
-  const syncBoundaries = useCallback(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const atTop = el.scrollTop <= 1;
-    const atBottom =
-      el.scrollHeight <= el.clientHeight + 1 ||
-      el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-    setBoundaries((prev) =>
-      prev.atTop === atTop && prev.atBottom === atBottom
-        ? prev
-        : { atTop, atBottom }
-    );
-  }, []);
-
-  /** 同一帧内多次 scroll / resize 只计算一次边界。 */
-  const scheduleBoundarySync = useCallback(() => {
-    if (boundarySyncFrame.current !== null) return;
-    boundarySyncFrame.current = requestAnimationFrame(() => {
-      boundarySyncFrame.current = null;
-      syncBoundaries();
+    const scrollRef = useRef<HTMLDivElement | null>(null);
+    const [turnProgress, setTurnProgress] = useState<{
+      side: "start" | "end";
+      progress: number;
+    } | null>(null);
+    const [boundaries, setBoundaries] = useState({
+      atTop: false,
+      atBottom: false,
     });
-  }, [syncBoundaries]);
+    const turnDistanceRef = useRef<{ direction: -1 | 1; distance: number }>({
+      direction: 1,
+      distance: 0,
+    });
+    const turnResetTimer = useRef<number | null>(null);
+    const boundarySyncFrame = useRef<number | null>(null);
+    const scrollSaveTimer = useRef<number | null>(null);
+    const lastScrollRatio = useRef(0);
+    const lastScrollApplyAt = useRef(0);
+    /**
+     * StrictMode 会执行一次“挂载 -> 清理 -> 再挂载”。
+     * 首次清理时正文尚未恢复；若直接 flush，会把记忆位置覆盖成 0。
+     */
+    const scrollReadyRef = useRef(false);
+    const scrollStorageKey = scrollMemoryKey(workId, activeId);
+    const { cancel: cancelParagraphSnap, handleWheel: handleParagraphSnap } =
+      useParagraphSnap(scrollRef, prefs.paragraphSnapEnabled);
 
-  useEffect(
-    () => () => {
+    const resetTurnProgress = useCallback(() => {
       if (turnResetTimer.current !== null) {
         window.clearTimeout(turnResetTimer.current);
+        turnResetTimer.current = null;
       }
-      if (boundarySyncFrame.current !== null) {
-        cancelAnimationFrame(boundarySyncFrame.current);
-      }
-    },
-    []
-  );
+      turnDistanceRef.current = { direction: 1, distance: 0 };
+      setTurnProgress(null);
+    }, []);
 
-  /**
-   * 阅读章上报：滚到哪里，结构树就高亮哪里。
-   *
-   * 单章渲染下这个值几乎恒等于活动章，保留它是为了让"滚动同步高亮"
-   * 这条验收项有真实的实现，而不是靠切章顺手带出来的巧合。
-   */
-  useEffect(() => {
-    setReadingChapterId(activeId);
-  }, [activeId, setReadingChapterId]);
+    /** 读取真实滚动位置，只在边界状态变化时触发一次渲染。 */
+    const syncBoundaries = useCallback(() => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const atTop = el.scrollTop <= 1;
+      const atBottom =
+        el.scrollHeight <= el.clientHeight + 1 ||
+        el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+      setBoundaries((prev) =>
+        prev.atTop === atTop && prev.atBottom === atBottom
+          ? prev
+          : { atTop, atBottom }
+      );
+    }, []);
 
-  /**
-   * 切章后的落点。
-   *
-   * 往下去新一章要从**开头**读——下一章的内容用户还没看过；
-   * 往上去旧一章要落到**末尾**——上滑的手势方向是"往回走"，
-   * 若把它摆在开头，用户看到的是一章全新的内容，位置感和手势相反，
-   * 而且会一路"快速过章"：每次上滑都落在新一章顶部，再滑就又走了。
-   * 落在末尾则衔接自然：上一章的收尾接着上一章的结尾，继续上滑才再退一章。
-   */
-  /*
-   * 落点只在这次挂载时取一次。
-   *
-   * 父级完成导航后会清掉“待落点”标记，后续普通重渲染会把 landing
-   * 改回 remember。若 effect 继续监听 landing，它会把刚落到章尾的页面
-   * 再拉回旧位置；组件本身以 chapter.id 为 key，挂载时捕获一次即可。
-   */
-  const initialLanding = useRef(landingProp);
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const target = initialLanding.current;
-    const targetRatio =
-      target === "end"
-        ? 1
-        : target === "start"
-          ? 0
-          : (readScrollRatio(scrollStorageKey) ?? 0);
-    let disposed = false;
-    let restoring = true;
-    let secondFrame = 0;
-    let applyFrame = 0;
-    let settleTimer = 0;
-    let maxTimer = 0;
-    let applied = false;
-    scrollReadyRef.current = false;
-
-    const stopRestoring = () => {
-      restoring = false;
-      if (settleTimer) window.clearTimeout(settleTimer);
-      if (maxTimer) window.clearTimeout(maxTimer);
-      settleTimer = 0;
-      maxTimer = 0;
-    };
-
-    const scheduleStop = () => {
-      if (settleTimer) window.clearTimeout(settleTimer);
-      settleTimer = window.setTimeout(stopRestoring, 600);
-    };
-
-    const applyLanding = () => {
-      if (disposed || !restoring) return;
-      const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-      const nextScrollTop = maxScroll * targetRatio;
-      if (Math.abs(el.scrollTop - nextScrollTop) > 0.5) {
-        lastScrollApplyAt.current = performance.now();
-        el.scrollTop = nextScrollTop;
-      }
-      lastScrollRatio.current = targetRatio;
-      scrollReadyRef.current = true;
-      if (!applied) {
-        applied = true;
-        log.debug("landing applied", {
-          activeId,
-          target,
-          scrollHeight: el.scrollHeight,
-          scrollTop: el.scrollTop,
-        });
-      }
-      scheduleStop();
-    };
-
-    const queueApply = () => {
-      if (disposed || !restoring || applyFrame) return;
-      applyFrame = window.requestAnimationFrame(() => {
-        applyFrame = 0;
-        applyLanding();
+    /** 同一帧内多次 scroll / resize 只计算一次边界。 */
+    const scheduleBoundarySync = useCallback(() => {
+      if (boundarySyncFrame.current !== null) return;
+      boundarySyncFrame.current = requestAnimationFrame(() => {
+        boundarySyncFrame.current = null;
+        syncBoundaries();
       });
-    };
+    }, [syncBoundaries]);
 
-    const onScroll = () => {
-      if (!scrollReadyRef.current) return;
-      if (performance.now() - lastScrollApplyAt.current > 80) {
-        stopRestoring();
-      }
-    };
-    const onUserIntent = () => {
-      if (!scrollReadyRef.current) {
-        scrollReadyRef.current = true;
-        lastScrollRatio.current = targetRatio;
-      }
-      stopRestoring();
-    };
+    useEffect(
+      () => () => {
+        if (turnResetTimer.current !== null) {
+          window.clearTimeout(turnResetTimer.current);
+        }
+        if (boundarySyncFrame.current !== null) {
+          cancelAnimationFrame(boundarySyncFrame.current);
+        }
+      },
+      []
+    );
 
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => queueApply());
-    observer?.observe(el);
-    if (el.firstElementChild instanceof HTMLElement) {
-      observer?.observe(el.firstElementChild);
-    }
+    /**
+     * 阅读章上报：滚到哪里，结构树就高亮哪里。
+     *
+     * 单章渲染下这个值几乎恒等于活动章，保留它是为了让"滚动同步高亮"
+     * 这条验收项有真实的实现，而不是靠切章顺手带出来的巧合。
+     */
+    useEffect(() => {
+      setReadingChapterId(activeId);
+    }, [activeId, setReadingChapterId]);
 
-    const firstFrame = requestAnimationFrame(() => {
-      secondFrame = requestAnimationFrame(() => {
+    /**
+     * 切章后的落点。
+     *
+     * 往下去新一章要从**开头**读——下一章的内容用户还没看过；
+     * 往上去旧一章要落到**末尾**——上滑的手势方向是"往回走"，
+     * 若把它摆在开头，用户看到的是一章全新的内容，位置感和手势相反，
+     * 而且会一路"快速过章"：每次上滑都落在新一章顶部，再滑就又走了。
+     * 落在末尾则衔接自然：上一章的收尾接着上一章的结尾，继续上滑才再退一章。
+     */
+    /*
+     * 落点只在这次挂载时取一次。
+     *
+     * 父级完成导航后会清掉“待落点”标记，后续普通重渲染会把 landing
+     * 改回 remember。若 effect 继续监听 landing，它会把刚落到章尾的页面
+     * 再拉回旧位置；组件本身以 chapter.id 为 key，挂载时捕获一次即可。
+     */
+    const initialLanding = useRef(landingProp);
+    useEffect(() => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const target = initialLanding.current;
+      const targetRatio =
+        target === "end"
+          ? 1
+          : target === "start"
+            ? 0
+            : (readScrollRatio(scrollStorageKey) ?? 0);
+      let disposed = false;
+      let restoring = true;
+      let secondFrame = 0;
+      let applyFrame = 0;
+      let settleTimer = 0;
+      let maxTimer = 0;
+      let applied = false;
+      scrollReadyRef.current = false;
+
+      const stopRestoring = () => {
+        restoring = false;
+        if (settleTimer) window.clearTimeout(settleTimer);
+        if (maxTimer) window.clearTimeout(maxTimer);
+        settleTimer = 0;
+        maxTimer = 0;
+      };
+
+      const scheduleStop = () => {
+        if (settleTimer) window.clearTimeout(settleTimer);
+        settleTimer = window.setTimeout(stopRestoring, 600);
+      };
+
+      const applyLanding = () => {
+        if (disposed || !restoring) return;
         const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-        if (maxScroll === 0) {
-          queueApply();
+        const nextScrollTop = maxScroll * targetRatio;
+        if (Math.abs(el.scrollTop - nextScrollTop) > 0.5) {
+          lastScrollApplyAt.current = performance.now();
+          el.scrollTop = nextScrollTop;
+        }
+        lastScrollRatio.current = targetRatio;
+        scrollReadyRef.current = true;
+        if (!applied) {
+          applied = true;
+          log.debug("landing applied", {
+            activeId,
+            target,
+            scrollHeight: el.scrollHeight,
+            scrollTop: el.scrollTop,
+          });
+        }
+        scheduleStop();
+      };
+
+      const queueApply = () => {
+        if (disposed || !restoring || applyFrame) return;
+        applyFrame = window.requestAnimationFrame(() => {
+          applyFrame = 0;
+          applyLanding();
+        });
+      };
+
+      const onScroll = () => {
+        if (!scrollReadyRef.current) return;
+        if (performance.now() - lastScrollApplyAt.current > 80) {
+          stopRestoring();
+        }
+      };
+      const onUserIntent = () => {
+        if (!scrollReadyRef.current) {
+          scrollReadyRef.current = true;
+          lastScrollRatio.current = targetRatio;
+        }
+        stopRestoring();
+      };
+
+      const observer =
+        typeof ResizeObserver === "undefined"
+          ? null
+          : new ResizeObserver(() => queueApply());
+      observer?.observe(el);
+      if (el.firstElementChild instanceof HTMLElement) {
+        observer?.observe(el.firstElementChild);
+      }
+
+      const firstFrame = requestAnimationFrame(() => {
+        secondFrame = requestAnimationFrame(() => {
+          const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+          if (maxScroll === 0) {
+            queueApply();
+            return;
+          }
+          applyLanding();
+        });
+      });
+      maxTimer = window.setTimeout(stopRestoring, 3000);
+      void document.fonts?.ready.then(queueApply);
+      el.addEventListener("scroll", onScroll, { passive: true });
+      el.addEventListener("wheel", onUserIntent, { passive: true });
+      el.addEventListener("touchstart", onUserIntent, { passive: true });
+
+      return () => {
+        disposed = true;
+        stopRestoring();
+        observer?.disconnect();
+        el.removeEventListener("scroll", onScroll);
+        el.removeEventListener("wheel", onUserIntent);
+        el.removeEventListener("touchstart", onUserIntent);
+        cancelAnimationFrame(firstFrame);
+        if (secondFrame !== 0) cancelAnimationFrame(secondFrame);
+        if (applyFrame !== 0) cancelAnimationFrame(applyFrame);
+      };
+    }, [activeId, scrollStorageKey]);
+
+    /*
+     * 普通阅读位置的记忆与被动的翻章提示相互独立：
+     * 即使关闭边缘提示，切去素材库再回来也应回到原来的段落附近。
+     * 存归一化比例而不是像素值，窗口尺寸或栏宽变化后仍能落在大致同一行。
+     */
+    useEffect(() => {
+      const el = scrollRef.current;
+      if (!el) return;
+
+      const flush = () => {
+        if (!scrollReadyRef.current) return;
+        const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
+        const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
+        lastScrollRatio.current = Math.min(1, Math.max(0, ratio));
+        writeScrollRatio(scrollStorageKey, lastScrollRatio.current);
+      };
+
+      const onScroll = () => {
+        if (!scrollReadyRef.current) return;
+        if (scrollSaveTimer.current !== null) {
+          window.clearTimeout(scrollSaveTimer.current);
+        }
+        scrollSaveTimer.current = window.setTimeout(() => {
+          scrollSaveTimer.current = null;
+          flush();
+        }, SCROLL_SAVE_DELAY_MS);
+      };
+
+      el.addEventListener("scroll", onScroll, { passive: true });
+      window.addEventListener("pagehide", flush);
+      document.addEventListener("visibilitychange", flush);
+      return () => {
+        el.removeEventListener("scroll", onScroll);
+        window.removeEventListener("pagehide", flush);
+        document.removeEventListener("visibilitychange", flush);
+        if (scrollSaveTimer.current !== null) {
+          window.clearTimeout(scrollSaveTimer.current);
+          scrollSaveTimer.current = null;
+        }
+        flush();
+      };
+    }, [scrollStorageKey]);
+
+    const hasPrevious = activeIndex > 0;
+    const hasNext = activeIndex >= 0 && activeIndex < sequence.length - 1;
+    const trackEdgeHints = showTurnHints && activeIndex >= 0;
+
+    /*
+     * 边缘提示只在“总开关 + 提示开关”都开启时监听滚动。
+     *
+     * scroll 用 passive 监听，并通过 rAF 合并到每帧一次；ResizeObserver
+     * 负责正文变长、窗口缩放等不产生 scroll 事件的布局变化。任一开关关闭
+     * 或组件卸载时，监听、观察器与尚未执行的帧都会完整回收。
+     */
+    useEffect(() => {
+      if (!trackEdgeHints) {
+        if (boundarySyncFrame.current !== null) {
+          cancelAnimationFrame(boundarySyncFrame.current);
+          boundarySyncFrame.current = null;
+        }
+        setBoundaries((prev) =>
+          !prev.atTop && !prev.atBottom
+            ? prev
+            : { atTop: false, atBottom: false }
+        );
+        return;
+      }
+
+      const el = scrollRef.current;
+      if (!el) return;
+      const onScroll = () => scheduleBoundarySync();
+      el.addEventListener("scroll", onScroll, { passive: true });
+
+      const observer =
+        typeof ResizeObserver === "undefined"
+          ? null
+          : new ResizeObserver(() => scheduleBoundarySync());
+      observer?.observe(el);
+      if (el.firstElementChild instanceof HTMLElement) {
+        observer?.observe(el.firstElementChild);
+      }
+      scheduleBoundarySync();
+
+      return () => {
+        el.removeEventListener("scroll", onScroll);
+        observer?.disconnect();
+        if (boundarySyncFrame.current !== null) {
+          cancelAnimationFrame(boundarySyncFrame.current);
+          boundarySyncFrame.current = null;
+        }
+      };
+    }, [trackEdgeHints, scheduleBoundarySync]);
+
+    useEffect(() => {
+      if (!showTurnHints) resetTurnProgress();
+    }, [showTurnHints, resetTurnProgress]);
+
+    /** 守护期间忽略 scroll：把 focus 引起的回弹挡掉，真人手势不受影响。 */
+
+    /**
+     * 边界翻章。
+     *
+     * 只在"已经贴在本章边界 + 仍朝边界外滑"时翻页。贴边状态每次 wheel
+     * 都重新判定，所以不存在"隔了半屏还生效"的问题；而 wheel 本身
+     * 要求一个持续手势，一次轻扫不会误翻。
+     *
+     * 本章还没滚到头时不拦默认行为；贴边且确有目标章时才接管滚轮，
+     * 让累计进度和最终翻章都由同一个手势决定。
+     */
+    const handleWheel = useCallback(
+      (e: React.WheelEvent<HTMLDivElement>) => {
+        const el = scrollRef.current;
+        if (!el || activeIndex < 0 || e.deltaY === 0) return;
+        const snapOutcome = handleParagraphSnap(e);
+        if (snapOutcome.kind === "handled") {
+          resetTurnProgress();
           return;
         }
-        applyLanding();
-      });
-    });
-    maxTimer = window.setTimeout(stopRestoring, 3000);
-    void document.fonts?.ready.then(queueApply);
-    el.addEventListener("scroll", onScroll, { passive: true });
-    el.addEventListener("wheel", onUserIntent, { passive: true });
-    el.addEventListener("touchstart", onUserIntent, { passive: true });
-
-    return () => {
-      disposed = true;
-      stopRestoring();
-      observer?.disconnect();
-      el.removeEventListener("scroll", onScroll);
-      el.removeEventListener("wheel", onUserIntent);
-      el.removeEventListener("touchstart", onUserIntent);
-      cancelAnimationFrame(firstFrame);
-      if (secondFrame !== 0) cancelAnimationFrame(secondFrame);
-      if (applyFrame !== 0) cancelAnimationFrame(applyFrame);
-    };
-  }, [activeId, scrollStorageKey]);
-
-  /*
-   * 普通阅读位置的记忆与被动的翻章提示相互独立：
-   * 即使关闭边缘提示，切去素材库再回来也应回到原来的段落附近。
-   * 存归一化比例而不是像素值，窗口尺寸或栏宽变化后仍能落在大致同一行。
-   */
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-
-    const flush = () => {
-      if (!scrollReadyRef.current) return;
-      const maxScroll = Math.max(0, el.scrollHeight - el.clientHeight);
-      const ratio = maxScroll > 0 ? el.scrollTop / maxScroll : 0;
-      lastScrollRatio.current = Math.min(1, Math.max(0, ratio));
-      writeScrollRatio(scrollStorageKey, lastScrollRatio.current);
-    };
-
-    const onScroll = () => {
-      if (!scrollReadyRef.current) return;
-      if (scrollSaveTimer.current !== null) {
-        window.clearTimeout(scrollSaveTimer.current);
-      }
-      scrollSaveTimer.current = window.setTimeout(() => {
-        scrollSaveTimer.current = null;
-        flush();
-      }, SCROLL_SAVE_DELAY_MS);
-    };
-
-    el.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("pagehide", flush);
-    document.addEventListener("visibilitychange", flush);
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      window.removeEventListener("pagehide", flush);
-      document.removeEventListener("visibilitychange", flush);
-      if (scrollSaveTimer.current !== null) {
-        window.clearTimeout(scrollSaveTimer.current);
-        scrollSaveTimer.current = null;
-      }
-      flush();
-    };
-  }, [scrollStorageKey]);
-
-  const hasPrevious = activeIndex > 0;
-  const hasNext = activeIndex >= 0 && activeIndex < sequence.length - 1;
-  const trackEdgeHints = showTurnHints && activeIndex >= 0;
-
-  /*
-   * 边缘提示只在“总开关 + 提示开关”都开启时监听滚动。
-   *
-   * scroll 用 passive 监听，并通过 rAF 合并到每帧一次；ResizeObserver
-   * 负责正文变长、窗口缩放等不产生 scroll 事件的布局变化。任一开关关闭
-   * 或组件卸载时，监听、观察器与尚未执行的帧都会完整回收。
-   */
-  useEffect(() => {
-    if (!trackEdgeHints) {
-      if (boundarySyncFrame.current !== null) {
-        cancelAnimationFrame(boundarySyncFrame.current);
-        boundarySyncFrame.current = null;
-      }
-      setBoundaries((prev) =>
-        !prev.atTop && !prev.atBottom
-          ? prev
-          : { atTop: false, atBottom: false }
-      );
-      return;
-    }
-
-    const el = scrollRef.current;
-    if (!el) return;
-    const onScroll = () => scheduleBoundarySync();
-    el.addEventListener("scroll", onScroll, { passive: true });
-
-    const observer =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => scheduleBoundarySync());
-    observer?.observe(el);
-    if (el.firstElementChild instanceof HTMLElement) {
-      observer?.observe(el.firstElementChild);
-    }
-    scheduleBoundarySync();
-
-    return () => {
-      el.removeEventListener("scroll", onScroll);
-      observer?.disconnect();
-      if (boundarySyncFrame.current !== null) {
-        cancelAnimationFrame(boundarySyncFrame.current);
-        boundarySyncFrame.current = null;
-      }
-    };
-  }, [trackEdgeHints, scheduleBoundarySync]);
-
-  useEffect(() => {
-    if (!showTurnHints) resetTurnProgress();
-  }, [showTurnHints, resetTurnProgress]);
-
-  /** 守护期间忽略 scroll：把 focus 引起的回弹挡掉，真人手势不受影响。 */
-
-  /**
-   * 边界翻章。
-   *
-   * 只在"已经贴在本章边界 + 仍朝边界外滑"时翻页。贴边状态每次 wheel
-   * 都重新判定，所以不存在"隔了半屏还生效"的问题；而 wheel 本身
-   * 要求一个持续手势，一次轻扫不会误翻。
-   *
-   * 本章还没滚到头时不拦默认行为；贴边且确有目标章时才接管滚轮，
-   * 让累计进度和最终翻章都由同一个手势决定。
-   */
-  const handleWheel = useCallback(
-    (e: React.WheelEvent<HTMLDivElement>) => {
-      const el = scrollRef.current;
-      if (!el || activeIndex < 0 || e.deltaY === 0) return;
-      if (!turnEnabled) {
-        resetTurnProgress();
-        return;
-      }
-
-      const atTop = el.scrollTop <= 0;
-      /*
-       * 留 1px 容差：浏览器在缩放、亚像素布局下极少恰好等于 0，
-       * 用 <= 0 判断会把"差 0.4px 到头"当成没贴边，翻页时灵时不灵。
-       */
-      const atBottom =
-        el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
-      const direction = e.deltaY > 0 ? 1 : -1;
-      const canTurn =
-        direction > 0
-          ? atBottom && activeIndex < sequence.length - 1
-          : atTop && activeIndex > 0;
-
-      if (!canTurn) {
-        resetTurnProgress();
-        return;
-      }
-
-      e.preventDefault();
-      const unit =
-        e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1;
-      const step = Math.min(
-        Math.abs(e.deltaY * unit),
-        MAX_TURN_STEP
-      );
-      const previous = turnDistanceRef.current;
-      const distance =
-        previous.direction === direction ? previous.distance + step : step;
-      const side = direction > 0 ? "end" : "start";
-      const progress = Math.min(1, distance / turnThreshold);
-
-      turnDistanceRef.current = { direction, distance };
-      if (showTurnHints) setTurnProgress({ side, progress });
-      if (turnResetTimer.current !== null) {
-        window.clearTimeout(turnResetTimer.current);
-      }
-
-      if (distance >= turnThreshold) {
-        turnResetTimer.current = null;
-        turnDistanceRef.current = { direction, distance: 0 };
-        if (direction > 0) {
-          const nextId = sequence[activeIndex + 1].id;
-          log.debug("wheel advances to next chapter", { nextId, activeIndex });
-          onSelectChapter(nextId, "start");
-        } else {
-          const prevId = sequence[activeIndex - 1].id;
-          log.debug("wheel returns to previous chapter", { prevId, activeIndex });
-          onSelectChapter(prevId, "end");
+        if (!turnEnabled) {
+          resetTurnProgress();
+          return;
         }
-        return;
-      }
 
-      turnResetTimer.current = window.setTimeout(() => {
-        turnResetTimer.current = null;
-        turnDistanceRef.current = { direction, distance: 0 };
-        if (showTurnHints) setTurnProgress(null);
-      }, TURN_IDLE_MS);
-    },
-    [
-      activeIndex,
-      sequence,
-      onSelectChapter,
-      resetTurnProgress,
-      showTurnHints,
-      turnEnabled,
-      turnThreshold,
-    ]
-  );
+        const atTop =
+          snapOutcome.kind === "boundary"
+            ? snapOutcome.side === "start"
+            : el.scrollTop <= 0;
+        /*
+         * 留 1px 容差：浏览器在缩放、亚像素布局下极少恰好等于 0，
+         * 用 <= 0 判断会把"差 0.4px 到头"当成没贴边，翻页时灵时不灵。
+         */
+        const atBottom =
+          snapOutcome.kind === "boundary"
+            ? snapOutcome.side === "end"
+            : el.scrollTop + el.clientHeight >= el.scrollHeight - 1;
+        const direction = e.deltaY > 0 ? 1 : -1;
+        const canTurn =
+          direction > 0
+            ? atBottom && activeIndex < sequence.length - 1
+            : atTop && activeIndex > 0;
 
-  const appendText = useCallback(
-    (text: string) => {
-      const composer = c.composerRef.current;
-      const value = text.trim();
-      if (!composer || !value) return false;
-      composer.load(`${composer.read()}${value}`, "end");
-      return true;
-    },
-    [c.composerRef]
-  );
+        if (!canTurn) {
+          resetTurnProgress();
+          return;
+        }
 
-  const appendCards = useCallback(
-    (cards: Card[]) => c.importCards(cards),
-    [c]
-  );
+        e.preventDefault();
+        const unit =
+          e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? el.clientHeight : 1;
+        const step = Math.min(Math.abs(e.deltaY * unit), MAX_TURN_STEP);
+        const previous = turnDistanceRef.current;
+        const distance =
+          previous.direction === direction ? previous.distance + step : step;
+        const side = direction > 0 ? "end" : "start";
+        const progress = Math.min(1, distance / turnThreshold);
 
-  useImperativeHandle(
-    ref,
-    () => ({ appendText, appendCards }),
-    [appendText, appendCards]
-  );
+        turnDistanceRef.current = { direction, distance };
+        if (showTurnHints) setTurnProgress({ side, progress });
+        if (turnResetTimer.current !== null) {
+          window.clearTimeout(turnResetTimer.current);
+        }
 
-  const showPreviousCue = trackEdgeHints && boundaries.atTop;
-  const showNextCue = trackEdgeHints && boundaries.atBottom;
-  const previousProgress =
-    hasPrevious && turnProgress?.side === "start" ? turnProgress.progress : 0;
-  const nextProgress =
-    hasNext && turnProgress?.side === "end" ? turnProgress.progress : 0;
+        if (distance >= turnThreshold) {
+          turnResetTimer.current = null;
+          turnDistanceRef.current = { direction, distance: 0 };
+          if (direction > 0) {
+            const nextId = sequence[activeIndex + 1].id;
+            log.debug("wheel advances to next chapter", {
+              nextId,
+              activeIndex,
+            });
+            onSelectChapter(nextId, "start");
+          } else {
+            const prevId = sequence[activeIndex - 1].id;
+            log.debug("wheel returns to previous chapter", {
+              prevId,
+              activeIndex,
+            });
+            onSelectChapter(prevId, "end");
+          }
+          return;
+        }
 
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <SplitDialog
-        open={c.splitTarget !== null}
-        cardIndex={c.splitTarget ?? -1}
-        text={c.splitTarget !== null ? (c.cards[c.splitTarget]?.text ?? "") : ""}
-        onOpenChange={(o) => {
-          if (!o) c.setSplitTarget(null);
-        }}
-        onConfirm={c.confirmSplit}
-      />
-      <HistoryDialog
-        open={c.historyOpen}
-        chapter={c.chapterWithHistory}
-        onOpenChange={c.setHistoryOpen}
-        onRollback={(i) => void c.rollback(i)}
-        onDelete={(i) => void c.dropVersion(i)}
-      />
+        turnResetTimer.current = window.setTimeout(() => {
+          turnResetTimer.current = null;
+          turnDistanceRef.current = { direction, distance: 0 };
+          if (showTurnHints) setTurnProgress(null);
+        }, TURN_IDLE_MS);
+      },
+      [
+        activeIndex,
+        sequence,
+        onSelectChapter,
+        handleParagraphSnap,
+        resetTurnProgress,
+        showTurnHints,
+        turnEnabled,
+        turnThreshold,
+      ]
+    );
 
-      {/* 固定顶部：永远描述当前正在写的那一章。 */}
-      <ChapterHeader
-        title={chapter.title}
-        words={c.words}
-        saveState={c.saveState}
-        hasLastMerge={Boolean(c.lastMerge)}
-        onRename={onRename}
-        onDelete={onDelete}
-        onSave={c.saveNow}
-        onOpenHistory={() => c.setHistoryOpen(true)}
-        onUndoMerge={c.undoMerge}
-      />
+    const appendText = useCallback(
+      (text: string) => {
+        const composer = c.composerRef.current;
+        const value = text.trim();
+        if (!composer || !value) return false;
+        composer.load(`${composer.read()}${value}`, "end");
+        return true;
+      },
+      [c.composerRef]
+    );
 
-      {/*
-       * 唯一的滚动区，里面始终只有一章。
-       *
-       * 用原生滚动而非 ScrollArea：正文要跟随滚动条"读位置"，
-       * 自绘滚动容器会把滚动交给内部 viewport，联动（如跟随光标、滚动到底）
-       * 都得改成对内部元素操作，得不偿失。样式由 scrollbar-app 统一。
-       *
-       * wheel 走 onWheel 而不是 addEventListener：React 的合成事件
-       * 在 passive 监听上拿不到 preventDefault，但 JSX 上声明的
-       * onWheel 默认是非 passive 的，边界翻章才拦得住。
-       */}
-      <div className="relative min-h-0 flex-1">
-        <div
-          ref={scrollRef}
-          onWheel={turnEnabled ? handleWheel : undefined}
-          className="scrollbar-app h-full overflow-y-auto px-6 py-12"
-        >
-          <ChapterBody
-            cards={c.cards}
-            editingIndex={c.editingIndex}
-            dimOthers={mode === "focus" && c.editingIndex >= 0}
-            onEdit={c.handleCardClick}
-            onMoveUp={c.moveUp}
-            onMoveDown={c.moveDown}
-            onSplit={c.splitCard}
-            onMergeDown={c.mergeDown}
-            onDelete={c.deleteCard}
-            onOpenCodexEntry={onOpenCodexEntry}
-            listRef={c.listRef}
-          />
+    const appendCards = useCallback(
+      (cards: Card[]) => c.importCards(cards),
+      [c]
+    );
+
+    useImperativeHandle(ref, () => ({ appendText, appendCards }), [
+      appendText,
+      appendCards,
+    ]);
+
+    const showPreviousCue = trackEdgeHints && boundaries.atTop;
+    const showNextCue = trackEdgeHints && boundaries.atBottom;
+    const previousProgress =
+      hasPrevious && turnProgress?.side === "start" ? turnProgress.progress : 0;
+    const nextProgress =
+      hasNext && turnProgress?.side === "end" ? turnProgress.progress : 0;
+
+    return (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <SplitDialog
+          open={c.splitTarget !== null}
+          cardIndex={c.splitTarget ?? -1}
+          text={
+            c.splitTarget !== null ? (c.cards[c.splitTarget]?.text ?? "") : ""
+          }
+          onOpenChange={(o) => {
+            if (!o) c.setSplitTarget(null);
+          }}
+          onConfirm={c.confirmSplit}
+        />
+        <HistoryDialog
+          open={c.historyOpen}
+          chapter={c.chapterWithHistory}
+          onOpenChange={c.setHistoryOpen}
+          onRollback={(i) => void c.rollback(i)}
+          onDelete={(i) => void c.dropVersion(i)}
+        />
+
+        {/* 固定顶部：永远描述当前正在写的那一章。 */}
+        <ChapterHeader
+          title={chapter.title}
+          words={c.words}
+          saveState={c.saveState}
+          hasLastMerge={Boolean(c.lastMerge)}
+          onRename={onRename}
+          onDelete={onDelete}
+          onSave={c.saveNow}
+          onOpenHistory={() => c.setHistoryOpen(true)}
+          onUndoMerge={c.undoMerge}
+        />
+
+        {/*
+         * 唯一的滚动区，里面始终只有一章。
+         *
+         * 用原生滚动而非 ScrollArea：正文要跟随滚动条"读位置"，
+         * 自绘滚动容器会把滚动交给内部 viewport，联动（如跟随光标、滚动到底）
+         * 都得改成对内部元素操作，得不偿失。样式由 scrollbar-app 统一。
+         *
+         * wheel 走 onWheel 而不是 addEventListener：React 的合成事件
+         * 在 passive 监听上拿不到 preventDefault，但 JSX 上声明的
+         * onWheel 默认是非 passive 的，边界翻章才拦得住。
+         */}
+        <div className="relative min-h-0 flex-1">
+          <div
+            ref={scrollRef}
+            onWheel={handleWheel}
+            onPointerDown={cancelParagraphSnap}
+            className="scrollbar-app h-full overflow-y-auto px-6 py-12"
+          >
+            <ChapterBody
+              cards={c.cards}
+              editingIndex={c.editingIndex}
+              dimOthers={mode === "focus" && c.editingIndex >= 0}
+              onEdit={c.handleCardClick}
+              onMoveUp={c.moveUp}
+              onMoveDown={c.moveDown}
+              onSplit={c.splitCard}
+              onMergeDown={c.mergeDown}
+              onDelete={c.deleteCard}
+              onOpenCodexEntry={onOpenCodexEntry}
+              listRef={c.listRef}
+            />
+          </div>
+
+          {showPreviousCue ? (
+            <ChapterTurnCue
+              side="start"
+              progress={previousProgress}
+              label={t(
+                hasPrevious ? "Editor.scroll.previous" : "Editor.scroll.first"
+              )}
+              showProgress={hasPrevious}
+            />
+          ) : null}
+          {showNextCue ? (
+            <ChapterTurnCue
+              side="end"
+              progress={nextProgress}
+              label={t(hasNext ? "Editor.scroll.next" : "Editor.scroll.last")}
+              showProgress={hasNext}
+            />
+          ) : null}
         </div>
 
-        {showPreviousCue ? (
-          <ChapterTurnCue
-            side="start"
-            progress={previousProgress}
-            label={t(
-              hasPrevious ? "Editor.scroll.previous" : "Editor.scroll.first"
-            )}
-            showProgress={hasPrevious}
+        {/* 固定底部：输入框永远属于当前这一章。 */}
+        <div className="shrink-0">
+          <ComposerInput
+            ref={c.composerRef}
+            editingIndex={c.editingIndex}
+            onSubmit={c.handleSubmit}
+            onReturnToNew={c.returnToNew}
+            pendingDraft={c.draft}
+            onRestoreDraft={c.restoreDraft}
+            onDiscardDraft={c.discardDraft}
+            onTextChange={c.handleComposerTextChange}
           />
-        ) : null}
-        {showNextCue ? (
-          <ChapterTurnCue
-            side="end"
-            progress={nextProgress}
-            label={t(hasNext ? "Editor.scroll.next" : "Editor.scroll.last")}
-            showProgress={hasNext}
-          />
-        ) : null}
+        </div>
       </div>
-
-      {/* 固定底部：输入框永远属于当前这一章。 */}
-      <div className="shrink-0">
-        <ComposerInput
-          ref={c.composerRef}
-          editingIndex={c.editingIndex}
-          onSubmit={c.handleSubmit}
-          onReturnToNew={c.returnToNew}
-          pendingDraft={c.draft}
-          onRestoreDraft={c.restoreDraft}
-          onDiscardDraft={c.discardDraft}
-          onTextChange={c.handleComposerTextChange}
-        />
-      </div>
-    </div>
-  );
+    );
   }
 );
 

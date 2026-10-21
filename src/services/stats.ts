@@ -30,9 +30,16 @@ export async function loadStats(root: string, workId: string): Promise<Stats> {
 }
 
 /** 持久化统计。 */
-export async function saveStats(root: string, workId: string, stats: Stats): Promise<void> {
+export async function saveStats(
+  root: string,
+  workId: string,
+  stats: Stats
+): Promise<void> {
   const fs2 = createFs(root);
-  await fs2.writeText(statsFile(workId), JSON.stringify(statsSchema.parse(stats), null, 2));
+  await fs2.writeText(
+    statsFile(workId),
+    JSON.stringify(statsSchema.parse(stats), null, 2)
+  );
 }
 
 /** 今天的日期串（本地时区 YYYY-MM-DD）。 */
@@ -47,13 +54,13 @@ export function todayKey(d = new Date()): string {
  * 记录一次写作：更新今日字数、连续天数、作品字数。
  * @param delta 本次新增字数（可为负，表示删除）。
  */
-export async function recordWrite(
+async function recordWriteWithStats(
   root: string,
   workId: string,
+  stats: Stats,
   workWords: number,
   delta: number
 ): Promise<Stats> {
-  const stats = await loadStats(root, workId);
   const key = todayKey();
 
   const prevStreak = stats.streak;
@@ -68,7 +75,10 @@ export async function recordWrite(
   const next: Stats = {
     ...stats,
     totalWords: Math.max(0, stats.totalWords + delta),
-    todayWords: prevDate === key ? Math.max(0, stats.todayWords + delta) : Math.max(0, delta),
+    todayWords:
+      prevDate === key
+        ? Math.max(0, stats.todayWords + delta)
+        : Math.max(0, delta),
     streak,
     lastWriteDate: key,
     /* 负的日增量允许存在（回改旧文），但不把曲线拉到 0 以下。 */
@@ -80,6 +90,21 @@ export async function recordWrite(
   };
   await saveStats(root, workId, next);
   return next;
+}
+
+export async function recordWrite(
+  root: string,
+  workId: string,
+  workWords: number,
+  delta: number
+): Promise<Stats> {
+  return recordWriteWithStats(
+    root,
+    workId,
+    await loadStats(root, workId),
+    workWords,
+    delta
+  );
 }
 
 /**
@@ -102,7 +127,32 @@ export async function recordWorkWords(
   const stats = await loadStats(root, workId);
   const previous = stats.workWords[workId];
   const delta = previous === undefined ? 0 : workWords - previous;
-  return recordWrite(root, workId, workWords, delta);
+  return recordWriteWithStats(root, workId, stats, workWords, delta);
+}
+
+/**
+ * 按当前章的保存前后字数差增量更新作品统计。
+ *
+ * 编辑页每次保存都全量扫描整部作品会让百章作品卡顿数秒。保存链路已经
+ * 知道当前章改动前后的字数，因此只需在 stats 的上一版作品字数上加减。
+ * stats 里没有该作品的基线时返回 null，调用方应退回一次全量校准，
+ * 避免把整部作品的存量误记成当天新增。
+ */
+export async function adjustWorkWords(
+  root: string,
+  workId: string,
+  delta: number
+): Promise<Stats | null> {
+  const stats = await loadStats(root, workId);
+  const previous = stats.workWords[workId];
+  if (previous === undefined) return null;
+  return recordWriteWithStats(
+    root,
+    workId,
+    stats,
+    Math.max(0, previous + delta),
+    delta
+  );
 }
 
 /** 合并提及索引（提交卡片时调用）。 */
@@ -115,5 +165,11 @@ export function mergeMentions(
   const chapters = entry.chapters.includes(chapterId)
     ? entry.chapters
     : [...entry.chapters, chapterId];
-  return { ...base, [codexId]: { chapters, count: entry.count + (entry.chapters.includes(chapterId) ? 0 : 1) } };
+  return {
+    ...base,
+    [codexId]: {
+      chapters,
+      count: entry.count + (entry.chapters.includes(chapterId) ? 0 : 1),
+    },
+  };
 }

@@ -166,6 +166,28 @@
   }
 }
 
+@keyframes long-task-progress-indeterminate {
+  0% {
+    transform: translateX(-110%);
+  }
+  100% {
+    transform: translateX(310%);
+  }
+}
+
+.long-task-progress-indeterminate {
+  width: 34%;
+  animation: long-task-progress-indeterminate 1.2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .long-task-progress-indeterminate {
+    width: 100%;
+    animation: none;
+    opacity: 0.65;
+  }
+}
+
 /*
  * 滚动条统一样式。
  *

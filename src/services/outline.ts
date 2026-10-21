@@ -23,7 +23,10 @@ export function emptyOutline(): Outline {
 }
 
 /** 读取结构树；文件不存在或解析失败回退到空树。 */
-export async function loadOutline(root: string, workId: string): Promise<Outline> {
+export async function loadOutline(
+  root: string,
+  workId: string
+): Promise<Outline> {
   const fs2 = createFs(root);
   const file = outlineFile(workId);
   if (!(await fs2.exists(file))) return emptyOutline();
@@ -36,7 +39,11 @@ export async function loadOutline(root: string, workId: string): Promise<Outline
 }
 
 /** 持久化结构树。 */
-export async function saveOutline(root: string, workId: string, outline: Outline): Promise<void> {
+export async function saveOutline(
+  root: string,
+  workId: string,
+  outline: Outline
+): Promise<void> {
   const fs2 = createFs(root);
   const validated = outlineSchema.parse(outline);
   await fs2.writeText(outlineFile(workId), JSON.stringify(validated, null, 2));
@@ -67,6 +74,7 @@ export async function addNode(
     /** 建章时顺手带上状态与摘要，省得建完再去详情里改。 */
     status?: "draft" | "revising" | "final";
     synopsis?: string;
+    preface?: string;
   }
 ): Promise<Outline> {
   const outline = await loadOutline(root, workId);
@@ -79,6 +87,7 @@ export async function addNode(
     order: nextOrder(outline, input.parentId),
     status: input.status,
     synopsis: input.synopsis,
+    preface: input.preface,
     createdAt: now,
     updatedAt: now,
   });
@@ -95,13 +104,22 @@ export async function updateNode(
   patch: Partial<
     Pick<
       OutlineNode,
-      "title" | "status" | "synopsis" | "plotSummary" | "collapsed" | "order" | "parentId"
+      | "title"
+      | "status"
+      | "synopsis"
+      | "preface"
+      | "plotSummary"
+      | "collapsed"
+      | "order"
+      | "parentId"
     >
   >
 ): Promise<Outline> {
   const outline = await loadOutline(root, workId);
   const nodes = outline.nodes.map((n) =>
-    n.id === nodeId ? outlineNodeSchema.parse({ ...n, ...patch, updatedAt: Date.now() }) : n
+    n.id === nodeId
+      ? outlineNodeSchema.parse({ ...n, ...patch, updatedAt: Date.now() })
+      : n
   );
   const next = { nodes };
   await saveOutline(root, workId, next);
@@ -109,7 +127,11 @@ export async function updateNode(
 }
 
 /** 删除节点及其所有后代（级联）。 */
-export async function removeNode(root: string, workId: string, nodeId: string): Promise<Outline> {
+export async function removeNode(
+  root: string,
+  workId: string,
+  nodeId: string
+): Promise<Outline> {
   const outline = await loadOutline(root, workId);
   const toRemove = new Set<string>([nodeId]);
   let changed = true;
@@ -158,7 +180,10 @@ export async function moveNode(
   let cursor = targetParentId;
   while (cursor) {
     if (cursor === nodeId) {
-      log.warn("move rejected: target inside subtree", { nodeId, targetParentId });
+      log.warn("move rejected: target inside subtree", {
+        nodeId,
+        targetParentId,
+      });
       return outline;
     }
     cursor = outline.nodes.find((n) => n.id === cursor)?.parentId ?? null;
@@ -282,20 +307,29 @@ export async function reconcileChapterIds(
   if (!broken.length) return outline;
 
   const claimed = new Set(
-    outline.nodes.filter((n) => n.type === "chapter" && diskIds.has(n.id)).map((n) => n.id)
+    outline.nodes
+      .filter((n) => n.type === "chapter" && diskIds.has(n.id))
+      .map((n) => n.id)
   );
   /** 盘面上无人认领的章文件。 */
-  const free = onDisk.map((f) => f.slice(0, -".json".length)).filter((id) => !claimed.has(id));
+  const free = onDisk
+    .map((f) => f.slice(0, -".json".length))
+    .filter((id) => !claimed.has(id));
   if (!free.length) return outline;
 
   /** 读出每个游离章文件的创建时间与标题。 */
   const infos = new Map<string, { createdAt: number; title: string }>();
   for (const id of free) {
     try {
-      const raw = await fs2.readText(joinRel("works", workId, "chapters", id + ".json"));
+      const raw = await fs2.readText(
+        joinRel("works", workId, "chapters", id + ".json")
+      );
       const parsed = chapterSchema.safeParse(JSON.parse(raw));
       if (parsed.success) {
-        infos.set(id, { createdAt: parsed.data.createdAt, title: parsed.data.title });
+        infos.set(id, {
+          createdAt: parsed.data.createdAt,
+          title: parsed.data.title,
+        });
       }
     } catch (err) {
       log.warn("reconcile: chapter unreadable", id, err);
@@ -350,6 +384,9 @@ export async function reconcileChapterIds(
     }),
   };
   await saveOutline(root, workId, next);
-  log.warn("reconciled chapter ids", { workId, mapping: Object.fromEntries(mapping) });
+  log.warn("reconciled chapter ids", {
+    workId,
+    mapping: Object.fromEntries(mapping),
+  });
   return next;
 }

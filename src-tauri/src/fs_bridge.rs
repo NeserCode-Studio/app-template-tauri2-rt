@@ -19,6 +19,16 @@ pub struct FileStat {
     pub modified: i64,
 }
 
+/// 工作区迁移结果。
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceMigrationResult {
+    /// 迁移后的新工作区根目录。
+    pub root: String,
+    /// 旧目录是否已成功移除。跨磁盘复制后若旧目录被占用，这里会是 false。
+    pub source_removed: bool,
+}
+
 /// 将相对路径解析为工作区内的绝对路径，并做越界 / 软链校验。
 ///
 /// `rel` 必须是相对路径（以工作区根为基准）。返回的绝对路径保证
@@ -55,9 +65,8 @@ fn resolve_inside(root: &Path, rel: &str) -> Result<PathBuf, String> {
     // 与调用方传入的 `Z:\...` 直接比较必然不相等。因此必须先把 root 也
     // canonicalize 成同一种形式，再比较前缀，否则所有路径都会被误判为越界。
     // 统一以 canonicalize 后的 root 为基准判断是否越界。
-    let real_root = normalize(
-        &fs::canonicalize(root).map_err(|e| format!("resolve root failed: {}", e))?,
-    );
+    let real_root =
+        normalize(&fs::canonicalize(root).map_err(|e| format!("resolve root failed: {}", e))?);
     if let Ok(real) = fs::canonicalize(&checked) {
         let real = normalize(&real);
         if !real.starts_with(&real_root) {
@@ -97,6 +106,53 @@ fn normalize(path: &Path) -> PathBuf {
         return PathBuf::from(rest);
     }
     path.to_path_buf()
+}
+
+/// 校验并规范化工作区根目录。
+///
+/// 删除与迁移都是不可轻率执行的操作，因此只接受真实存在、带
+/// `novels-yes.json` 的目录，并拒绝磁盘根目录。
+fn validated_workspace_root(root: &str) -> Result<PathBuf, String> {
+    if root.trim().is_empty() {
+        return Err("workspace root is empty".into());
+    }
+    let raw = PathBuf::from(root);
+    let root = normalize(
+        &fs::canonicalize(&raw)
+            .map_err(|e| format!("resolve workspace root failed: {} ({})", root, e))?,
+    );
+    if root.parent().is_none() || root.file_name().is_none() {
+        return Err("refusing to operate on a filesystem root".into());
+    }
+    if !root.join("novels-yes.json").is_file() {
+        return Err(format!(
+            "refusing to operate on a non-workspace directory: {}",
+            root.display()
+        ));
+    }
+    Ok(root)
+}
+
+/// 递归复制工作区内容。符号链接会被拒绝，避免通过工作区内的链接越界复制。
+fn copy_dir_contents(src: &Path, dst: &Path) -> io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let target = dst.join(entry.file_name());
+        if file_type.is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("symlink is not supported: {}", entry.path().display()),
+            ));
+        }
+        if file_type.is_dir() {
+            copy_dir_contents(&entry.path(), &target)?;
+        } else if file_type.is_file() {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -181,6 +237,78 @@ pub fn fs_stat(root: String, rel: String) -> Result<FileStat, String> {
         is_dir: meta.is_dir(),
         size: meta.len(),
         modified,
+    })
+}
+
+/// 永久删除整个工作区目录。
+///
+/// 工作区删除与作品 / 章节删除语义不同：作品删除有回收站，而工作区本身
+/// 被删除后连回收站也一并消失，因此这里不提供恢复路径。
+#[tauri::command]
+pub fn workspace_delete(root: String) -> Result<(), String> {
+    let root = validated_workspace_root(&root)?;
+    fs::remove_dir_all(&root)
+        .map_err(|e| format!("workspace delete failed: {} ({})", root.display(), e))
+}
+
+/// 把整个工作区迁移到用户选择的目标目录。
+///
+/// 目标必须是空目录。优先使用同盘 rename 保留文件时间；跨盘时退化为
+/// 递归复制，复制完整后才删除旧目录。若旧目录删除失败，仍返回新根路径，
+/// 由前端提示用户手动清理残留副本。
+#[tauri::command]
+pub fn workspace_migrate(root: String, target: String) -> Result<WorkspaceMigrationResult, String> {
+    let source = validated_workspace_root(&root)?;
+    let target = normalize(
+        &fs::canonicalize(&target)
+            .map_err(|e| format!("resolve migration target failed: {} ({})", target, e))?,
+    );
+    if !target.is_dir() {
+        return Err(format!(
+            "migration target is not a directory: {}",
+            target.display()
+        ));
+    }
+    if source == target {
+        return Err("migration target must differ from the current workspace".into());
+    }
+    if target.starts_with(&source) || source.starts_with(&target) {
+        return Err("migration target must not contain or be inside the current workspace".into());
+    }
+    if fs::read_dir(&target)
+        .map_err(|e| format!("read migration target failed: {} ({})", target.display(), e))?
+        .next()
+        .is_some()
+    {
+        return Err("migration target must be empty".into());
+    }
+
+    /*
+     * 同一磁盘上先尝试直接改名：这是最快且保留全部文件元数据的路径。
+     * 目录选择器只会返回已存在目录，所以先移除这个空目标目录。
+     */
+    let rename_result = fs::remove_dir(&target).and_then(|_| fs::rename(&source, &target));
+    if rename_result.is_ok() {
+        return Ok(WorkspaceMigrationResult {
+            root: target.display().to_string(),
+            source_removed: true,
+        });
+    }
+
+    copy_dir_contents(&source, &target).map_err(|e| {
+        let _ = fs::remove_dir_all(&target);
+        format!(
+            "workspace copy failed: {} -> {} ({})",
+            source.display(),
+            target.display(),
+            e
+        )
+    })?;
+
+    let source_removed = fs::remove_dir_all(&source).is_ok();
+    Ok(WorkspaceMigrationResult {
+        root: target.display().to_string(),
+        source_removed,
     })
 }
 

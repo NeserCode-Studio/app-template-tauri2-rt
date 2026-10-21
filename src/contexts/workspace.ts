@@ -7,6 +7,8 @@
 
 import { createContext, useContext } from "react";
 
+import type { WorkspaceMigrationResult } from "@/services/workspace";
+
 export interface WorkspaceContextValue {
   /** 工作区根绝对路径，未选择时为 null。 */
   root: string | null;
@@ -20,13 +22,19 @@ export interface WorkspaceContextValue {
   open: (root: string) => void;
   /** 关闭工作区（清空 root，保留最近列表）。 */
   close: () => void;
+  /** 从最近列表移除一条记录；若它是当前工作区也一并关闭。 */
+  removeRecent: (path: string) => void;
   /** 弹出目录选择框并打开；用户取消返回 null。 */
   pick: () => Promise<string | null>;
   /** 只弹出目录选择框，不切换当前工作区。 */
   pickPath: () => Promise<string | null>;
+  /** 选择迁移目标目录（必须是空目录）。 */
+  pickMigrationTarget: () => Promise<string | null>;
+  /** 迁移当前工作区到目标目录并切换过去。 */
+  migrate: (target: string) => Promise<WorkspaceMigrationResult>;
   /** 在系统文件管理器中打开工作区目录。 */
   reveal: () => Promise<void>;
-  /** 把整个工作区移入回收站，并关闭当前工作区。 */
+  /** 永久删除整个工作区，并关闭当前工作区。 */
   deleteWorkspace: () => Promise<void>;
 }
 
@@ -37,14 +45,20 @@ export const WorkspaceContext = createContext<WorkspaceContextValue>({
   isOpen: false,
   open: () => {},
   close: () => {},
+  removeRecent: () => {},
   pick: async () => null,
   pickPath: async () => null,
+  pickMigrationTarget: async () => null,
+  migrate: async () => {
+    throw new Error("workspace migration is unavailable");
+  },
   reveal: async () => {},
   deleteWorkspace: async () => {},
 });
 
 export function useWorkspace(): WorkspaceContextValue {
   const ctx = useContext(WorkspaceContext);
-  if (!ctx) throw new Error("useWorkspace must be used within WorkspaceProvider");
+  if (!ctx)
+    throw new Error("useWorkspace must be used within WorkspaceProvider");
   return ctx;
 }

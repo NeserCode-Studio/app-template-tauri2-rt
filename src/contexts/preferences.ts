@@ -10,7 +10,8 @@ import { createContext, useContext } from "react";
 export type UiFont = "system-sans" | "system-serif" | "system-mono";
 
 /** 正文字体（文章排版）。 */
-export type ArticleFont = "songti" | "source-han-serif" | "lxgw-wenkai" | "system-sans";
+export type ArticleFont =
+  "songti" | "source-han-serif" | "lxgw-wenkai" | "system-sans";
 
 /** 贴边翻章所需累计滚动距离（像素）。 */
 export const CHAPTER_TURN_THRESHOLD_MIN = 120;
@@ -46,6 +47,8 @@ export interface WritingPreferences {
   searchHotkeyEnabled: boolean;
   /** 是否允许在章节边缘继续滚动时翻章。 */
   chapterTurnEnabled: boolean;
+  /** 正文滚轮是否按自然段做惯性吸附。 */
+  paragraphSnapEnabled: boolean;
   /** 是否在章节顶部或底部持续显示翻章提示。 */
   chapterTurnHintsEnabled: boolean;
   /** 贴边继续滚动多少距离后翻章。 */
@@ -64,6 +67,7 @@ export const DEFAULT_PREFERENCES: WritingPreferences = {
   highlightMentions: true,
   searchHotkeyEnabled: true,
   chapterTurnEnabled: true,
+  paragraphSnapEnabled: true,
   chapterTurnHintsEnabled: true,
   chapterTurnThreshold: DEFAULT_CHAPTER_TURN_THRESHOLD,
 };
@@ -83,6 +87,7 @@ export const PreferencesContext = createContext<PreferencesContextValue>({
 
 export function usePreferences(): PreferencesContextValue {
   const ctx = useContext(PreferencesContext);
-  if (!ctx) throw new Error("usePreferences must be used within PreferencesProvider");
+  if (!ctx)
+    throw new Error("usePreferences must be used within PreferencesProvider");
   return ctx;
 }

@@ -29,9 +29,11 @@ import {
   removeRelation as removeRelationRecord,
   saveEntry,
   saveTypes,
+  scanWorkspaceMentions,
   syncChapterMentions as syncMentions,
   type Entry,
   type MentionIndex,
+  type MentionScanProgress,
   type Relation,
   type TypeConfig,
 } from "@/services/codex";
@@ -315,8 +317,38 @@ export function CodexProvider({ children }: { children: ReactNode }) {
   const syncChapterMentions = useCallback(
     async (workId: string, chapterId: string, text: string) => {
       if (!root) return;
-      await syncMentions(root, workId, chapterId, text, entriesRef.current);
-      setMentions(await loadMentions(root));
+      const startedAt = performance.now();
+      const next = await syncMentions(
+        root,
+        workId,
+        chapterId,
+        text,
+        entriesRef.current
+      );
+      const syncedAt = performance.now();
+      setMentions(next);
+      log.info("chapter mentions refreshed", {
+        workId,
+        chapterId,
+        textChars: text.length,
+        entries: Object.keys(next).length,
+        syncMs: Math.round(syncedAt - startedAt),
+        totalMs: Math.round(performance.now() - startedAt),
+      });
+    },
+    [root]
+  );
+
+  const scanAllMentions = useCallback(
+    async (onProgress?: (progress: MentionScanProgress) => void) => {
+      if (!root) return null;
+      const result = await scanWorkspaceMentions(
+        root,
+        entriesRef.current,
+        onProgress
+      );
+      setMentions(result.index);
+      return result.report;
     },
     [root]
   );
@@ -370,6 +402,7 @@ export function CodexProvider({ children }: { children: ReactNode }) {
       addRelation,
       removeRelation,
       syncChapterMentions,
+      scanAllMentions,
     }),
     [
       entries,
@@ -391,6 +424,7 @@ export function CodexProvider({ children }: { children: ReactNode }) {
       addRelation,
       removeRelation,
       syncChapterMentions,
+      scanAllMentions,
     ]
   );
 

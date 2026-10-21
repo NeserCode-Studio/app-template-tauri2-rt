@@ -88,6 +88,7 @@ export interface OutlinePaneProps {
     patch: {
       status?: "draft" | "revising" | "final";
       synopsis?: string;
+      preface?: string;
       plotSummary?: string;
     }
   ) => Promise<void>;
@@ -121,7 +122,8 @@ function parseDroppableId(id: string): DropRef | null {
     const raw = id.slice(DROP_PREFIX.length);
     return { kind: "into", parentId: raw === ROOT ? null : raw };
   }
-  if (id.startsWith(NODE_PREFIX)) return { kind: "before", nodeId: id.slice(NODE_PREFIX.length) };
+  if (id.startsWith(NODE_PREFIX))
+    return { kind: "before", nodeId: id.slice(NODE_PREFIX.length) };
   return null;
 }
 
@@ -149,7 +151,9 @@ const collisionDetection: CollisionDetection = (args) => {
     return id.startsWith(DROP_PREFIX);
   });
   const pointerHits = pointerWithin({ ...args, droppableContainers: hits });
-  const nodeHits = pointerHits.filter((hit) => String(hit.id).startsWith(NODE_PREFIX));
+  const nodeHits = pointerHits.filter((hit) =>
+    String(hit.id).startsWith(NODE_PREFIX)
+  );
   if (nodeHits.length) return nodeHits;
   if (pointerHits.length) return pointerHits;
   return closestCenter({ ...args, droppableContainers: hits });
@@ -241,7 +245,9 @@ function SortableChapter({
         registerEl(el);
       }}
       style={{
-        transform: sessionActive ? CSS.Transform.toString(transform) : undefined,
+        transform: sessionActive
+          ? CSS.Transform.toString(transform)
+          : undefined,
         /*
          * 松手后不留 transition：位移已随真实顺序一起消失，若还保留过渡动画，
          * 卡片会从落点再滑回旧槽位，看上去像"顺序没换"。
@@ -257,7 +263,7 @@ function SortableChapter({
           "hover:bg-accent hover:text-accent-foreground",
           selected
             ? "chapter-row-selected bg-accent/60 text-accent-foreground"
-            : "border-transparent text-muted-foreground",
+            : "text-muted-foreground border-transparent",
           isDragging || dragging ? "opacity-40" : "",
         ].join(" ")}
         onClick={onSelect}
@@ -266,8 +272,8 @@ function SortableChapter({
         {...attributes}
       >
         <div className="flex items-center gap-1.5">
-          {/* 序号：只在卷内计数，方便对照「第几章」。 */}
-          <span className="shrink-0 text-[10px] text-muted-foreground/50 tabular-nums">
+          {/* 卷内按章序计数；顶层游离章沿用顶层序列位置。 */}
+          <span className="text-muted-foreground/50 shrink-0 text-[10px] tabular-nums">
             {String(index + 1).padStart(2, "0")}
           </span>
           <span className="truncate text-sm font-medium">{node.title}</span>
@@ -281,17 +287,19 @@ function SortableChapter({
               title={statusLabel}
             />
           ) : null}
-          <span className="ml-auto shrink-0 text-[10px] text-muted-foreground/60 tabular-nums">
+          <span className="text-muted-foreground/60 ml-auto shrink-0 text-[10px] tabular-nums">
             {wordsLabel}
           </span>
         </div>
         {node.synopsis ? (
-          <span className="line-clamp-1 text-[11px] text-muted-foreground/70">
+          <span className="text-muted-foreground/70 line-clamp-1 text-[11px]">
             {node.synopsis}
           </span>
         ) : null}
         {metaLabel ? (
-          <span className="text-[10px] text-muted-foreground/50">{metaLabel}</span>
+          <span className="text-muted-foreground/50 text-[10px]">
+            {metaLabel}
+          </span>
         ) : null}
         {/*
          * 拖拽只挂在把手，不挂整行。
@@ -308,7 +316,7 @@ function SortableChapter({
           {...listeners}
           aria-label={dragLabel}
           title={dragLabel}
-          className="absolute left-0 top-0 flex h-full w-6 cursor-grab items-center justify-center text-muted-foreground/30 opacity-0 transition-opacity hover:text-muted-foreground/70 focus-visible:opacity-100 group-hover:opacity-100 active:cursor-grabbing"
+          className="text-muted-foreground/30 hover:text-muted-foreground/70 absolute top-0 left-0 flex h-full w-6 cursor-grab items-center justify-center opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 active:cursor-grabbing"
         >
           <GripVertical className="size-3" />
         </span>
@@ -316,7 +324,7 @@ function SortableChapter({
           type="button"
           aria-label={editMetaLabel}
           title={editMetaLabel}
-          className="absolute right-1.5 bottom-1 flex size-5 items-center justify-center rounded text-muted-foreground/50 opacity-0 transition-opacity hover:bg-accent hover:text-accent-foreground focus-visible:opacity-100 group-hover:opacity-100"
+          className="text-muted-foreground/50 hover:bg-accent hover:text-accent-foreground absolute right-1.5 bottom-1 flex size-5 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
           onClick={(e) => {
             e.stopPropagation();
             onEditMeta();
@@ -348,11 +356,14 @@ function VolumeRow({
   openCurrentLabel,
   addChapterLabel,
   deleteVolumeLabel,
+  editMetaLabel,
+  prefaceLabel,
   dragLabel,
   registerEl,
   onToggle,
   onOpenCurrentChapter,
   onAddChapter,
+  onEditMeta,
   onDelete,
 }: {
   volume: OutlineNode;
@@ -366,11 +377,14 @@ function VolumeRow({
   openCurrentLabel: string;
   addChapterLabel: string;
   deleteVolumeLabel: string;
+  editMetaLabel: string;
+  prefaceLabel: string;
   dragLabel: string;
   registerEl: (el: HTMLElement | null) => void;
   onToggle: () => void;
   onOpenCurrentChapter: () => void;
   onAddChapter: () => void;
+  onEditMeta: () => void;
   onDelete: () => void;
 }) {
   const {
@@ -386,6 +400,8 @@ function VolumeRow({
   });
 
   const containsSelectedChapter = isCollapsed && currentChapterTitle !== null;
+  const preface = volume.preface.trim();
+  const hasPreface = Boolean(preface);
   const row = (
     <div
       ref={(el) => {
@@ -393,11 +409,13 @@ function VolumeRow({
         registerEl(el);
       }}
       style={{
-        transform: sessionActive ? CSS.Transform.toString(transform) : undefined,
+        transform: sessionActive
+          ? CSS.Transform.toString(transform)
+          : undefined,
         transition: sessionActive ? transition : undefined,
       }}
       className={[
-        "group relative flex items-center gap-1 rounded-md border px-2 py-1 transition-colors hover:bg-accent/40",
+        "group hover:bg-accent/40 relative flex items-center gap-1 rounded-md border px-2 py-1 transition-colors",
         containsSelectedChapter
           ? "chapter-row-selected bg-accent/25 text-accent-foreground before:pointer-events-none before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-r-full before:bg-[var(--editor-selection-border)]"
           : "border-transparent",
@@ -409,7 +427,7 @@ function VolumeRow({
         {...listeners}
         aria-label={dragLabel}
         title={dragLabel}
-        className="flex size-4 shrink-0 cursor-grab items-center justify-center text-muted-foreground/30 transition-colors hover:text-muted-foreground/70 focus-visible:text-muted-foreground/70 active:cursor-grabbing"
+        className="text-muted-foreground/30 hover:text-muted-foreground/70 focus-visible:text-muted-foreground/70 flex size-4 shrink-0 cursor-grab items-center justify-center transition-colors active:cursor-grabbing"
       >
         <GripVertical className="size-3" />
       </span>
@@ -427,7 +445,18 @@ function VolumeRow({
             isCollapsed ? "" : "rotate-90",
           ].join(" ")}
         />
-        <span className="min-w-0 truncate text-sm font-medium">{volume.title}</span>
+        <span className="min-w-0 truncate text-sm font-medium">
+          {volume.title}
+        </span>
+        {hasPreface ? (
+          <span
+            className="text-muted-foreground/60 flex shrink-0 items-center"
+            aria-label={prefaceLabel}
+            title={prefaceLabel}
+          >
+            <FileText className="size-3" />
+          </span>
+        ) : null}
         {/*
          * 章数跟在名称后面而不是推到最右：名称与数量是同一条信息
          * （"这卷有多少章"），推到右侧会被两端的操作按钮挤远，
@@ -446,8 +475,17 @@ function VolumeRow({
       </button>
       <button
         type="button"
+        onClick={onEditMeta}
+        className="text-muted-foreground hover:bg-accent hover:text-accent-foreground flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100"
+        aria-label={editMetaLabel}
+        title={editMetaLabel}
+      >
+        <Settings2 className="icon-sm" />
+      </button>
+      <button
+        type="button"
         onClick={onAddChapter}
-        className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-accent hover:text-accent-foreground"
+        className="text-muted-foreground hover:bg-accent hover:text-accent-foreground flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100"
         aria-label={addChapterLabel}
       >
         <Plus className="icon-sm" />
@@ -456,7 +494,7 @@ function VolumeRow({
       <button
         type="button"
         onClick={onDelete}
-        className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:bg-destructive/10 hover:text-destructive"
+        className="text-muted-foreground hover:bg-destructive/10 hover:text-destructive flex size-5 shrink-0 items-center justify-center rounded opacity-0 transition-opacity group-hover:opacity-100"
         aria-label={deleteVolumeLabel}
         title={deleteVolumeLabel}
       >
@@ -465,7 +503,9 @@ function VolumeRow({
     </div>
   );
 
-  if (!containsSelectedChapter || !currentChapterTitle) return row;
+  if (!hasPreface && (!containsSelectedChapter || !currentChapterTitle)) {
+    return row;
+  }
 
   return (
     <HoverCard openDelay={450} closeDelay={140}>
@@ -475,26 +515,50 @@ function VolumeRow({
         align="start"
         sideOffset={8}
         collisionPadding={12}
-        className="w-60 p-2.5"
+        className="w-72 p-3"
       >
-        <div className="flex min-w-0 items-center gap-2">
-          <span className="shrink-0 rounded-sm border border-[var(--editor-selection-border)] bg-accent px-1.5 py-0.5 text-[10px] font-medium text-accent-foreground">
-            {currentLabel}
-          </span>
-          <span className="min-w-0 truncate text-sm font-medium">
-            {currentChapterTitle}
-          </span>
-        </div>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          className="mt-2 h-7 w-full justify-between px-2 text-xs"
-          onClick={onOpenCurrentChapter}
-        >
-          {openCurrentLabel}
-          <ArrowUpRight className="icon-sm" />
-        </Button>
+        {hasPreface ? (
+          <div className="flex min-w-0 flex-col gap-2">
+            <div className="flex min-w-0 items-center gap-2">
+              <FileText className="text-muted-foreground size-3.5 shrink-0" />
+              <span className="text-muted-foreground shrink-0 text-[10px]">
+                {prefaceLabel}
+              </span>
+              <span className="min-w-0 truncate text-sm font-medium">
+                {volume.title}
+              </span>
+            </div>
+            <p className="scrollbar-app text-muted-foreground max-h-56 overflow-y-auto text-xs leading-relaxed break-words whitespace-pre-wrap">
+              {preface}
+            </p>
+          </div>
+        ) : null}
+        {containsSelectedChapter && currentChapterTitle ? (
+          <div
+            className={
+              hasPreface ? "mt-3 border-t pt-3" : "flex flex-col gap-2"
+            }
+          >
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="bg-accent text-accent-foreground shrink-0 rounded-sm border border-[var(--editor-selection-border)] px-1.5 py-0.5 text-[10px] font-medium">
+                {currentLabel}
+              </span>
+              <span className="min-w-0 truncate text-sm font-medium">
+                {currentChapterTitle}
+              </span>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="mt-2 h-7 w-full justify-between px-2 text-xs"
+              onClick={onOpenCurrentChapter}
+            >
+              {openCurrentLabel}
+              <ArrowUpRight className="icon-sm" />
+            </Button>
+          </div>
+        ) : null}
       </HoverCardContent>
     </HoverCard>
   );
@@ -518,7 +582,7 @@ function DropZone({
       ref={setNodeRef}
       className={[
         className ?? "",
-        dragging && isOver ? "rounded-md bg-accent/50 ring-1 ring-primary" : "",
+        dragging && isOver ? "bg-accent/50 ring-primary rounded-md ring-1" : "",
       ].join(" ")}
     >
       {children}
@@ -549,12 +613,7 @@ export default function OutlinePane({
    * 与编辑目标本来就会短暂分叉。高亮要回答的是"我在读哪一章"，
    * 用编辑目标会让用户觉得点错了地方。
    */
-  const {
-    chapters,
-    volumes,
-    chapterMetas,
-    readingChapterId,
-  } = useOutline();
+  const { chapters, volumes, chapterMetas, readingChapterId } = useOutline();
   const { currentWorkId } = useLibrary();
 
   /** 新建卷对话框。 */
@@ -563,7 +622,7 @@ export default function OutlinePane({
     Record<string, Record<string, boolean>>
   >(VOLUME_COLLAPSE_KEY, { defaultValue: {} });
   const collapsed = currentWorkId
-    ? collapsedByWork?.[currentWorkId] ?? {}
+    ? (collapsedByWork?.[currentWorkId] ?? {})
     : {};
   const setCollapsed = useCallback(
     (next: SetStateAction<Record<string, boolean>>) => {
@@ -571,8 +630,7 @@ export default function OutlinePane({
       setCollapsedByWork((previous) => {
         const all = previous ?? {};
         const current = all[currentWorkId] ?? {};
-        const value =
-          typeof next === "function" ? next(current) : next;
+        const value = typeof next === "function" ? next(current) : next;
         if (value === current) return all;
         return { ...all, [currentWorkId]: value };
       });
@@ -580,7 +638,9 @@ export default function OutlinePane({
     [currentWorkId, setCollapsedByWork]
   );
   /** 新建章节对话框的目标父级，undefined 表示未打开。 */
-  const [chapterDialogIn, setChapterDialogIn] = useState<string | null | undefined>(undefined);
+  const [chapterDialogIn, setChapterDialogIn] = useState<
+    string | null | undefined
+  >(undefined);
   /** 章节详情对话框的目标节点。 */
   const [metaTarget, setMetaTarget] = useState<OutlineNode | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -621,7 +681,8 @@ export default function OutlinePane({
     return selected?.type === "chapter" ? selected : null;
   }, [nodeById, readingChapterId]);
   const allVolumesCollapsed =
-    volumes.length > 0 && volumes.every((volume) => Boolean(collapsed[volume.id]));
+    volumes.length > 0 &&
+    volumes.every((volume) => Boolean(collapsed[volume.id]));
   /** 章节点 DOM：位置法算插入下标时要读实时矩形。 */
   const nodeEls = useRef(new Map<string, HTMLElement>());
   /**
@@ -643,7 +704,9 @@ export default function OutlinePane({
     centers: Map<string, number>;
   } | null>(null);
 
-  const activeNode = activeId ? nodeById.get(activeId.slice(NODE_PREFIX.length)) ?? null : null;
+  const activeNode = activeId
+    ? (nodeById.get(activeId.slice(NODE_PREFIX.length)) ?? null)
+    : null;
   /** 命中具体节点时抑制容器高亮，避免同时亮两处。 */
   const overRef = overId ? parseDroppableId(overId) : null;
 
@@ -665,8 +728,11 @@ export default function OutlinePane({
     (node: OutlineNode): OutlineNode[] => {
       const sameParent =
         node.parentId === null
-          ? [...volumes.filter((v) => v.parentId === null), ...(chaptersByVolume.get(null) ?? [])]
-          : chaptersByVolume.get(node.parentId) ?? [];
+          ? [
+              ...volumes.filter((v) => v.parentId === null),
+              ...(chaptersByVolume.get(null) ?? []),
+            ]
+          : (chaptersByVolume.get(node.parentId) ?? []);
       return [...sameParent].sort((a, b) => a.order - b.order);
     },
     [volumes, chaptersByVolume]
@@ -681,9 +747,12 @@ export default function OutlinePane({
    */
   const siblingsOfTarget = useCallback(
     (targetParentId: string | null): OutlineNode[] => {
-      if (targetParentId !== null) return chaptersByVolume.get(targetParentId) ?? [];
-      return [...volumes.filter((v) => v.parentId === null), ...(chaptersByVolume.get(null) ?? [])]
-        .sort((a, b) => a.order - b.order);
+      if (targetParentId !== null)
+        return chaptersByVolume.get(targetParentId) ?? [];
+      return [
+        ...volumes.filter((v) => v.parentId === null),
+        ...(chaptersByVolume.get(null) ?? []),
+      ].sort((a, b) => a.order - b.order);
     },
     [volumes, chaptersByVolume]
   );
@@ -699,7 +768,9 @@ export default function OutlinePane({
      * 指针起点取自激活事件本身；拿不到（非指针传感器）才退回卡片中心。
      * `active.rect.current.initial` 在 dragStart 时机为 null，不能依赖。
      */
-    const activeEl = nodeEls.current.get(String(e.active.id).slice(NODE_PREFIX.length));
+    const activeEl = nodeEls.current.get(
+      String(e.active.id).slice(NODE_PREFIX.length)
+    );
     const rect = activeEl ? activeEl.getBoundingClientRect() : null;
     const pointerY =
       e.activatorEvent instanceof PointerEvent
@@ -755,14 +826,19 @@ export default function OutlinePane({
      */
     const ref = parseDroppableId(over);
     const landedParent =
-      ref?.kind === "into" ? ref.parentId : ref ? nodeById.get(ref.nodeId)?.parentId ?? source.parentId : source.parentId;
+      ref?.kind === "into"
+        ? ref.parentId
+        : ref
+          ? (nodeById.get(ref.nodeId)?.parentId ?? source.parentId)
+          : source.parentId;
 
     /*
      * 卷不参与"拖进别的卷"这种玩法：章节能降级到卷里，卷再往下钻
      * 没有对应的界面与语义（卷里不会再有卷）。这里把卷的目标父级钉死
      * 在顶层，只允许它与其它顶层卷换位。
      */
-    const targetParentId = source.type === "volume" ? source.parentId : landedParent;
+    const targetParentId =
+      source.type === "volume" ? source.parentId : landedParent;
 
     if (!nodeEls.current.has(nodeId)) {
       log.warn("[outline-dnd] abort: element not registered", {
@@ -815,18 +891,29 @@ export default function OutlinePane({
     });
     /* 落回原位就不写盘，避免无意义的 outline 落盘与全树刷新。 */
     if (index < 0 || index > without.length) {
-      log.warn("[outline-dnd] abort: index out of range", { index, len: without.length });
+      log.warn("[outline-dnd] abort: index out of range", {
+        index,
+        len: without.length,
+      });
       return;
     }
     const before = siblings.map((n) => n.id).join(",");
-    const after = [...without.slice(0, index), { id: nodeId }, ...without.slice(index)]
+    const after = [
+      ...without.slice(0, index),
+      { id: nodeId },
+      ...without.slice(index),
+    ]
       .map((n) => n.id)
       .join(",");
     if (before === after) {
       log.warn("[outline-dnd] abort: order unchanged", { index });
       return;
     }
-    log.debug("[outline-dnd] committing move", { nodeId, targetParentId, index });
+    log.debug("[outline-dnd] committing move", {
+      nodeId,
+      targetParentId,
+      index,
+    });
     void onMoveNode(nodeId, targetParentId, index);
     layoutAtStart.current = null;
   }
@@ -853,7 +940,21 @@ export default function OutlinePane({
     );
   }, [volumes, chaptersByVolume]);
 
-  function renderChapterList(parentId: string | null, explicit?: OutlineNode[]) {
+  /** 游离章单独编号；卷不是章，不能占用顶层章序。 */
+  const topLevelChapterIndexes = useMemo(() => {
+    const indexes = new Map<string, number>();
+    let next = 0;
+    for (const item of topLevel) {
+      if (item.type === "chapter") indexes.set(item.id, next++);
+    }
+    return indexes;
+  }, [topLevel]);
+
+  function renderChapterList(
+    parentId: string | null,
+    explicit?: OutlineNode[],
+    startIndex = 0
+  ) {
     const list = explicit ?? chaptersByVolume.get(parentId) ?? [];
     if (!list.length) return null;
     return (
@@ -863,33 +964,33 @@ export default function OutlinePane({
       >
         <ul className="mt-0.5 flex flex-col gap-0.5">
           {list.map((node, i) => (
-              <SortableChapter
-                key={node.id}
-                node={node}
-                index={i}
-                selected={readingChapterId === node.id}
-                dragging={activeId === NODE_PREFIX + node.id}
-                sessionActive={Boolean(activeId)}
-                onSelect={() => onSelectChapter(node.id)}
-                onEditMeta={() => setMetaTarget(node)}
-                registerEl={(el) => {
-                  if (el) nodeEls.current.set(node.id, el);
-                  else nodeEls.current.delete(node.id);
-                }}
-                editMetaLabel={t("Editor.node.editMeta")}
-                dragLabel={t("Editor.node.dragHint")}
-                statusLabel={t(`Editor.node.status.${node.status}`)}
-                wordsLabel={
-                  chapterMetas[node.id]
-                    ? `${chapterMetas[node.id].words} ${t("Editor.chapter.words")}`
-                    : ""
-                }
-                metaLabel={
-                  chapterMetas[node.id]
-                    ? relativeTime(chapterMetas[node.id].updatedAt, now)
-                    : ""
-                }
-              />
+            <SortableChapter
+              key={node.id}
+              node={node}
+              index={startIndex + i}
+              selected={readingChapterId === node.id}
+              dragging={activeId === NODE_PREFIX + node.id}
+              sessionActive={Boolean(activeId)}
+              onSelect={() => onSelectChapter(node.id)}
+              onEditMeta={() => setMetaTarget(node)}
+              registerEl={(el) => {
+                if (el) nodeEls.current.set(node.id, el);
+                else nodeEls.current.delete(node.id);
+              }}
+              editMetaLabel={t("Editor.node.editMeta")}
+              dragLabel={t("Editor.node.dragHint")}
+              statusLabel={t(`Editor.node.status.${node.status}`)}
+              wordsLabel={
+                chapterMetas[node.id]
+                  ? `${chapterMetas[node.id].words} ${t("Editor.chapter.words")}`
+                  : ""
+              }
+              metaLabel={
+                chapterMetas[node.id]
+                  ? relativeTime(chapterMetas[node.id].updatedAt, now)
+                  : ""
+              }
+            />
           ))}
         </ul>
       </SortableContext>
@@ -929,7 +1030,10 @@ export default function OutlinePane({
           metaTarget && chapterMetas[metaTarget.id]
             ? {
                 words: `${chapterMetas[metaTarget.id].words} ${t("Editor.chapter.words")}`,
-                updated: relativeTime(chapterMetas[metaTarget.id].updatedAt, now),
+                updated: relativeTime(
+                  chapterMetas[metaTarget.id].updatedAt,
+                  now
+                ),
               }
             : undefined
         }
@@ -968,7 +1072,9 @@ export default function OutlinePane({
               setCollapsed(
                 allVolumesCollapsed
                   ? {}
-                  : Object.fromEntries(volumes.map((volume) => [volume.id, true]))
+                  : Object.fromEntries(
+                      volumes.map((volume) => [volume.id, true])
+                    )
               )
             }
           >
@@ -1014,137 +1120,165 @@ export default function OutlinePane({
       >
         {/* 树体 */}
         <div className="scrollbar-app min-h-0 flex-1 overflow-y-auto">
-        <div className="w-full px-2 pb-3">
-          {/*
-           * 顶层按 order 交错渲染：卷与游离章是同一条序列上的元素。
-           * SortableContext 只覆盖顶层（卷 + 游离章），卷内的章由
-           * renderChapterList 自己的 SortableContext 接管，互不干扰。
-           */}
-          <SortableContext
-            items={topLevel.map((n) => NODE_PREFIX + n.id)}
-            strategy={verticalListSortingStrategy}
-          >
-          {topLevel.map((item, i) => {
-            /*
-             * 分割线：卷之前、以及"卷后面紧跟的游离章"之前画。
-             * 顶层首项不画——顶边紧贴面板上沿，画线像被裁掉半截的边框。
-             * 游离章之间不画线，它们是连续的一张列表。
-             */
-            const prev = topLevel[i - 1];
-            const needsDivider =
-              i > 0 &&
-              (item.type === "volume" || (item.type === "chapter" && prev?.type === "volume"));
-
-            if (item.type === "chapter") {
-              return (
-                <div key={item.id}>
-                  {needsDivider ? (
-                    <div className="mx-2 my-2 h-px bg-border/70" aria-hidden="true" />
-                  ) : null}
-                  <div className="mt-0.5 flex flex-col gap-0.5">
-                    {renderChapterList(null, [item])}
-                  </div>
-                </div>
-              );
-            }
-
-            const volume = item;
-            const isCollapsed = collapsed[volume.id];
-            return (
-              <DropZone
-                key={volume.id}
-                parentId={volume.id}
-                dragging={Boolean(activeId) && overRef?.kind !== "before"}
-                className="mb-1"
-              >
-                {needsDivider ? (
-                  <div className="mx-2 my-2 h-px bg-border/70" aria-hidden="true" />
-                ) : null}
-                <VolumeRow
-                  volume={volume}
-                  isCollapsed={isCollapsed}
-                  currentChapterTitle={
-                    selectedChapter?.parentId === volume.id
-                      ? selectedChapter.title
-                      : null
-                  }
-                  sessionActive={Boolean(activeId)}
-                  dragging={activeId === NODE_PREFIX + volume.id}
-                  chapterCount={(chaptersByVolume.get(volume.id) ?? []).length}
-                  currentLabel={t("Editor.side.current")}
-                  openCurrentLabel={t("Editor.volume.openCurrent")}
-                  addChapterLabel={t("Editor.side.addChapter")}
-                  deleteVolumeLabel={t("Editor.volume.delete")}
-                  dragLabel={t("Editor.node.dragHint")}
-                  registerEl={(el) => {
-                    if (el) nodeEls.current.set(volume.id, el);
-                    else nodeEls.current.delete(volume.id);
-                  }}
-                  onToggle={() =>
-                    setCollapsed((prev) => ({ ...prev, [volume.id]: !prev[volume.id] }))
-                  }
-                  onOpenCurrentChapter={() => {
-                    setCollapsed((prev) => ({ ...prev, [volume.id]: false }));
-                    if (selectedChapter) {
-                      onSelectChapter(selectedChapter.id);
-                    }
-                  }}
-                  onAddChapter={() => setChapterDialogIn(volume.id)}
-                  onDelete={() => onDeleteVolume(volume.id)}
-                />
-
-                {!isCollapsed ? renderChapterList(volume.id) : null}
-              </DropZone>
-            );
-          })}
-          </SortableContext>
-
-          {/*
-           * 根层拖放区：把章从卷里拖出来必须有落点，
-           * 否则"移出到顶层"这个动作在界面上无法完成。
-           *
-           * 这里只提供落点提示，不再渲染游离章本身——那些章已作为
-           * topLevel 的成员交错渲染在上面，重复渲染会让同一章出现两次。
-           * 拖拽进行中才显示虚线框，避免平时占掉空白处。
-           */}
-          <DropZone
-            parentId={null}
-            dragging={Boolean(activeId) && overRef?.kind !== "before"}
-            className={activeId ? "mt-1 rounded-md border border-dashed border-border/60 p-1" : ""}
-          >
+          <div className="w-full px-2 pb-3">
             {/*
-             * 提示文字只在指针真的落在这个区域时才出现。
-             *
-             * 之前是"只要在拖拽就渲染"，于是把游离章往卷里拖时，
-             * 底下这行"移到顶层"还杵着——它描述的是把章拖**出**卷的动作，
-             * 而用户此刻的目标是把章拖**进**卷，语义正好相反。
-             *
-             * 文案也随来源节点变化：从卷里往外拖才是"移到顶层"，
-             * 已经游离的章再拖回顶层没有意义（本来就在那）。
+             * 顶层按 order 交错渲染：卷与游离章是同一条序列上的元素。
+             * SortableContext 只覆盖顶层（卷 + 游离章），卷内的章由
+             * renderChapterList 自己的 SortableContext 接管，互不干扰。
              */}
-            {activeId &&
-            overRef?.kind === "into" &&
-            overRef.parentId === null &&
-            /* 已经在顶层的章拖回顶层没有意义，别给一个假动作发提示。 */
-            activeNode?.parentId !== null ? (
-              <p className="px-1 py-1 text-center text-xs text-muted-foreground/60">
-                {t("Editor.node.moveOut")}
-              </p>
-            ) : null}
-          </DropZone>
+            <SortableContext
+              items={topLevel.map((n) => NODE_PREFIX + n.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              {topLevel.map((item, i) => {
+                /*
+                 * 分割线：卷之前、以及"卷后面紧跟的游离章"之前画。
+                 * 顶层首项不画——顶边紧贴面板上沿，画线像被裁掉半截的边框。
+                 * 游离章之间不画线，它们是连续的一张列表。
+                 */
+                const prev = topLevel[i - 1];
+                const needsDivider =
+                  i > 0 &&
+                  (item.type === "volume" ||
+                    (item.type === "chapter" && prev?.type === "volume"));
 
-          {!volumes.length && !chapters.length ? (
-            <div className="px-2 py-6 text-center">
-              <p className="text-xs text-muted-foreground">{t("Editor.side.emptyWork")}</p>
-            </div>
-          ) : null}
-        </div>
+                if (item.type === "chapter") {
+                  return (
+                    <div key={item.id}>
+                      {needsDivider ? (
+                        <div
+                          className="bg-border/70 mx-2 my-2 h-px"
+                          aria-hidden="true"
+                        />
+                      ) : null}
+                      <div className="mt-0.5 flex flex-col gap-0.5">
+                        {renderChapterList(
+                          null,
+                          [item],
+                          topLevelChapterIndexes.get(item.id) ?? 0
+                        )}
+                      </div>
+                    </div>
+                  );
+                }
+
+                const volume = item;
+                const isCollapsed = collapsed[volume.id];
+                return (
+                  <DropZone
+                    key={volume.id}
+                    parentId={volume.id}
+                    dragging={Boolean(activeId) && overRef?.kind !== "before"}
+                    className="mb-1"
+                  >
+                    {needsDivider ? (
+                      <div
+                        className="bg-border/70 mx-2 my-2 h-px"
+                        aria-hidden="true"
+                      />
+                    ) : null}
+                    <VolumeRow
+                      volume={volume}
+                      isCollapsed={isCollapsed}
+                      currentChapterTitle={
+                        selectedChapter?.parentId === volume.id
+                          ? selectedChapter.title
+                          : null
+                      }
+                      sessionActive={Boolean(activeId)}
+                      dragging={activeId === NODE_PREFIX + volume.id}
+                      chapterCount={
+                        (chaptersByVolume.get(volume.id) ?? []).length
+                      }
+                      currentLabel={t("Editor.side.current")}
+                      openCurrentLabel={t("Editor.volume.openCurrent")}
+                      addChapterLabel={t("Editor.side.addChapter")}
+                      deleteVolumeLabel={t("Editor.volume.delete")}
+                      editMetaLabel={t("Editor.node.editMeta")}
+                      prefaceLabel={t("Editor.node.preface")}
+                      dragLabel={t("Editor.node.dragHint")}
+                      registerEl={(el) => {
+                        if (el) nodeEls.current.set(volume.id, el);
+                        else nodeEls.current.delete(volume.id);
+                      }}
+                      onToggle={() =>
+                        setCollapsed((prev) => ({
+                          ...prev,
+                          [volume.id]: !prev[volume.id],
+                        }))
+                      }
+                      onOpenCurrentChapter={() => {
+                        setCollapsed((prev) => ({
+                          ...prev,
+                          [volume.id]: false,
+                        }));
+                        if (selectedChapter) {
+                          onSelectChapter(selectedChapter.id);
+                        }
+                      }}
+                      onAddChapter={() => setChapterDialogIn(volume.id)}
+                      onEditMeta={() => setMetaTarget(volume)}
+                      onDelete={() => onDeleteVolume(volume.id)}
+                    />
+
+                    {!isCollapsed ? renderChapterList(volume.id) : null}
+                  </DropZone>
+                );
+              })}
+            </SortableContext>
+
+            {/*
+             * 根层拖放区：把章从卷里拖出来必须有落点，
+             * 否则"移出到顶层"这个动作在界面上无法完成。
+             *
+             * 这里只提供落点提示，不再渲染游离章本身——那些章已作为
+             * topLevel 的成员交错渲染在上面，重复渲染会让同一章出现两次。
+             * 拖拽进行中才显示虚线框，避免平时占掉空白处。
+             */}
+            <DropZone
+              parentId={null}
+              dragging={Boolean(activeId) && overRef?.kind !== "before"}
+              className={
+                activeId
+                  ? "border-border/60 mt-1 rounded-md border border-dashed p-1"
+                  : ""
+              }
+            >
+              {/*
+               * 提示文字只在指针真的落在这个区域时才出现。
+               *
+               * 之前是"只要在拖拽就渲染"，于是把游离章往卷里拖时，
+               * 底下这行"移到顶层"还杵着——它描述的是把章拖**出**卷的动作，
+               * 而用户此刻的目标是把章拖**进**卷，语义正好相反。
+               *
+               * 文案也随来源节点变化：从卷里往外拖才是"移到顶层"，
+               * 已经游离的章再拖回顶层没有意义（本来就在那）。
+               */}
+              {activeId &&
+              overRef?.kind === "into" &&
+              overRef.parentId === null &&
+              /* 已经在顶层的章拖回顶层没有意义，别给一个假动作发提示。 */
+              activeNode?.parentId !== null ? (
+                <p className="text-muted-foreground/60 px-1 py-1 text-center text-xs">
+                  {t("Editor.node.moveOut")}
+                </p>
+              ) : null}
+            </DropZone>
+
+            {!volumes.length && !chapters.length ? (
+              <div className="px-2 py-6 text-center">
+                <p className="text-muted-foreground text-xs">
+                  {t("Editor.side.emptyWork")}
+                </p>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         {/* dropAnimation 置空：浮层默认会飞回落点，我们已落盘重排，无需这层回落动画。 */}
         <DragOverlay dropAnimation={null}>
           {activeNode ? (
-            <div className="flex items-center gap-2 rounded-md bg-accent px-2 py-1.5 text-sm shadow-lg">
+            <div className="bg-accent flex items-center gap-2 rounded-md px-2 py-1.5 text-sm shadow-lg">
               <GripVertical className="icon-sm shrink-0 opacity-60" />
               <FileText className="icon-sm shrink-0" />
               <span className="truncate">{activeNode.title}</span>

@@ -20,7 +20,10 @@ export interface ChapterEditorProps {
    * 章保存后上报本章字数（用于作品库的字数统计）。
    * 传全量而非增量，避免重载 / 修数据后统计越漂越远。
    */
-  onWordsCommitted?: (chapterWords: number) => void;
+  onWordsCommitted?: (
+    chapterWords: number,
+    previousChapterWords?: number
+  ) => void | Promise<void>;
   /**
    * 章级操作入口：重命名与删除。
    *
@@ -69,7 +72,9 @@ export default function ChapterEditor({
       <SplitDialog
         open={c.splitTarget !== null}
         cardIndex={c.splitTarget ?? -1}
-        text={c.splitTarget !== null ? (c.cards[c.splitTarget]?.text ?? "") : ""}
+        text={
+          c.splitTarget !== null ? (c.cards[c.splitTarget]?.text ?? "") : ""
+        }
         onOpenChange={(o) => {
           if (!o) c.setSplitTarget(null);
         }}

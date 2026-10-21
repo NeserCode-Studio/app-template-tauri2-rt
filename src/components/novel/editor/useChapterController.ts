@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useToast } from "@/composables";
+import { saveChapterCommand } from "@/application/chapter";
+import {
+  clearEditorSession,
+  registerEditorFlush,
+  setEditorSession,
+} from "@/application/editor-session";
+import { AppError } from "@/application/errors";
 import { useCodex } from "@/contexts/codex";
 import { createLogger } from "@/lib/logger";
 import { CommandHistory } from "@/lib/command-history";
@@ -79,7 +86,10 @@ export interface ChapterControllerOptions {
   workId: string;
   onWordsChange?: (words: number) => void;
   onSaved?: (chapter: Chapter) => void;
-  onWordsCommitted?: (chapterWords: number) => void;
+  onWordsCommitted?: (
+    chapterWords: number,
+    previousChapterWords?: number
+  ) => void | Promise<void>;
 }
 
 /**
@@ -145,6 +155,7 @@ export function useChapterController({
   const composerRef = useRef<ComposerHandle | null>(null);
   const historyRef = useRef<CommandHistory<Card[]> | null>(null);
   const saveTimer = useRef<number | null>(null);
+  /** 串行化落盘，避免连续提交时两章保存同时读到同一个旧基线。 */
   /** 待保存的最新卡片数组，卸载时 flush 用。 */
   const pendingCards = useRef<Card[] | null>(null);
   /** cards 的 ref 副本，供草稿持久化同步读取最新编辑目标。 */
@@ -214,21 +225,13 @@ export function useChapterController({
   const handleComposerTextChange = useCallback(
     (text: string) => {
       if (!text.trim()) {
-        persistDraftSnapshot(
-          "",
-          editingIndexRef.current,
-          draftRef.current
-        );
+        persistDraftSnapshot("", editingIndexRef.current, draftRef.current);
         return;
       }
       cancelDraftSync();
       draftSyncTimer.current = window.setTimeout(() => {
         draftSyncTimer.current = null;
-        persistDraftSnapshot(
-          text,
-          editingIndexRef.current,
-          draftRef.current
-        );
+        persistDraftSnapshot(text, editingIndexRef.current, draftRef.current);
       }, 300);
     },
     [cancelDraftSync, persistDraftSnapshot]
@@ -236,41 +239,58 @@ export function useChapterController({
 
   /** 真正执行落盘。 */
   const persistNow = useCallback(
-    async (nextCards: Card[]) => {
-      setSaveState("saving");
-      try {
-        const next: Chapter = {
-          ...chapterRef.current,
-          cards: nextCards,
-          cursor: { cardIndex: editingIndexRef.current, offset: 0 },
-        };
-        /*
-         * 保存会顺带压入一份历史快照，所以要用返回值而不是本地 next：
-         * 只有返回值才带最新的 history，并把它写回 chapterRef，
-         * 否则下一次保存会以缺失 history 的版本为基准，快照链断掉。
-         */
-        const saved = await saveChapter(root, workId, next);
-        chapterRef.current = saved;
-        setChapterWithHistory(saved);
+    (nextCards: Card[]) => {
+      const execute = async () => {
+        const startedAt = performance.now();
+        setSaveState("saving");
         try {
-          await syncChapterMentions(workId, chapter.id, cardsToText(nextCards));
+          /*
+           * 保存会顺带压入一份历史快照，所以要用返回值而不是本地 next：
+           * 只有返回值才带最新的 history，并把它写回 chapterRef，
+           * 否则下一次保存会以缺失 history 的版本为基准，快照链断掉。
+           */
+          const result = await saveChapterCommand(
+            {
+              root,
+              workId,
+              chapter: chapterRef.current,
+              cards: nextCards,
+              cursor: { cardIndex: editingIndexRef.current, offset: 0 },
+              source: "ui",
+            },
+            {
+              syncMentions: syncChapterMentions,
+              onWordsCommitted,
+              onSaved,
+            }
+          );
+          const saved = result.chapter;
+          const chapterSavedAt = performance.now();
+          chapterRef.current = saved;
+          setChapterWithHistory(saved);
+          if (pendingCards.current === nextCards) {
+            pendingCards.current = null;
+          }
+          setSaveState("saved");
+          log.info("chapter save pipeline", {
+            chapterId: chapter.id,
+            cards: nextCards.length,
+            wrote: result.wrote,
+            revision: saved.revision,
+            commandMs: Math.round(chapterSavedAt - startedAt),
+            totalMs: Math.round(performance.now() - startedAt),
+          });
         } catch (err) {
-          log.warn("mention index sync failed", err);
+          log.error("save failed", err);
+          setSaveState("dirty");
+          toast.error(
+            err instanceof AppError && err.code === "revision_conflict"
+              ? "Editor.save.conflict"
+              : "Editor.save.failed"
+          );
         }
-        /*
-         * 作品库的字数来自 stats.json。作品总字数是全书各章之和，
-         * 由父级汇总后写入——单章字数不等于作品字数，这里只上报本章。
-         */
-        onWordsCommitted?.(countWords(cardsToText(nextCards)));
-        pendingCards.current = null;
-        setSaveState("saved");
-        onSaved?.(saved);
-        log.debug("chapter saved", { cards: nextCards.length });
-      } catch (err) {
-        log.error("save failed", err);
-        setSaveState("dirty");
-        toast.error("Editor.save.failed");
-      }
+      };
+      return execute();
     },
     [
       root,
@@ -282,6 +302,29 @@ export function useChapterController({
       toast,
     ]
   );
+
+  useEffect(() => {
+    setEditorSession({
+      workId,
+      chapterId: chapter.id,
+      dirty: saveState !== "saved" || pendingCards.current !== null,
+      saving: saveState === "saving",
+    });
+  }, [workId, chapter.id, saveState]);
+
+  useEffect(() => {
+    registerEditorFlush(async () => {
+      if (saveTimer.current !== null) {
+        window.clearTimeout(saveTimer.current);
+        saveTimer.current = null;
+      }
+      await persistNow(pendingCards.current ?? cardsRef.current);
+    });
+    return () => {
+      registerEditorFlush(null);
+      clearEditorSession(chapter.id);
+    };
+  }, [chapter.id, persistNow]);
 
   /**
    * 删除某个历史版本。
@@ -370,13 +413,7 @@ export function useChapterController({
     window.addEventListener(DRAFT_REMOVED_EVENT, onDraftRemoved);
     return () =>
       window.removeEventListener(DRAFT_REMOVED_EVENT, onDraftRemoved);
-  }, [
-    workId,
-    chapterId,
-    cancelDraftSync,
-    setEditingTarget,
-    setPendingDraft,
-  ]);
+  }, [workId, chapterId, cancelDraftSync, setEditingTarget, setPendingDraft]);
 
   /**
    * 回滚到某个历史快照。
@@ -388,6 +425,7 @@ export function useChapterController({
   const rollback = useCallback(
     async (index: number) => {
       const base = chapterRef.current;
+      const previousWords = countWords(cardsToText(base.cards));
       const restored = rollbackTo(base, index);
       if (restored === base) return;
       setSaveState("saving");
@@ -414,7 +452,14 @@ export function useChapterController({
         historyRef.current = new CommandHistory<Card[]>(saved.cards);
         setSaveState("saved");
         setHistoryOpen(false);
-        onWordsCommitted?.(countWords(cardsToText(saved.cards)));
+        try {
+          await onWordsCommitted?.(
+            countWords(cardsToText(saved.cards)),
+            previousWords
+          );
+        } catch (err) {
+          log.warn("post-rollback stats refresh failed", err);
+        }
         onSaved?.(saved);
         toast.success("Editor.history.restored");
       } catch (err) {
@@ -540,23 +585,40 @@ export function useChapterController({
   /** 回车提交：editingIndex 为 -1 新建，否则更新该卡。 */
   const handleSubmit = useCallback(
     (text: string, index: number) => {
+      const startedAt = performance.now();
+      const changed = index < 0 || cards[index]?.text !== text;
       const now = Date.now();
-      if (index < 0) {
-        const card: Card = cardSchema.parse({
-          id: crypto.randomUUID(),
-          text,
-          createdAt: now,
-          updatedAt: now,
-        });
-        applyCards([...cards, card]);
-      } else {
-        const next = cards.map((c, i) =>
-          i === index
-            ? cardSchema.parse({ ...c, text: text, updatedAt: now })
-            : c
-        );
-        applyCards(next);
+      if (changed) {
+        if (index < 0) {
+          const card: Card = cardSchema.parse({
+            id: crypto.randomUUID(),
+            text,
+            createdAt: now,
+            updatedAt: now,
+          });
+          applyCards([...cards, card]);
+        } else {
+          const next = cards.map((c, i) =>
+            i === index
+              ? cardSchema.parse({ ...c, text: text, updatedAt: now })
+              : c
+          );
+          applyCards(next);
+        }
       }
+
+      requestAnimationFrame(() => {
+        log.info(
+          changed ? "paragraph submit rendered" : "paragraph submit skipped",
+          {
+            chapterId: chapter.id,
+            index,
+            changed,
+            cards: cardsRef.current.length,
+            renderMs: Math.round(performance.now() - startedAt),
+          }
+        );
+      });
 
       /*
        * 草稿只在"提交的就是它自己"时才作废。
@@ -587,6 +649,7 @@ export function useChapterController({
     },
     [
       cards,
+      chapter.id,
       applyCards,
       persistDraftSnapshot,
       setEditingTarget,
@@ -657,12 +720,7 @@ export function useChapterController({
     requestAnimationFrame(() =>
       composerRef.current?.load(stashed ?? "", "end", Boolean(stashed))
     );
-  }, [
-    persistDraftSnapshot,
-    scheduleSave,
-    setEditingTarget,
-    setPendingDraft,
-  ]);
+  }, [persistDraftSnapshot, scheduleSave, setEditingTarget, setPendingDraft]);
 
   /** 取回暂存段落：清空输入框回到追加模式，并把草稿放回去。 */
   const restoreDraft = useCallback(() => {
@@ -671,12 +729,7 @@ export function useChapterController({
     setPendingDraft(null);
     persistDraftSnapshot(text, -1, null);
     requestAnimationFrame(() => composerRef.current?.load(text, "end", true));
-  }, [
-    draft,
-    persistDraftSnapshot,
-    setEditingTarget,
-    setPendingDraft,
-  ]);
+  }, [draft, persistDraftSnapshot, setEditingTarget, setPendingDraft]);
 
   /**
    * 丢弃暂存段落。
@@ -833,13 +886,7 @@ export function useChapterController({
         setEditingTarget(editingIndexRef.current - 1);
       }
     },
-    [
-      cards,
-      applyCards,
-      persistDraftSnapshot,
-      setEditingTarget,
-      setPendingDraft,
-    ]
+    [cards, applyCards, persistDraftSnapshot, setEditingTarget, setPendingDraft]
   );
 
   /* 全局快捷键：Ctrl+Z / Ctrl+Shift+Z。输入框内让位给原生 undo。 */
@@ -892,11 +939,7 @@ export function useChapterController({
        */
       const typed = composer?.read().trim() ?? "";
       if (composerHydratedRef.current && (typed || draftRef.current)) {
-        persistDraftSnapshot(
-          typed,
-          editingIndexRef.current,
-          draftRef.current
-        );
+        persistDraftSnapshot(typed, editingIndexRef.current, draftRef.current);
       }
     };
     // chapterId / workId / chapter.title 在卸载时读取，均为本章的稳定值。

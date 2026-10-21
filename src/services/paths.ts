@@ -45,6 +45,11 @@ export function statsFile(workId: string): string {
   return joinRel(WORKS_DIR, workId, "stats.json");
 }
 
+/** 作品章节索引：保存轻量元信息，避免打开作品时逐章读取。 */
+export function chapterIndexFile(workId: string): string {
+  return joinRel(WORKS_DIR, workId, "chapter-index.json");
+}
+
 /** 章数据文件（json 为唯一事实来源）。 */
 export function chapterFile(workId: string, chapterId: string): string {
   return joinRel(WORKS_DIR, workId, "chapters", chapterId + ".json");

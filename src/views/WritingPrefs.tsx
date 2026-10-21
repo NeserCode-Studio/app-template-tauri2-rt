@@ -39,7 +39,9 @@ export default function WritingPrefs() {
     value: key,
     label: isZh ? UI_FONT_LABELS[key].zh : UI_FONT_LABELS[key].en,
   }));
-  const articleFontItems = (Object.keys(ARTICLE_FONT_LABELS) as ArticleFont[]).map((key) => ({
+  const articleFontItems = (
+    Object.keys(ARTICLE_FONT_LABELS) as ArticleFont[]
+  ).map((key) => ({
     value: key,
     label: isZh ? ARTICLE_FONT_LABELS[key].zh : ARTICLE_FONT_LABELS[key].en,
   }));
@@ -69,14 +71,19 @@ export default function WritingPrefs() {
             <SelectContent>
               {uiFontItems.map((item) => (
                 <SelectItem key={item.value} value={item.value}>
-                  <span style={{ fontFamily: `var(--app-font-ui)` }}>{item.label}</span>
+                  <span style={{ fontFamily: `var(--app-font-ui)` }}>
+                    {item.label}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </PrefsRow>
 
-        <PrefsRow label={t("Prefs.ui.fontSize")} value={`${prefs.uiFontSize}px`}>
+        <PrefsRow
+          label={t("Prefs.ui.fontSize")}
+          value={`${prefs.uiFontSize}px`}
+        >
           <Slider
             value={[prefs.uiFontSize]}
             min={12}
@@ -99,14 +106,19 @@ export default function WritingPrefs() {
             <SelectContent>
               {articleFontItems.map((item) => (
                 <SelectItem key={item.value} value={item.value}>
-                  <span style={{ fontFamily: "var(--app-font-article)" }}>{item.label}</span>
+                  <span style={{ fontFamily: "var(--app-font-article)" }}>
+                    {item.label}
+                  </span>
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </PrefsRow>
 
-        <PrefsRow label={t("Prefs.article.fontSize")} value={`${prefs.fontSize}px`}>
+        <PrefsRow
+          label={t("Prefs.article.fontSize")}
+          value={`${prefs.fontSize}px`}
+        >
           <Slider
             value={[prefs.fontSize]}
             min={14}
@@ -129,7 +141,10 @@ export default function WritingPrefs() {
           />
         </PrefsRow>
 
-        <PrefsRow label={t("Prefs.article.lineWidth")} value={`${prefs.lineWidth}`}>
+        <PrefsRow
+          label={t("Prefs.article.lineWidth")}
+          value={`${prefs.lineWidth}`}
+        >
           <Slider
             value={[prefs.lineWidth]}
             min={30}
@@ -142,7 +157,9 @@ export default function WritingPrefs() {
         <PrefsRow label={t("Prefs.article.indent")}>
           <Select
             value={String(prefs.indentSpaces)}
-            onValueChange={(v) => setPref("indentSpaces", Number(v) as 0 | 2 | 4)}
+            onValueChange={(v) =>
+              setPref("indentSpaces", Number(v) as 0 | 2 | 4)
+            }
           >
             <SelectTrigger className="w-44">
               <SelectValue />
@@ -173,6 +190,16 @@ export default function WritingPrefs() {
       </PrefsGroup>
 
       <PrefsGroup title={t("Prefs.navigation.section")}>
+        <PrefsRow
+          label={t("Prefs.navigation.snapEnabled")}
+          description={t("Prefs.navigation.snapEnabledHint")}
+        >
+          <Switch
+            checked={prefs.paragraphSnapEnabled}
+            onCheckedChange={(v) => setPref("paragraphSnapEnabled", v)}
+          />
+        </PrefsRow>
+
         <PrefsRow
           label={t("Prefs.navigation.turnEnabled")}
           description={t("Prefs.navigation.turnEnabledHint")}
@@ -214,7 +241,7 @@ export default function WritingPrefs() {
       {/* ---------- 预览 ---------- */}
       <section className="flex flex-col gap-2">
         <h3 className="row-label">{t("Prefs.article.preview")}</h3>
-        <div className="article-body prose-article rounded-md border bg-muted/20 p-4">
+        <div className="article-body prose-article bg-muted/20 rounded-md border p-4">
           <p className="article-paragraph">
             他推开门，风雪扑面而来。远处的灯笼在长街尽头摇晃，像一点将灭未灭的火。
           </p>
@@ -228,11 +255,17 @@ export default function WritingPrefs() {
 }
 
 /** 一组相关偏好：标题 + 细分隔线的行列表。 */
-function PrefsGroup({ title, children }: { title: string; children: React.ReactNode }) {
+function PrefsGroup({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="flex flex-col gap-1">
       <h3 className="row-label mb-1">{title}</h3>
-      <div className="flex flex-col divide-y divide-border/60 rounded-md border border-border/70">
+      <div className="divide-border/60 border-border/70 flex flex-col divide-y rounded-md border">
         {children}
       </div>
     </section>
@@ -262,16 +295,20 @@ function PrefsRow({
         <div className="flex min-w-0 items-baseline gap-2">
           <Label className="text-sm">{label}</Label>
           {value ? (
-            <span className="text-xs text-muted-foreground tabular-nums">{value}</span>
+            <span className="text-muted-foreground text-xs tabular-nums">
+              {value}
+            </span>
           ) : null}
         </div>
         {description ? (
-          <p className="text-xs leading-relaxed text-muted-foreground">
+          <p className="text-muted-foreground text-xs leading-relaxed">
             {description}
           </p>
         ) : null}
       </div>
-      <div className="flex w-44 shrink-0 items-center justify-end">{children}</div>
+      <div className="flex w-44 shrink-0 items-center justify-end">
+        {children}
+      </div>
     </div>
   );
 }

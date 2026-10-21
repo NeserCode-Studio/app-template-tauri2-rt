@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookMarked,
   BookOpen,
@@ -8,7 +8,9 @@ import {
   FileUp,
   Folder,
   FolderOpen,
+  Loader2,
   PenLine,
+  Pilcrow,
   Plus,
   Settings2,
   Trash2,
@@ -19,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -35,6 +38,8 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 
 import WorkCard from "@/components/novel/WorkCard";
 import TrashDialog from "@/components/novel/TrashDialog";
@@ -45,11 +50,18 @@ import ImportDialog, {
 import { useI18n, useToast } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useWorkspace } from "@/contexts/workspace";
+import { useLongTask } from "@/contexts/long-task";
 import { loadStats, recordWorkWords } from "@/services/stats";
-import { countWorkWords, createChapter } from "@/services/chapter";
+import {
+  countWorkWords,
+  createChapter,
+  reparagraphWork,
+  type ReparagraphProgress,
+} from "@/services/chapter";
 import {
   appendCardsToChapter,
   importTitleFromPath,
+  saveImportSections,
 } from "@/services/import";
 import { addNode as addOutlineNode } from "@/services/outline";
 import { createLogger } from "@/lib/logger";
@@ -65,25 +77,36 @@ function formatDate(timestamp: number): string {
   ).padStart(2, "0")}`;
 }
 
-/** 新建 / 重命名对话框的两种模式。 */
+function workspaceNameFromPath(path: string): string {
+  const normalized = path.replace(/[\\/]+$/, "");
+  return normalized.split(/[\\/]/).pop() || path;
+}
+
+/** 新建与书本设置共用同一套字段，减少两处表单逐渐漂移。 */
 type DialogMode =
-  | { kind: "create" }
-  | { kind: "rename"; workId: string }
-  | null;
+  { kind: "create" } | { kind: "settings"; workId: string } | null;
 
 export default function Library() {
   const { t } = useI18n();
   const toast = useToast();
+  const { run: runLongTask } = useLongTask();
   const { go } = useAppNavigation();
   const location = useLocation();
   const navigate = useNavigate();
-  const { root, isOpen, pick, reveal, deleteWorkspace } = useWorkspace();
+  const {
+    root,
+    isOpen,
+    reveal,
+    pickMigrationTarget,
+    migrate,
+    deleteWorkspace,
+  } = useWorkspace();
   const {
     workspace,
     works,
     currentWorkId,
     create,
-    rename,
+    updateWork,
     archive,
     unarchive,
     remove,
@@ -96,14 +119,26 @@ export default function Library() {
   const [dialog, setDialog] = useState<DialogMode>(null);
   const [name, setName] = useState("");
   const [type, setType] = useState("");
+  const [synopsis, setSynopsis] = useState("");
+  const [autoParagraph, setAutoParagraph] = useState(true);
+  const [confirmReparagraph, setConfirmReparagraph] = useState(false);
+  const [reparagraping, setReparagraping] = useState(false);
+  const [reparagraphProgress, setReparagraphProgress] =
+    useState<ReparagraphProgress | null>(null);
   const [pendingArchive, setPendingArchive] = useState<string | null>(null);
   /** 待输入确认删除的作品 / 工作区。 */
-  const [pendingWorkDelete, setPendingWorkDelete] = useState<string | null>(null);
-  const [pendingWorkspaceDelete, setPendingWorkspaceDelete] = useState<string | null>(null);
-  /** 工作区别名的待确认新值：改名与"保存设置"不是一回事。 */
-  const [pendingAlias, setPendingAlias] = useState<{ from: string; to: string } | null>(
+  const [pendingWorkDelete, setPendingWorkDelete] = useState<string | null>(
     null
   );
+  const [pendingWorkspaceDelete, setPendingWorkspaceDelete] = useState<
+    string | null
+  >(null);
+  const [pendingMigration, setPendingMigration] = useState<string | null>(null);
+  /** 工作区别名的待确认新值：改名与"保存设置"不是一回事。 */
+  const [pendingAlias, setPendingAlias] = useState<{
+    from: string;
+    to: string;
+  } | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aliasName, setAliasName] = useState("");
   const [wordCounts, setWordCounts] = useState<Record<string, number>>({});
@@ -113,38 +148,95 @@ export default function Library() {
     navigationStateOf(location.state).intent === "create-work";
   const legacyMaterialsView =
     new URLSearchParams(location.search).get("view") === "materials";
+  const workspaceDisplayName =
+    workspace?.alias?.trim() ||
+    (root ? workspaceNameFromPath(root) : t("Library.title"));
+  const worksRef = useRef(works);
+  const workspaceRef = useRef(workspace);
+  worksRef.current = works;
+  workspaceRef.current = workspace;
 
   /** 统计字数：阶段 2 先从 stats.json 读取，阶段 6 再做实时更新。 */
-  const loadWordCounts = useCallback(async () => {
-    if (!root || !workspace) return;
-    const next: Record<string, number> = {};
-    for (const id of [...workspace.order, ...workspace.archived]) {
-      try {
-        const stats = await loadStats(root, id);
-        /*
-         * stats.json 只是缓存；以磁盘上的章文件为准全量重算。
-         * 早期版本从未写过 stats，或统计早已与正文脱节，
-         * 直接信 stats 会让作品库长期显示 0。
-         */
-        const fromChapters = await countWorkWords(root, id);
-        next[id] = fromChapters || stats.workWords[id] || 0;
-        if (fromChapters !== (stats.workWords[id] ?? 0)) {
-          /* 回写修正，让下次打开不必重算。 */
-          await recordWorkWords(root, id, fromChapters).catch(() => undefined);
+  const loadWordCounts = useCallback(
+    async (
+      onProgress?: (progress: {
+        done: number;
+        total: number;
+        title?: string;
+      }) => void
+    ) => {
+      const currentWorkspace = workspaceRef.current;
+      const currentWorks = worksRef.current;
+      if (!root || !currentWorkspace) return;
+      const next: Record<string, number> = {};
+      const ids = [...currentWorkspace.order, ...currentWorkspace.archived];
+      for (let index = 0; index < ids.length; index += 1) {
+        const id = ids[index];
+        const title = currentWorks[id]?.title ?? id;
+        onProgress?.({ done: index, total: ids.length, title });
+        try {
+          const stats = await loadStats(root, id);
+          /*
+           * stats.json 只是缓存；以磁盘上的章文件为准全量重算。
+           * 早期版本从未写过 stats，或统计早已与正文脱节，
+           * 直接信 stats 会让作品库长期显示 0。
+           */
+          const fromChapters = await countWorkWords(
+            root,
+            id,
+            (chapterProgress) => {
+              const fraction =
+                chapterProgress.total > 0
+                  ? chapterProgress.done / chapterProgress.total
+                  : 0;
+              onProgress?.({
+                done: index + fraction,
+                total: ids.length,
+                title: chapterProgress.title
+                  ? `${title} · ${chapterProgress.title}`
+                  : title,
+              });
+            }
+          );
+          next[id] = fromChapters || stats.workWords[id] || 0;
+          if (fromChapters !== (stats.workWords[id] ?? 0)) {
+            /* 回写修正，让下次打开不必重算。 */
+            await recordWorkWords(root, id, fromChapters).catch(
+              () => undefined
+            );
+          }
+        } catch (err) {
+          log.warn("stats unreadable", id, err);
+          next[id] = 0;
         }
-      } catch (err) {
-        log.warn("stats unreadable", id, err);
-        next[id] = 0;
       }
-    }
-    setWordCounts(next);
-  }, [root, workspace]);
+      onProgress?.({ done: ids.length, total: ids.length });
+      setWordCounts(next);
+    },
+    [root]
+  );
 
   // 作品清单变化时刷新字数。
-  const orderKey = workspace ? [...workspace.order, ...workspace.archived].join(",") : "";
+  const orderKey = workspace
+    ? [...workspace.order, ...workspace.archived].join(",")
+    : "";
   useEffect(() => {
-    void loadWordCounts();
-  }, [loadWordCounts, orderKey]);
+    void runLongTask(
+      {
+        title: t("LongTask.library.title"),
+        description: t("LongTask.library.description"),
+      },
+      async (task) => {
+        await loadWordCounts((progress) =>
+          task.update({
+            done: progress.done,
+            total: progress.total,
+            detail: progress.title,
+          })
+        );
+      }
+    ).catch((err) => log.error("word count refresh failed", err));
+  }, [loadWordCounts, orderKey, runLongTask, t]);
 
   useEffect(() => {
     if (!isOpen || !root) {
@@ -156,10 +248,22 @@ export default function Library() {
     if (legacyMaterialsView) go("codex", { replace: true });
   }, [go, legacyMaterialsView]);
 
+  /*
+   * 设置弹窗可能比 LibraryProvider 更早拿到 workspace 数据。
+   * 仅依赖“打开弹窗”那一刻初始化，会让名称一直停在空字符串；
+   * 这里跟随加载完成后的显示名补齐。
+   */
+  useEffect(() => {
+    if (settingsOpen) setAliasName(workspaceDisplayName);
+  }, [settingsOpen, workspaceDisplayName]);
+
   useEffect(() => {
     if (!createRequested) return;
     setName("");
     setType("");
+    setSynopsis("");
+    setAutoParagraph(true);
+    setConfirmReparagraph(false);
     setDialog({ kind: "create" });
     /*
      * 消费一次性跳转意图，避免用户关闭新建框后通过浏览器前进/后退
@@ -222,15 +326,29 @@ export default function Library() {
     if (!title) return;
     try {
       if (dialog.kind === "create") {
-        const created = await create(title, type.trim());
+        const created = await create(
+          title,
+          type.trim(),
+          synopsis.trim(),
+          autoParagraph
+        );
         if (!created) {
           toast.error("Library.toast.failed");
           return;
         }
         toast.success("Library.toast.created");
       } else {
-        await rename(dialog.workId, title);
-        toast.success("Library.toast.renamed");
+        const updated = await updateWork(dialog.workId, {
+          title,
+          type: type.trim(),
+          synopsis: synopsis.trim(),
+          autoParagraph,
+        });
+        if (!updated) {
+          toast.error("Library.toast.failed");
+          return;
+        }
+        toast.success("Library.toast.settingsSaved");
       }
       setDialog(null);
     } catch (err) {
@@ -243,15 +361,69 @@ export default function Library() {
   function openCreate() {
     setName("");
     setType("");
+    setSynopsis("");
+    setAutoParagraph(true);
+    setConfirmReparagraph(false);
     setDialog({ kind: "create" });
   }
 
-  /** 打开重命名对话框。 */
-  function openRename(workId: string) {
+  /** 打开书本设置。 */
+  function openWorkSettings(workId: string) {
     const w = works[workId];
     setName(w?.title ?? "");
     setType(w?.type ?? "");
-    setDialog({ kind: "rename", workId });
+    setSynopsis(w?.synopsis ?? "");
+    setAutoParagraph(w?.autoParagraph ?? true);
+    setConfirmReparagraph(false);
+    setReparagraphProgress(null);
+    setDialog({ kind: "settings", workId });
+  }
+
+  /** 对当前作品执行一次显式的全书段落整理。 */
+  async function runReparagraph() {
+    if (dialog?.kind !== "settings" || !root || reparagraping) return;
+    setConfirmReparagraph(false);
+    setReparagraping(true);
+    setReparagraphProgress(null);
+    try {
+      const report = await runLongTask(
+        {
+          title: t("LongTask.reparagraph.title"),
+          description: t("LongTask.reparagraph.description"),
+        },
+        async (task) => {
+          const next = await reparagraphWork(
+            root,
+            dialog.workId,
+            (progress) => {
+              setReparagraphProgress(progress);
+              task.update({
+                done: progress.done,
+                total: progress.total,
+                detail: progress.title,
+              });
+            }
+          );
+          await loadWordCounts();
+          return next;
+        }
+      );
+      bumpDataVersion();
+      log.info("work reparagraphed from settings", {
+        workId: dialog.workId,
+        ...report,
+      });
+      toast.success("Library.toast.reparagraphed");
+    } catch (err) {
+      log.error("work reparagraph failed", {
+        workId: dialog.workId,
+        err,
+      });
+      toast.error("Library.toast.reparagraphFailed");
+    } finally {
+      setReparagraping(false);
+      setReparagraphProgress(null);
+    }
   }
 
   /**
@@ -264,34 +436,80 @@ export default function Library() {
   async function importWork(preview: ImportPreview) {
     if (!root) throw new Error("workspace is unavailable");
     const title =
-      importTitleFromPath(preview.path).trim() || t("Import.untitledWork");
-    const work = await create(title, "");
-    if (!work) throw new Error("could not create imported work");
+      preview.title.trim() ||
+      importTitleFromPath(preview.path).trim() ||
+      t("Import.untitledWork");
+    await runLongTask(
+      {
+        title: t("LongTask.import.title"),
+        description: t("LongTask.import.description"),
+      },
+      async (task) => {
+        const work = await create(
+          title,
+          "",
+          preview.synopsis.trim(),
+          preview.autoParagraph
+        );
+        if (!work) throw new Error("could not create imported work");
 
-    const chapterTitle = t("Import.defaultChapter");
-    const created = await createChapter(root, work.id, chapterTitle);
-    const imported = await appendCardsToChapter(
-      root,
-      work.id,
-      created,
-      preview.cards
+        const structured =
+          preview.sections.length > 1 ||
+          preview.volumes.length > 0 ||
+          preview.sections.some(
+            (section) => section.title || section.volumeTitle
+          );
+        if (structured) {
+          await saveImportSections(
+            root,
+            work.id,
+            preview.sections,
+            {
+              front: t("Import.frontMatter"),
+              untitled: t("Import.untitledSection"),
+            },
+            {
+              volumes: preview.volumes,
+              onProgress: (progress) => {
+                task.update({
+                  done: progress.done,
+                  total: progress.total,
+                  detail: `${t(
+                    progress.phase === "index"
+                      ? "LongTask.import.index"
+                      : "LongTask.import.chapters"
+                  )}${progress.title ? ` · ${progress.title}` : ""}`,
+                });
+              },
+            }
+          );
+        } else {
+          const chapterTitle = t("Import.defaultChapter");
+          const created = await createChapter(root, work.id, chapterTitle);
+          const imported = await appendCardsToChapter(
+            root,
+            work.id,
+            created,
+            preview.cards
+          );
+          await addOutlineNode(root, work.id, {
+            type: "chapter",
+            title: chapterTitle,
+            parentId: null,
+            id: imported.id,
+          });
+        }
+        await recordWorkWords(
+          root,
+          work.id,
+          await countWorkWords(root, work.id)
+        );
+        /* 作品库创建作品会立刻切换 currentWorkId，结构树可能已先读过空文件。 */
+        bumpDataVersion();
+        toast.success("Import.toast.imported");
+        go("editor");
+      }
     );
-    await addOutlineNode(root, work.id, {
-      type: "chapter",
-      title: chapterTitle,
-      parentId: null,
-      id: imported.id,
-    });
-    await recordWorkWords(
-      root,
-      work.id,
-      await countWorkWords(root, work.id)
-    );
-    /* 作品库创建作品会立刻切换 currentWorkId，结构树可能已先读过空文件。 */
-    bumpDataVersion();
-
-    toast.success("Import.toast.imported");
-    go("editor");
   }
 
   /**
@@ -301,9 +519,9 @@ export default function Library() {
    * 作品库自身的标题保持稳定，工作区别名只描述当前打开的是哪个库。
    */
   function requestAliasSave() {
-    const from = (workspace?.alias ?? "").trim();
+    const from = workspaceDisplayName.trim();
     const to = aliasName.trim();
-    if (from === to) return;
+    if (!to || from === to) return;
     setPendingAlias({ from, to });
   }
 
@@ -321,7 +539,7 @@ export default function Library() {
                 {t("Library.title")}
               </div>
               <h1 className="mt-2 min-w-0 truncate text-2xl font-semibold">
-                {workspace?.alias?.trim() || t("Library.title")}
+                {workspaceDisplayName}
               </h1>
               <div
                 className="text-muted-foreground mt-2 flex min-w-0 items-center gap-2 text-xs"
@@ -365,7 +583,11 @@ export default function Library() {
         </header>
 
         <div className="border-border/70 flex flex-wrap items-center gap-2 border-b py-4">
-          <Button variant="ghost" size="sm" onClick={() => setSettingsOpen(true)}>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSettingsOpen(true)}
+          >
             <Settings2 className="icon-md" />
             {t("Library.action.workspaceSettings")}
           </Button>
@@ -430,7 +652,9 @@ export default function Library() {
               <h2 className="row-label">{t("Library.section.works")}</h2>
               <span className="text-muted-foreground/60 text-[11px] tabular-nums">
                 {active.length}
-                {archived.length ? ` / ${archived.length} ${t("Home.archivedWorks")}` : ""}
+                {archived.length
+                  ? ` / ${archived.length} ${t("Home.archivedWorks")}`
+                  : ""}
               </span>
             </div>
             <div className="divide-border/70 border-border/70 flex flex-col divide-y border-y">
@@ -444,7 +668,7 @@ export default function Library() {
                     setCurrentWorkId(id);
                     go("editor");
                   }}
-                  onRename={openRename}
+                  onSettings={openWorkSettings}
                   onArchive={setPendingArchive}
                   onDelete={setPendingWorkDelete}
                   onUnarchive={(id) => {
@@ -459,7 +683,9 @@ export default function Library() {
         ) : (
           <section className="border-border/70 mt-8 flex w-full flex-col items-center gap-3 border-y py-12 text-center">
             <BookMarked className="text-muted-foreground/40 h-10 w-10" />
-            <p className="text-muted-foreground text-sm">{t("Library.empty.noWorksHint")}</p>
+            <p className="text-muted-foreground text-sm">
+              {t("Library.empty.noWorksHint")}
+            </p>
             <Button size="sm" onClick={openCreate}>
               <Plus className="icon-md" />
               {t("Library.action.new")}
@@ -478,7 +704,7 @@ export default function Library() {
                   words={wordCounts[work.id] ?? 0}
                   isCurrent={false}
                   onOpen={() => undefined}
-                  onRename={openRename}
+                  onSettings={openWorkSettings}
                   onArchive={setPendingArchive}
                   onDelete={setPendingWorkDelete}
                   onUnarchive={(id) => {
@@ -492,49 +718,64 @@ export default function Library() {
           </section>
         ) : null}
 
-      {/* 新建 / 重命名对话框 */}
-      <ImportDialog
-        open={importOpen}
-        target="work"
-        onOpenChange={setImportOpen}
-        onConfirm={importWork}
-      />
+        {/* 新建 / 书本设置共用一个对话框。 */}
+        <ImportDialog
+          open={importOpen}
+          target="work"
+          onOpenChange={setImportOpen}
+          onConfirm={importWork}
+        />
 
-      <Dialog
-        open={dialog !== null}
-        onOpenChange={(openState) => {
-          if (!openState) setDialog(null);
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>
-              {dialog?.kind === "rename"
-                ? t("Library.dialog.renameTitle")
-                : t("Library.dialog.newTitle")}
-            </DialogTitle>
-          </DialogHeader>
+        <Dialog
+          open={dialog !== null}
+          onOpenChange={(openState) => {
+            if (!openState && !reparagraping) {
+              setConfirmReparagraph(false);
+              setDialog(null);
+            }
+          }}
+        >
+          <DialogContent className="max-h-[calc(100vh-2rem)] overflow-y-auto sm:max-w-lg">
+            <DialogHeader>
+              <DialogTitle>
+                {dialog?.kind === "settings"
+                  ? t("Library.dialog.settingsTitle")
+                  : t("Library.dialog.newTitle")}
+              </DialogTitle>
+              <DialogDescription>
+                {dialog?.kind === "settings"
+                  ? t("Library.dialog.settingsDesc")
+                  : t("Library.dialog.newDesc")}
+              </DialogDescription>
+            </DialogHeader>
 
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="work-name">{t("Library.dialog.nameLabel")}</Label>
-              <Input
-                id="work-name"
-                value={name}
-                autoFocus
-                placeholder={t("Library.dialog.namePlaceholder")}
-                onChange={(e) => setName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                    void submitDialog();
-                  }
-                }}
-              />
-            </div>
-
-            {dialog?.kind === "create" ? (
+            <div className="flex flex-col gap-4">
               <div className="flex flex-col gap-2">
-                <Label htmlFor="work-type">{t("Library.dialog.typeLabel")}</Label>
+                <Label htmlFor="work-name">
+                  {t("Library.dialog.nameLabel")}
+                </Label>
+                <Input
+                  id="work-name"
+                  value={name}
+                  autoFocus
+                  placeholder={t("Library.dialog.namePlaceholder")}
+                  onChange={(e) => setName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (
+                      e.key === "Enter" &&
+                      !e.nativeEvent.isComposing &&
+                      !reparagraping
+                    ) {
+                      void submitDialog();
+                    }
+                  }}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="work-type">
+                  {t("Library.dialog.typeLabel")}
+                </Label>
                 <Input
                   id="work-type"
                   value={type}
@@ -542,273 +783,464 @@ export default function Library() {
                   onChange={(e) => setType(e.target.value)}
                 />
               </div>
-            ) : null}
-          </div>
 
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setDialog(null)}>
-              {t("Library.dialog.cancel")}
-            </Button>
-            <Button onClick={() => void submitDialog()} disabled={!name.trim()}>
-              {dialog?.kind === "rename" ? t("Library.dialog.save") : t("Library.dialog.create")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 归档确认 */}
-      <TrashDialog
-        open={trashOpen}
-        root={root}
-        onOpenChange={setTrashOpen}
-        onRestored={() => {
-          /*
-           * 恢复后必须重读清单，不能只刷字数。
-           *
-           * 原先这里只调 loadWordCounts()，而它是按 workspace.order /
-           * workspace.archived 遍历的——恢复一部作品时清单刚变，React 里的
-           * workspace 还是旧的，那个 id 根本不在遍历范围里，于是既不显示
-           * 也不报错，看上去就是"恢复没反应"。refresh() 会重读
-           * novels-yes.json 与各 work.json，字数随后由 orderKey 的 effect 补上。
-           */
-          void refresh();
-          /*
-           * refresh() 只更新作品库自己的状态。结构树 provider 挂在另一个
-           * context 上，它只在 [root, currentWorkId] 变化时重读 outline.json，
-           * 不通知它就继续拿着"已删除"的旧快照——于是恢复完当场看不见，
-           * 刷新页面才出现。bump 一下版本号让它跟着重载。
-           */
-          bumpDataVersion();
-        }}
-      />
-
-      {/*
-       * 工作区设置。
-       *
-       * 收纳与"这个库本身"有关的事：目录在哪、显示名是什么、
-       * 换目录、删掉整个库。原先路径挂在标题下方、指向的却是
-       * "换工作区"，与用户看到的东西名不副实——路径的信息属于设置。
-       */}
-      <Dialog
-        open={settingsOpen}
-        onOpenChange={(openState) => {
-          setSettingsOpen(openState);
-          /* 每次打开时重置，避免显示上次没提交完的输入。 */
-          if (openState) setAliasName(workspace?.alias ?? "");
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t("Library.workspace.settings")}</DialogTitle>
-          </DialogHeader>
-
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col gap-2">
-              <Label>{t("Library.workspace.dirLabel")}</Label>
-              <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate rounded-md border bg-muted/30 px-2 py-1.5 text-sm text-muted-foreground">
-                  {root}
-                </span>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="size-8 shrink-0"
-                  onClick={() => void reveal()}
-                  title={t("Library.workspace.openDir")}
-                  aria-label={t("Library.workspace.openDir")}
-                >
-                  <Folder className="icon-md" />
-                </Button>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="workspace-alias">{t("Library.workspace.aliasLabel")}</Label>
-              {/*
-               * 保存与取消紧贴输入框，不放到底部 DialogFooter。
-               *
-               * 这个弹窗里还有"更换工作区""删除工作区"两组按钮，
-               * 它们与改名无关，却会被底部的取消/保存隔开一整屏：
-               * 用户改完名字要往下扫过两个不相干的按钮才找到保存，
-               * 眼睛很自然会把"删除工作区"当成保存路径上的一个选项。
-               * 改名是个就地完成的动作，控件就该贴着它作用的对象。
-               */}
-              <div className="flex items-center gap-2">
-                <Input
-                  id="workspace-alias"
-                  value={aliasName}
-                  placeholder={t("Library.workspace.aliasPlaceholder")}
-                  onChange={(e) => setAliasName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && !e.nativeEvent.isComposing) {
-                      e.preventDefault();
-                      requestAliasSave();
-                    }
-                  }}
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="work-synopsis">
+                  {t("Library.dialog.synopsisLabel")}
+                </Label>
+                <Textarea
+                  id="work-synopsis"
+                  value={synopsis}
+                  rows={4}
+                  placeholder={t("Library.dialog.synopsisPlaceholder")}
+                  onChange={(e) => setSynopsis(e.target.value)}
                 />
+              </div>
+
+              <div className="border-border/70 flex flex-col gap-3 border-t pt-4">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="min-w-0">
+                    <Label htmlFor="work-auto-paragraph">
+                      {t("Library.dialog.autoParagraphLabel")}
+                    </Label>
+                    <p className="text-muted-foreground mt-1 text-xs leading-relaxed">
+                      {t("Library.dialog.autoParagraphHint")}
+                    </p>
+                  </div>
+                  <Switch
+                    id="work-auto-paragraph"
+                    checked={autoParagraph}
+                    disabled={reparagraping}
+                    onCheckedChange={setAutoParagraph}
+                  />
+                </div>
+
+                {dialog?.kind === "settings" ? (
+                  <div className="flex flex-col gap-2">
+                    {confirmReparagraph ? (
+                      <div className="border-border/70 bg-muted/20 flex flex-col gap-3 rounded-md border p-3">
+                        <p className="text-xs leading-relaxed">
+                          {t("Library.dialog.reparagraphConfirm")}
+                        </p>
+                        <div className="flex justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setConfirmReparagraph(false)}
+                          >
+                            {t("Library.dialog.cancel")}
+                          </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => void runReparagraph()}
+                          >
+                            <Pilcrow className="icon-sm" />
+                            {t("Library.dialog.reparagraphStart")}
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="justify-start"
+                        disabled={reparagraping}
+                        onClick={() => setConfirmReparagraph(true)}
+                      >
+                        <Pilcrow className="icon-sm" />
+                        {t("Library.dialog.reparagraph")}
+                      </Button>
+                    )}
+                    <p className="text-muted-foreground text-xs leading-relaxed">
+                      {reparagraping
+                        ? reparagraphProgress
+                          ? `${t("Library.dialog.reparagraphing")} ${reparagraphProgress.done}/${reparagraphProgress.total}`
+                          : t("Library.dialog.reparagraphPreparing")
+                        : t("Library.dialog.reparagraphHint")}
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button
+                variant="ghost"
+                disabled={reparagraping}
+                onClick={() => setDialog(null)}
+              >
+                {t("Library.dialog.cancel")}
+              </Button>
+              <Button
+                onClick={() => void submitDialog()}
+                disabled={!name.trim() || reparagraping}
+              >
+                {reparagraping ? (
+                  <Loader2 className="icon-sm animate-spin" />
+                ) : null}
+                {dialog?.kind === "settings"
+                  ? t("Library.dialog.save")
+                  : t("Library.dialog.create")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* 归档确认 */}
+        <TrashDialog
+          open={trashOpen}
+          root={root}
+          onOpenChange={setTrashOpen}
+          onRestored={() => {
+            /*
+             * 恢复后必须重读清单，不能只刷字数。
+             *
+             * 原先这里只调 loadWordCounts()，而它是按 workspace.order /
+             * workspace.archived 遍历的——恢复一部作品时清单刚变，React 里的
+             * workspace 还是旧的，那个 id 根本不在遍历范围里，于是既不显示
+             * 也不报错，看上去就是"恢复没反应"。refresh() 会重读
+             * novels-yes.json 与各 work.json，字数随后由 orderKey 的 effect 补上。
+             */
+            void refresh();
+            /*
+             * refresh() 只更新作品库自己的状态。结构树 provider 挂在另一个
+             * context 上，它只在 [root, currentWorkId] 变化时重读 outline.json，
+             * 不通知它就继续拿着"已删除"的旧快照——于是恢复完当场看不见，
+             * 刷新页面才出现。bump 一下版本号让它跟着重载。
+             */
+            bumpDataVersion();
+          }}
+        />
+
+        {/*
+         * 工作区设置。
+         *
+         * 收纳与"这个库本身"有关的事：目录在哪、显示名是什么、
+         * 迁移目录、删掉整个库。原先路径挂在标题下方、指向的却是
+         * "换工作区"，与用户看到的东西名不副实——路径的信息属于设置。
+         */}
+        <Dialog
+          open={settingsOpen}
+          onOpenChange={(openState) => {
+            setSettingsOpen(openState);
+            if (openState) setAliasName(workspaceDisplayName);
+          }}
+        >
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>{t("Library.workspace.settings")}</DialogTitle>
+            </DialogHeader>
+
+            <div className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <Label>{t("Library.workspace.dirLabel")}</Label>
+                <div className="flex items-center gap-2">
+                  <span className="bg-muted/30 text-muted-foreground min-w-0 flex-1 truncate rounded-md border px-2 py-1.5 text-sm">
+                    {root}
+                  </span>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="size-8 shrink-0"
+                    onClick={() => void reveal()}
+                    title={t("Library.workspace.openDir")}
+                    aria-label={t("Library.workspace.openDir")}
+                  >
+                    <Folder className="icon-md" />
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="workspace-alias">
+                  {t("Library.workspace.aliasLabel")}
+                </Label>
+                {/*
+                 * 保存与取消紧贴输入框，不放到底部 DialogFooter。
+                 *
+                 * 这个弹窗里还有"迁移工作区""删除工作区"两组按钮，
+                 * 它们与改名无关，却会被底部的取消/保存隔开一整屏：
+                 * 用户改完名字要往下扫过两个不相干的按钮才找到保存，
+                 * 眼睛很自然会把"删除工作区"当成保存路径上的一个选项。
+                 * 改名是个就地完成的动作，控件就该贴着它作用的对象。
+                 */}
+                <div className="flex items-center gap-2">
+                  <Input
+                    id="workspace-alias"
+                    value={aliasName}
+                    placeholder={t("Library.workspace.aliasPlaceholder")}
+                    onChange={(e) => setAliasName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                        e.preventDefault();
+                        requestAliasSave();
+                      }
+                    }}
+                  />
+                  <Button
+                    variant="ghost"
+                    className="shrink-0"
+                    onClick={() => {
+                      setAliasName(workspaceDisplayName);
+                      setSettingsOpen(false);
+                    }}
+                  >
+                    {t("Library.dialog.cancel")}
+                  </Button>
+                  <Button
+                    className="shrink-0"
+                    disabled={
+                      !aliasName.trim() ||
+                      aliasName.trim() === workspaceDisplayName.trim()
+                    }
+                    onClick={requestAliasSave}
+                  >
+                    {t("Library.dialog.save")}
+                  </Button>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2">
                 <Button
-                  variant="ghost"
-                  className="shrink-0"
+                  variant="outline"
+                  className="justify-start"
                   onClick={() => {
-                    setAliasName(workspace?.alias ?? "");
                     setSettingsOpen(false);
+                    void pickMigrationTarget()
+                      .then((target) => {
+                        if (target) setPendingMigration(target);
+                      })
+                      .catch((err) => {
+                        log.error("workspace migration target pick failed", {
+                          root,
+                          err,
+                        });
+                        toast.error("Library.workspace.migrateFailed");
+                      });
                   }}
                 >
-                  {t("Library.dialog.cancel")}
+                  <FolderOpen className="icon-md" />
+                  {t("Library.workspace.migrate")}
                 </Button>
                 <Button
-                  className="shrink-0"
-                  disabled={aliasName.trim() === (workspace?.alias ?? "").trim()}
-                  onClick={requestAliasSave}
+                  variant="outline"
+                  className="text-destructive hover:bg-destructive/10 hover:text-destructive justify-start"
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setPendingWorkspaceDelete(root);
+                  }}
                 >
-                  {t("Library.dialog.save")}
+                  <Trash2 className="icon-md" />
+                  {t("Library.action.deleteWorkspace")}
                 </Button>
               </div>
             </div>
 
-            <div className="flex flex-col gap-2">
-              <Button
-                variant="outline"
-                className="justify-start"
+            <DialogFooter>
+              <Button variant="ghost" onClick={() => setSettingsOpen(false)}>
+                {t("Library.dialog.close")}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        <AlertDialog
+          open={pendingArchive !== null}
+          onOpenChange={(openState) => {
+            if (!openState) setPendingArchive(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t("Library.action.confirmArchive")}
+              </AlertDialogTitle>
+              <AlertDialogDescription>
+                {t("Library.action.archiveDesc")}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>
+                {t("Library.dialog.cancel")}
+              </AlertDialogCancel>
+              <AlertDialogAction
                 onClick={() => {
-                  setSettingsOpen(false);
-                  void pick();
+                  if (!pendingArchive) return;
+                  const id = pendingArchive;
+                  setPendingArchive(null);
+                  void archive(id)
+                    .then(() => toast.success("Library.toast.archived"))
+                    .catch(() => toast.error("Library.toast.failed"));
                 }}
               >
-                <FolderOpen className="icon-md" />
-                {t("Library.workspace.change")}
-              </Button>
-              <Button
-                variant="outline"
-                className="justify-start text-destructive hover:bg-destructive/10 hover:text-destructive"
+                {t("Library.action.archive")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+
+        {/*
+         * 作品删除：输入标题确认。
+         *
+         * 删除按钮就贴在"继续写作"右侧，两者只隔一个手指宽，
+         * 普通确认框只能挡住手快，挡不住"没看清在删什么"。
+         * 要求打一遍标题等于强迫用户读它一遍。
+         */}
+        <ConfirmDeleteDialog
+          open={pendingWorkDelete !== null}
+          title={
+            pendingWorkDelete
+              ? (works[pendingWorkDelete]?.title ?? pendingWorkDelete)
+              : ""
+          }
+          confirmText={
+            pendingWorkDelete
+              ? (works[pendingWorkDelete]?.title ?? pendingWorkDelete)
+              : ""
+          }
+          description={t("Library.action.deleteWorkDesc")}
+          onOpenChange={(o) => {
+            if (!o) setPendingWorkDelete(null);
+          }}
+          onConfirm={() => {
+            if (!pendingWorkDelete) return;
+            const id = pendingWorkDelete;
+            setPendingWorkDelete(null);
+            void remove(id)
+              .then(() => toast.success("Library.toast.deleted"))
+              .catch(() => toast.error("Library.toast.failed"));
+          }}
+        />
+
+        {/*
+         * 工作区删除。
+         *
+         * 校验键用目录名而不是别名：目录名是磁盘上的真实地址，
+         * 打错一位就通不过，比让用户打一个自己刚起的显示名更可靠。
+         */}
+        <ConfirmDeleteDialog
+          open={pendingWorkspaceDelete !== null}
+          title={pendingWorkspaceDelete ?? root ?? ""}
+          confirmText={pendingWorkspaceDelete ?? root ?? ""}
+          description={t("Library.workspace.deleteDesc")}
+          onOpenChange={(o) => {
+            if (!o) setPendingWorkspaceDelete(null);
+          }}
+          onConfirm={() => {
+            setPendingWorkspaceDelete(null);
+            void runLongTask(
+              {
+                title: t("LongTask.workspace.delete.title"),
+                description: t("LongTask.workspace.delete.description"),
+              },
+              async () => deleteWorkspace()
+            )
+              .then(() => toast.success("Library.workspace.deleteDone"))
+              .catch(() => toast.error("Library.workspace.deleteFailed"));
+          }}
+        />
+
+        {/* 工作区迁移：目标目录必须为空，确认后才移动全部数据。 */}
+        <AlertDialog
+          open={pendingMigration !== null}
+          onOpenChange={(openState) => {
+            if (!openState) setPendingMigration(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t("Library.workspace.migrateTitle")}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="flex flex-col gap-2">
+                <span>{t("Library.workspace.migrateDesc")}</span>
+                <span className="text-foreground font-medium break-all">
+                  {pendingMigration}
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>
+                {t("Library.dialog.cancel")}
+              </AlertDialogCancel>
+              <AlertDialogAction
                 onClick={() => {
-                  setSettingsOpen(false);
-                  setPendingWorkspaceDelete(root);
+                  if (!pendingMigration) return;
+                  const target = pendingMigration;
+                  setPendingMigration(null);
+                  void runLongTask(
+                    {
+                      title: t("LongTask.workspace.migrate.title"),
+                      description: t("LongTask.workspace.migrate.description"),
+                    },
+                    async () => migrate(target)
+                  )
+                    .then((result) => {
+                      if (result.sourceRemoved) {
+                        toast.success("Library.workspace.migrateDone");
+                      } else {
+                        toast.warning("Library.workspace.migrateSourceKept");
+                      }
+                    })
+                    .catch(() =>
+                      toast.error("Library.workspace.migrateFailed")
+                    );
                 }}
               >
-                <Trash2 className="icon-md" />
-                {t("Library.action.deleteWorkspace")}
-              </Button>
-            </div>
-          </div>
+                {t("Library.workspace.migrateAction")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
 
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setSettingsOpen(false)}>
-              {t("Library.dialog.close")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <AlertDialog
-        open={pendingArchive !== null}
-        onOpenChange={(openState) => {
-          if (!openState) setPendingArchive(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("Library.action.confirmArchive")}</AlertDialogTitle>
-            <AlertDialogDescription>{t("Library.action.archiveDesc")}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("Library.dialog.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (!pendingArchive) return;
-                const id = pendingArchive;
-                setPendingArchive(null);
-                void archive(id)
-                  .then(() => toast.success("Library.toast.archived"))
-                  .catch(() => toast.error("Library.toast.failed"));
-              }}
-            >
-              {t("Library.action.archive")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/*
-       * 作品删除：输入标题确认。
-       *
-       * 删除按钮就贴在"继续写作"右侧，两者只隔一个手指宽，
-       * 普通确认框只能挡住手快，挡不住"没看清在删什么"。
-       * 要求打一遍标题等于强迫用户读它一遍。
-       */}
-      <ConfirmDeleteDialog
-        open={pendingWorkDelete !== null}
-        title={pendingWorkDelete ? works[pendingWorkDelete]?.title ?? pendingWorkDelete : ""}
-        confirmText={pendingWorkDelete ? works[pendingWorkDelete]?.title ?? pendingWorkDelete : ""}
-        description={t("Library.action.deleteWorkDesc")}
-        onOpenChange={(o) => {
-          if (!o) setPendingWorkDelete(null);
-        }}
-        onConfirm={() => {
-          if (!pendingWorkDelete) return;
-          const id = pendingWorkDelete;
-          setPendingWorkDelete(null);
-          void remove(id)
-            .then(() => toast.success("Library.toast.deleted"))
-            .catch(() => toast.error("Library.toast.failed"));
-        }}
-      />
-
-      {/*
-       * 工作区删除。
-       *
-       * 校验键用目录名而不是别名：目录名是磁盘上的真实地址，
-       * 打错一位就通不过，比让用户打一个自己刚起的显示名更可靠。
-       */}
-      <ConfirmDeleteDialog
-        open={pendingWorkspaceDelete !== null}
-        title={pendingWorkspaceDelete ?? root ?? ""}
-        confirmText={pendingWorkspaceDelete ?? root ?? ""}
-        description={t("Library.workspace.deleteDesc")}
-        onOpenChange={(o) => {
-          if (!o) setPendingWorkspaceDelete(null);
-        }}
-        onConfirm={() => {
-          setPendingWorkspaceDelete(null);
-          void deleteWorkspace().catch(() => toast.error("Library.toast.failed"));
-        }}
-      />
-
-      {/* 工作区更名确认：标题是页面级变化，值得问一句。 */}
-      <AlertDialog
-        open={pendingAlias !== null}
-        onOpenChange={(o) => {
-          if (!o) setPendingAlias(null);
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{t("Library.workspace.renameTitle")}</AlertDialogTitle>
-            <AlertDialogDescription className="flex flex-col gap-1">
-              <span>{t("Library.workspace.renameDesc")}</span>
-              <span className="font-medium text-foreground">
-                {pendingAlias?.from || t("Library.title")}
-              </span>
-              <span>{t("Library.workspace.renameTo")}</span>
-              <span className="font-medium text-foreground">{pendingAlias?.to}</span>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{t("Library.dialog.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              onClick={() => {
-                if (!pendingAlias) return;
-                const next = pendingAlias.to;
-                setPendingAlias(null);
-                setSettingsOpen(false);
-                void setWorkspaceAlias(next).catch(() => toast.error("Library.toast.failed"));
-              }}
-            >
-              {t("Library.dialog.save")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {/* 工作区更名确认：标题是页面级变化，值得问一句。 */}
+        <AlertDialog
+          open={pendingAlias !== null}
+          onOpenChange={(o) => {
+            if (!o) setPendingAlias(null);
+          }}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>
+                {t("Library.workspace.renameTitle")}
+              </AlertDialogTitle>
+              <AlertDialogDescription className="flex flex-col gap-1">
+                <span>{t("Library.workspace.renameDesc")}</span>
+                <span className="text-foreground font-medium">
+                  {pendingAlias?.from || workspaceDisplayName}
+                </span>
+                <span>{t("Library.workspace.renameTo")}</span>
+                <span className="text-foreground font-medium">
+                  {pendingAlias?.to}
+                </span>
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>
+                {t("Library.dialog.cancel")}
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => {
+                  if (!pendingAlias) return;
+                  const next = pendingAlias.to;
+                  setPendingAlias(null);
+                  setSettingsOpen(false);
+                  void setWorkspaceAlias(next).catch((err) => {
+                    log.error("workspace alias save failed", {
+                      root,
+                      next,
+                      err,
+                    });
+                    toast.error("Library.toast.failed");
+                  });
+                }}
+              >
+                {t("Library.dialog.save")}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </div>
   );

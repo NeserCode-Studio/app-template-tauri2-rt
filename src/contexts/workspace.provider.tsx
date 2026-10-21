@@ -9,8 +9,12 @@ import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { useLocalStorageState } from "ahooks";
 import { createLogger } from "@/lib/logger";
 import { WorkspaceContext, type WorkspaceContextValue } from "./workspace";
-import { pickWorkspaceDir, revealWorkspaceDir } from "@/services/workspace";
-import { moveWorkspaceToTrash } from "@/services/trash";
+import {
+  deleteWorkspaceDir,
+  migrateWorkspaceDir,
+  pickWorkspaceDir,
+  revealWorkspaceDir,
+} from "@/services/workspace";
 
 const log = createLogger("WorkspaceProvider");
 
@@ -46,7 +50,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     (path: string) => {
       const openedAt = Date.now();
       setRoot(path);
-      setRecent((prev) => [path, ...(prev ?? []).filter((p) => p !== path)].slice(0, 10));
+      setRecent((prev) =>
+        [path, ...(prev ?? []).filter((p) => p !== path)].slice(0, 10)
+      );
       setRecentOpenedAt((prev) => ({ ...(prev ?? {}), [path]: openedAt }));
       log.info("workspace opened", path);
     },
@@ -54,6 +60,20 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   );
 
   const close = useCallback(() => setRoot(null), [setRoot]);
+
+  const removeRecent = useCallback(
+    (path: string) => {
+      setRecent((prev) => (prev ?? []).filter((p) => p !== path));
+      setRecentOpenedAt((prev) => {
+        const next = { ...(prev ?? {}) };
+        delete next[path];
+        return next;
+      });
+      setRootState((current) => (current === path ? null : current));
+      log.info("recent workspace record removed", path);
+    },
+    [setRecent, setRecentOpenedAt]
+  );
 
   /**
    * 在系统文件管理器里打开工作区目录。
@@ -71,30 +91,71 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     }
   }, [root]);
 
-  /**
-   * 把整个工作区移入回收站并关闭它。
-   *
-   * 关闭是必须的：磁盘内容已经变了，留在打开状态会让 UI 显示
-   * 一份已经不存在的作品清单，用户再点任何东西都会报错。
-   */
+  /** 永久删除整个工作区并关闭它；工作区删除不提供恢复入口。 */
   const deleteWorkspace = useCallback(async () => {
     if (!root) return;
-    await moveWorkspaceToTrash(root, root);
-    /* 从最近列表里摘掉：它已经不在"最近用过"的状态下了。 */
-    setRecent((prev) => (prev ?? []).filter((p) => p !== root));
-    setRecentOpenedAt((prev) => {
-      const next = { ...(prev ?? {}) };
-      delete next[root];
-      return next;
-    });
-    setRoot(null);
-    log.info("workspace moved to trash", root);
+    try {
+      await deleteWorkspaceDir(root);
+      setRecent((prev) => (prev ?? []).filter((p) => p !== root));
+      setRecentOpenedAt((prev) => {
+        const next = { ...(prev ?? {}) };
+        delete next[root];
+        return next;
+      });
+      setRoot(null);
+      log.info("workspace permanently deleted", root);
+    } catch (err) {
+      log.error("workspace delete failed", { root, err });
+      throw err;
+    }
   }, [root, setRecent, setRecentOpenedAt, setRoot]);
 
   /** 弹出选择框并打开；用户取消则返回 null。 */
   const pickPath = useCallback(async (): Promise<string | null> => {
     return pickWorkspaceDir();
   }, []);
+
+  const pickMigrationTarget = useCallback(async (): Promise<string | null> => {
+    return pickWorkspaceDir("选择工作区迁移目标目录（必须是空目录）");
+  }, []);
+
+  const migrate = useCallback(
+    async (target: string) => {
+      if (!root) throw new Error("workspace is unavailable");
+      try {
+        const result = await migrateWorkspaceDir(root, target);
+        const nextRoot = result.root;
+        setRecent((prev) =>
+          [
+            nextRoot,
+            ...(prev ?? []).filter(
+              (path) => path !== root && path !== nextRoot
+            ),
+          ].slice(0, 10)
+        );
+        setRecentOpenedAt((prev) => {
+          const next = { ...(prev ?? {}) };
+          delete next[root];
+          next[nextRoot] = Date.now();
+          return next;
+        });
+        setRoot(nextRoot);
+        if (!result.sourceRemoved) {
+          log.warn("workspace migrated but source directory remains", {
+            from: root,
+            to: nextRoot,
+          });
+        } else {
+          log.info("workspace migrated", { from: root, to: nextRoot });
+        }
+        return result;
+      } catch (err) {
+        log.error("workspace migration failed", { root, target, err });
+        throw err;
+      }
+    },
+    [root, setRecent, setRecentOpenedAt, setRoot]
+  );
 
   const pick = useCallback(async (): Promise<string | null> => {
     const selected = await pickPath();
@@ -110,8 +171,11 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       isOpen: root !== null,
       open,
       close,
+      removeRecent,
       pick,
       pickPath,
+      pickMigrationTarget,
+      migrate,
       reveal,
       deleteWorkspace,
     }),
@@ -121,12 +185,19 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       recentOpenedAt,
       open,
       close,
+      removeRecent,
       pick,
       pickPath,
+      pickMigrationTarget,
+      migrate,
       reveal,
       deleteWorkspace,
     ]
   );
 
-  return <WorkspaceContext.Provider value={value}>{children}</WorkspaceContext.Provider>;
+  return (
+    <WorkspaceContext.Provider value={value}>
+      {children}
+    </WorkspaceContext.Provider>
+  );
 }

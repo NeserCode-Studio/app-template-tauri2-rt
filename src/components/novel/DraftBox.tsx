@@ -34,15 +34,19 @@ function relative(at: number, now: number): string {
 }
 
 /**
- * 草稿箱：集中列出所有"没提交成卡片"的半成品。
+ * 草稿箱：列出当前工作区里"没提交成卡片"的半成品。
  *
  * 草稿改由 services/drafts 的集中 JSON 存储托管后，这里遍历即可。
+ * 存储本身跨工作区保留，展示时必须按当前作品集合过滤，否则旧工作区的
+ * 草稿会出现在结构树里，点击也找不到对应章节。
  * 列表随自定义事件重渲染——草稿的写入发生在别的组件里，
  * localStorage 变化本身不会触发 React 更新。
  */
 export interface DraftBoxProps {
-  /** 跳到该草稿所属章节。 */
-  onOpenChapter: (chapterId: string) => void;
+  /** 当前工作区中的作品 id；其他工作区的草稿不参与展示。 */
+  workIds: ReadonlySet<string>;
+  /** 跳到该草稿所属作品的章节。 */
+  onOpenChapter: (workId: string, chapterId: string) => void;
 }
 
 /**
@@ -71,7 +75,7 @@ export function DraftFlashOverlay() {
   );
 }
 
-export default function DraftBox({ onOpenChapter }: DraftBoxProps) {
+export default function DraftBox({ workIds, onOpenChapter }: DraftBoxProps) {
   const { t } = useI18n();
   const [tick, setTick] = useState(0);
   /** 每次收到草稿变化事件递增，用于重新触发背景闪动。 */
@@ -79,7 +83,7 @@ export default function DraftBox({ onOpenChapter }: DraftBoxProps) {
   /** 待确认删除的草稿；null 表示没有打开确认弹窗。 */
   const [pendingDelete, setPendingDelete] = useState<Draft | null>(null);
   const now = Date.now();
-  const drafts = listDrafts();
+  const drafts = listDrafts().filter((draft) => workIds.has(draft.workId));
 
   /*
    * 首次打开时把旧版分键草稿并进来（之后是空操作）；
@@ -131,7 +135,7 @@ export default function DraftBox({ onOpenChapter }: DraftBoxProps) {
                 <button
                   type="button"
                   className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                  onClick={() => onOpenChapter(d.chapterId)}
+                  onClick={() => onOpenChapter(d.workId, d.chapterId)}
                   title={t("Editor.draft.open")}
                 >
                   <FileText className="icon-sm shrink-0 text-muted-foreground" />

@@ -67,7 +67,9 @@ async function reloadAll(root: string) {
     }
   }
   // 兜底：目录里存在但清单里没有的作品也列出来。
-  const dirNames = await fs2.exists(WORKS_DIR) ? await fs2.readDir(WORKS_DIR) : [];
+  const dirNames = (await fs2.exists(WORKS_DIR))
+    ? await fs2.readDir(WORKS_DIR)
+    : [];
   for (const name of dirNames) {
     if (works[name]) continue;
     try {
@@ -83,8 +85,8 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   const { root } = useWorkspace();
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [works, setWorks] = useState<Record<string, Work>>({});
-  const [currentWorkId, setCurrentWorkIdState] = useState<string | null>(
-    () => (root ? readCurrentWorkMap()[root] ?? null : null)
+  const [currentWorkId, setCurrentWorkIdState] = useState<string | null>(() =>
+    root ? (readCurrentWorkMap()[root] ?? null) : null
   );
   /** 磁盘数据版本：见 LibraryContextValue.dataVersion 的说明。 */
   const [dataVersion, setDataVersion] = useState(0);
@@ -151,12 +153,24 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
   );
 
   const create = useCallback(
-    async (title: string, type: string): Promise<Work | null> => {
+    async (
+      title: string,
+      type: string,
+      synopsis = "",
+      autoParagraph = true
+    ): Promise<Work | null> => {
       // workspace 可能尚未装载完成（如刚选完工作区就点新建），
       // 此时直接读盘拿到最新清单，而不是静默返回 null。
       if (!root) return null;
       const base = workspace ?? (await loadWorkspace(root));
-      const { ws: nextWs, work } = await createWork(root, base, title, type);
+      const { ws: nextWs, work } = await createWork(
+        root,
+        base,
+        title,
+        type,
+        synopsis,
+        autoParagraph
+      );
       setWorkspace(nextWs);
       setWorks((prev) => ({ ...prev, [work.id]: work }));
       setCurrentWorkId(work.id);
@@ -165,14 +179,20 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     [root, workspace, setCurrentWorkId]
   );
 
-  const rename = useCallback(
-    async (workId: string, title: string) => {
-      if (!root) return;
+  const updateWork = useCallback(
+    async (
+      workId: string,
+      changes: Partial<
+        Pick<Work, "title" | "type" | "synopsis" | "autoParagraph">
+      >
+    ) => {
+      if (!root) return null;
       const current = works[workId];
-      if (!current) return;
-      const next: Work = { ...current, title };
-      await saveWork(root, next);
-      setWorks((prev) => ({ ...prev, [workId]: next }));
+      if (!current) return null;
+      const next: Work = { ...current, ...changes };
+      const saved = await saveWork(root, next);
+      setWorks((prev) => ({ ...prev, [workId]: saved }));
+      return saved;
     },
     [root, works]
   );
@@ -215,7 +235,12 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     async (workId: string) => {
       if (!root) return;
       const base = workspace ?? (await loadWorkspace(root));
-      const nextWs = await deleteWork(root, base, workId, works[workId]?.title ?? workId);
+      const nextWs = await deleteWork(
+        root,
+        base,
+        workId,
+        works[workId]?.title ?? workId
+      );
       setWorkspace(nextWs);
       setWorks((prev) => {
         const next = { ...prev };
@@ -240,7 +265,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       bumpDataVersion,
       setWorkspaceAlias,
       create,
-      rename,
+      updateWork,
       archive,
       unarchive,
       remove,
@@ -254,7 +279,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
       bumpDataVersion,
       setWorkspaceAlias,
       create,
-      rename,
+      updateWork,
       archive,
       unarchive,
       remove,
@@ -262,5 +287,7 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
     ]
   );
 
-  return <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>;
+  return (
+    <LibraryContext.Provider value={value}>{children}</LibraryContext.Provider>
+  );
 }

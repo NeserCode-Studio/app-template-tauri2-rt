@@ -6,9 +6,18 @@
  */
 
 import { createFs, joinRel } from "./fs";
-import { chapterFile, chapterTextFile } from "./paths";
-import { chapterSchema, type Chapter, type Card } from "@/shared/schema";
+import { chapterFile, chapterIndexFile, chapterTextFile } from "./paths";
+import {
+  cardSchema,
+  chapterIndexSchema,
+  chapterSchema,
+  type Chapter,
+  type Card,
+  type ChapterMeta,
+} from "@/shared/schema";
 import { createLogger } from "@/lib/logger";
+import { paragraphsFromText } from "@/lib/chinese-paragraphs";
+import { AppError, RevisionConflictError } from "@/application/errors";
 
 const log = createLogger("ChapterService");
 
@@ -46,6 +55,88 @@ export function chapterWords(chapter: Chapter): number {
   return countWords(cardsToText(chapter.cards));
 }
 
+export type { ChapterMeta } from "@/shared/schema";
+
+export interface ChapterMetaLoadProgress {
+  phase: "scan" | "write";
+  done: number;
+  total: number;
+  chapterId?: string;
+  title?: string;
+}
+
+interface ChapterMetaLoadEntry {
+  force: boolean;
+  listeners: Set<(progress: ChapterMetaLoadProgress) => void>;
+  promise: Promise<Record<string, ChapterMeta>>;
+}
+
+const chapterMetaLoads = new Map<string, ChapterMetaLoadEntry>();
+
+function chapterMetaLoadKey(root: string, workId: string): string {
+  return `${root}\u0000${workId}`;
+}
+
+async function readChapterIndex(
+  root: string,
+  workId: string
+): Promise<Record<string, ChapterMeta> | null> {
+  const fs2 = createFs(root);
+  const file = chapterIndexFile(workId);
+  if (!(await fs2.exists(file))) return null;
+  try {
+    return chapterIndexSchema.parse(JSON.parse(await fs2.readText(file)))
+      .chapters;
+  } catch (err) {
+    log.warn("chapter index unreadable, rebuilding", { workId, err });
+    return null;
+  }
+}
+
+async function writeChapterIndex(
+  root: string,
+  workId: string,
+  chapters: Record<string, ChapterMeta>
+): Promise<void> {
+  const fs2 = createFs(root);
+  const index = chapterIndexSchema.parse({ chapters });
+  await fs2.writeText(chapterIndexFile(workId), JSON.stringify(index, null, 2));
+}
+
+async function updateChapterIndexEntry(
+  root: string,
+  workId: string,
+  meta: ChapterMeta & { id: string }
+): Promise<void> {
+  const chapters = await readChapterIndex(root, workId);
+  if (!chapters) return;
+  chapters[meta.id] = {
+    title: meta.title,
+    updatedAt: meta.updatedAt,
+    words: meta.words,
+  };
+  await writeChapterIndex(root, workId, chapters);
+}
+
+/** 从索引中移除若干章；批量删除结构时避免下次打开触发全量重建。 */
+export async function removeChapterIndexEntries(
+  root: string,
+  workId: string,
+  chapterIds: string[]
+): Promise<void> {
+  if (!chapterIds.length) return;
+  const chapters = await readChapterIndex(root, workId);
+  if (!chapters) return;
+  let changed = false;
+  for (const chapterId of chapterIds) {
+    if (chapters[chapterId]) {
+      delete chapters[chapterId];
+      changed = true;
+    }
+  }
+  if (changed) await writeChapterIndex(root, workId, chapters);
+}
+
 /** 新建空章。 */
 export function emptyChapter(id: string, title: string): Chapter {
   const now = Date.now();
@@ -59,7 +150,11 @@ export function emptyChapter(id: string, title: string): Chapter {
 }
 
 /** 读取章；文件不存在时返回 null（懒加载场景）。 */
-export async function loadChapter(root: string, workId: string, chapterId: string): Promise<Chapter | null> {
+export async function loadChapter(
+  root: string,
+  workId: string,
+  chapterId: string
+): Promise<Chapter | null> {
   const fs2 = createFs(root);
   const file = chapterFile(workId, chapterId);
   if (!(await fs2.exists(file))) return null;
@@ -89,10 +184,51 @@ export async function saveChapter(
    * 却会凭空多出一个和当前正文重复的版本，把历史列表越撑越脏。
    * 只有正文真的变了才值得留档。
    */
-  snapshot = true
+  snapshot = true,
+  /** 批量导入时先跳过逐章索引更新，结束后统一重建，避免 O(n²) 写盘。 */
+  updateIndex = true,
+  /**
+   * 调用方读取时的 revision。
+   *
+   * UI 自动保存可以省略；MCP 等外部写入必须提供。校验基于磁盘当前值，
+   * 而不是调用方对象，否则两个并发保存会各自从旧 revision 加一。
+   */
+  expectedRevision?: number
 ): Promise<Chapter> {
+  const startedAt = performance.now();
   const fs2 = createFs(root);
   const now = Date.now();
+  const jsonFile = chapterFile(workId, chapter.id);
+  let currentRevision = chapter.revision;
+  if (await fs2.exists(jsonFile)) {
+    try {
+      const current = chapterSchema.parse(
+        JSON.parse(await fs2.readText(jsonFile))
+      );
+      currentRevision = current.revision;
+      if (
+        expectedRevision !== undefined &&
+        currentRevision !== expectedRevision
+      ) {
+        throw new RevisionConflictError(currentRevision, current.updatedAt);
+      }
+    } catch (err) {
+      if (err instanceof RevisionConflictError) throw err;
+      log.error("chapter revision check failed", chapter.id, err);
+      if (expectedRevision !== undefined) {
+        throw new AppError(
+          "operation_failed",
+          "The current chapter file could not be read, so the write was not applied.",
+          { chapterId: chapter.id }
+        );
+      }
+    }
+  } else if (
+    expectedRevision !== undefined &&
+    expectedRevision !== currentRevision
+  ) {
+    throw new RevisionConflictError(currentRevision, chapter.updatedAt);
+  }
   /*
    * 快照策略：每次保存把**保存前**的正文压入 history，再写新正文。
    * 这样任何一次保存都能退回去，包括"误删了一段"之后的下一次自动保存。
@@ -100,15 +236,58 @@ export async function saveChapter(
    */
   const history = [...(chapter.history ?? [])];
   const meaningful = chapter.cards.some((c) => c.text.trim());
-  if (snapshot && meaningful && !sameCards(history[history.length - 1]?.cards, chapter.cards)) {
+  if (
+    snapshot &&
+    meaningful &&
+    !sameCards(history[history.length - 1]?.cards, chapter.cards)
+  ) {
     history.push({ at: now, savedAt: chapter.updatedAt, cards: chapter.cards });
-    if (history.length > HISTORY_LIMIT) history.splice(0, history.length - HISTORY_LIMIT);
+    if (history.length > HISTORY_LIMIT)
+      history.splice(0, history.length - HISTORY_LIMIT);
   }
-  const validated = chapterSchema.parse({ ...chapter, history, updatedAt: now });
-  const jsonFile = chapterFile(workId, validated.id);
-  await fs2.writeText(jsonFile, JSON.stringify(validated, null, 2));
-  await fs2.writeText(chapterTextFile(workId, validated.id), cardsToText(validated.cards));
-  log.debug("chapter saved", { id: validated.id, cards: validated.cards.length });
+  const validated = chapterSchema.parse({
+    ...chapter,
+    history,
+    revision: currentRevision + 1,
+    updatedAt: now,
+  });
+  const preparedAt = performance.now();
+  const json = JSON.stringify(validated, null, 2);
+  const text = cardsToText(validated.cards);
+  const serializedAt = performance.now();
+  await fs2.writeText(jsonFile, json);
+  const jsonWrittenAt = performance.now();
+  await fs2.writeText(chapterTextFile(workId, validated.id), text);
+  const textWrittenAt = performance.now();
+  if (updateIndex) {
+    try {
+      await updateChapterIndexEntry(root, workId, {
+        id: validated.id,
+        title: validated.title,
+        updatedAt: validated.updatedAt,
+        words: countWords(text),
+      });
+    } catch (err) {
+      log.warn("chapter index update failed", {
+        workId,
+        chapterId: validated.id,
+        err,
+      });
+    }
+  }
+  const indexUpdatedAt = performance.now();
+  log.info("chapter files written", {
+    id: validated.id,
+    cards: validated.cards.length,
+    jsonBytes: json.length,
+    textChars: text.length,
+    prepareMs: Math.round(preparedAt - startedAt),
+    serializeMs: Math.round(serializedAt - preparedAt),
+    jsonWriteMs: Math.round(jsonWrittenAt - serializedAt),
+    textWriteMs: Math.round(textWrittenAt - jsonWrittenAt),
+    indexUpdateMs: Math.round(indexUpdatedAt - textWrittenAt),
+    totalMs: Math.round(indexUpdatedAt - startedAt),
+  });
   return validated;
 }
 
@@ -182,7 +361,8 @@ export function listHistory(chapter: Chapter): HistoryEntry[] {
  * `index === -1` 取当前正文。
  */
 export function historyText(chapter: Chapter, index: number): string[] {
-  const cards = index < 0 ? chapter.cards : (chapter.history ?? [])[index]?.cards;
+  const cards =
+    index < 0 ? chapter.cards : (chapter.history ?? [])[index]?.cards;
   if (!cards) return [];
   return cards.map((c) => c.text.trim()).filter(Boolean);
 }
@@ -200,7 +380,11 @@ export function dropHistory(chapter: Chapter, index: number): Chapter {
   const history = chapter.history ?? [];
   if (index < 0 || index >= history.length) return chapter;
   const next = history.filter((_, i) => i !== index);
-  return chapterSchema.parse({ ...chapter, history: next, updatedAt: Date.now() });
+  return chapterSchema.parse({
+    ...chapter,
+    history: next,
+    updatedAt: Date.now(),
+  });
 }
 
 /**
@@ -225,7 +409,8 @@ export function rollbackTo(chapter: Chapter, index: number): Chapter {
       cards: chapter.cards,
     });
   }
-  if (nextHistory.length > HISTORY_LIMIT) nextHistory.splice(0, nextHistory.length - HISTORY_LIMIT);
+  if (nextHistory.length > HISTORY_LIMIT)
+    nextHistory.splice(0, nextHistory.length - HISTORY_LIMIT);
   return chapterSchema.parse({
     ...chapter,
     cards: target.cards,
@@ -235,10 +420,13 @@ export function rollbackTo(chapter: Chapter, index: number): Chapter {
 }
 
 /** 新建并保存空章。 */
-export async function createChapter(root: string, workId: string, title: string): Promise<Chapter> {
+export async function createChapter(
+  root: string,
+  workId: string,
+  title: string
+): Promise<Chapter> {
   const chapter = emptyChapter(crypto.randomUUID(), title);
-  await saveChapter(root, workId, chapter);
-  return chapter;
+  return saveChapter(root, workId, chapter);
 }
 
 /**
@@ -254,44 +442,151 @@ export async function renameChapter(
   title: string
 ): Promise<Chapter> {
   const next: Chapter = { ...chapter, title, updatedAt: Date.now() };
-  await saveChapter(root, workId, next);
-  return next;
+  return saveChapter(root, workId, next);
 }
 
-/** 删除章：同时清掉 json 与 txt 视图。 */
-export async function deleteChapter(root: string, workId: string, chapterId: string): Promise<void> {
-  const fs2 = createFs(root);
-  await fs2.remove(chapterFile(workId, chapterId));
-  await fs2.remove(chapterTextFile(workId, chapterId));
-  log.debug("chapter deleted", { id: chapterId });
+export interface ReparagraphProgress {
+  done: number;
+  total: number;
+  chapterId: string;
+  title: string;
+}
+
+export interface ReparagraphReport {
+  chapters: number;
+  changedChapters: number;
+  cardsBefore: number;
+  cardsAfter: number;
 }
 
 /**
- * 统计整部作品的字数：逐个读取章文件累加。
+ * 重新整理整部作品的段落。
  *
- * 作品库要显示的是全书字数，因此不能靠"当前编辑的章"累加——
- * 那样数字会随最后编辑的位置跳变。这里以磁盘为准全量重算，
- * 单章损坏只跳过该章，不让整部作品统计失败。
+ * 以现有卡片为边界逐张处理：短段原样保留，长段和硬换行重新组织。
+ * 因此这个动作不会把用户已经分开的相邻段落重新粘在一起；真正改动的
+ * 章会通过 saveChapter 留下正文快照，可在历史版本里回滚。
  */
-export async function countWorkWords(root: string, workId: string): Promise<number> {
+export async function reparagraphWork(
+  root: string,
+  workId: string,
+  onProgress?: (progress: ReparagraphProgress) => void
+): Promise<ReparagraphReport> {
   const fs2 = createFs(root);
-  let files: string[];
-  try {
-    files = await fs2.readDir(joinRel("works", workId, "chapters"));
-  } catch {
-    return 0;
-  }
-  let total = 0;
-  for (const name of files) {
-    if (!name.endsWith(".json")) continue;
+  const dir = joinRel("works", workId, "chapters");
+  const files = (await fs2.readDir(dir))
+    .filter((name) => name.endsWith(".json"))
+    .sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+
+  const report: ReparagraphReport = {
+    chapters: 0,
+    changedChapters: 0,
+    cardsBefore: 0,
+    cardsAfter: 0,
+  };
+
+  for (let index = 0; index < files.length; index += 1) {
+    const name = files[index];
+    let chapterTitle = name;
     try {
-      const raw = await fs2.readText(joinRel("works", workId, "chapters", name));
-      const parsed = chapterSchema.safeParse(JSON.parse(raw));
-      if (parsed.success) total += countWords(cardsToText(parsed.data.cards));
+      const parsed = chapterSchema.safeParse(
+        JSON.parse(await fs2.readText(joinRel(dir, name)))
+      );
+      if (!parsed.success) {
+        log.warn("reparagraph: chapter unreadable", name);
+        onProgress?.({
+          done: index + 1,
+          total: files.length,
+          chapterId: name.slice(0, -".json".length),
+          title: chapterTitle,
+        });
+        continue;
+      }
+      const chapter = parsed.data;
+      chapterTitle = chapter.title;
+      report.chapters += 1;
+      report.cardsBefore += chapter.cards.length;
+
+      const cards = chapter.cards.flatMap((card) => {
+        if (!card.text.trim()) return [card];
+        const paragraphs = paragraphsFromText(card.text);
+        if (!paragraphs.length) return [card];
+        return paragraphs.map((text, paragraphIndex) =>
+          paragraphIndex === 0
+            ? { ...card, text }
+            : cardSchema.parse({
+                id: crypto.randomUUID(),
+                text,
+                createdAt: card.createdAt + paragraphIndex,
+                updatedAt: card.updatedAt + paragraphIndex,
+              })
+        );
+      });
+      report.cardsAfter += cards.length;
+
+      if (!sameCards(chapter.cards, cards)) {
+        await saveChapter(root, workId, { ...chapter, cards }, true, false);
+        report.changedChapters += 1;
+      }
     } catch (err) {
-      log.warn("work word count: chapter unreadable", name, err);
+      log.warn("reparagraph: chapter failed", name, err);
     }
+
+    onProgress?.({
+      done: index + 1,
+      total: files.length,
+      chapterId: name.slice(0, -".json".length),
+      title: chapterTitle,
+    });
   }
+
+  await loadChapterMetas(
+    root,
+    workId,
+    (progress) => {
+      onProgress?.({
+        done: progress.done,
+        total: progress.total,
+        chapterId: progress.chapterId ?? "",
+        title: progress.title ?? "",
+      });
+    },
+    true
+  );
+  log.info("work reparagraphed", { workId, ...report });
+  return report;
+}
+
+/** 删除章：同时清掉 json 与 txt 视图。 */
+export async function deleteChapter(
+  root: string,
+  workId: string,
+  chapterId: string
+): Promise<void> {
+  const fs2 = createFs(root);
+  await fs2.remove(chapterFile(workId, chapterId));
+  await fs2.remove(chapterTextFile(workId, chapterId));
+  await removeChapterIndexEntries(root, workId, [chapterId]);
+  log.debug("chapter deleted", { id: chapterId });
+}
+
+/** 统计整部作品的字数：从章节索引读取轻量元信息后累加。 */
+export async function countWorkWords(
+  root: string,
+  workId: string,
+  onProgress?: (progress: ChapterMetaLoadProgress) => void
+): Promise<number> {
+  const startedAt = performance.now();
+  const chapters = await loadChapterMetas(root, workId, onProgress);
+  const total = Object.values(chapters).reduce(
+    (sum, chapter) => sum + chapter.words,
+    0
+  );
+  log.info("work words counted", {
+    workId,
+    chapters: Object.keys(chapters).length,
+    total,
+    ms: Math.round(performance.now() - startedAt),
+  });
   return total;
 }
 
@@ -302,41 +597,176 @@ export async function countWorkWords(root: string, workId: string): Promise<numb
  * 侧栏卡片要显示"最近更新时间"和字数，只能从章文件取。这里一次性读完，
  * 换来的是列表渲染时零 IO。
  */
-export async function loadChapterMetas(
+async function loadChapterMetasUncached(
   root: string,
-  workId: string
+  workId: string,
+  onProgress?: (progress: ChapterMetaLoadProgress) => void,
+  force = false
 ): Promise<Record<string, ChapterMeta>> {
+  const startedAt = performance.now();
   const fs2 = createFs(root);
-  const out: Record<string, ChapterMeta> = {};
   let files: string[];
   try {
     files = await fs2.readDir(joinRel("works", workId, "chapters"));
   } catch {
-    return out;
+    return {};
   }
-  for (const name of files) {
-    if (!name.endsWith(".json")) continue;
+  const jsonFiles = files
+    .filter((name) => name.endsWith(".json"))
+    .sort((a, b) => a.localeCompare(b, "zh-Hans-CN"));
+  const diskIds = jsonFiles.map((name) => name.slice(0, -".json".length));
+  const cached = await readChapterIndex(root, workId);
+  if (
+    !force &&
+    cached &&
+    Object.keys(cached).length === diskIds.length &&
+    diskIds.every((id) => Boolean(cached[id]))
+  ) {
+    log.info("chapter index hit", {
+      workId,
+      chapters: diskIds.length,
+      ms: Math.round(performance.now() - startedAt),
+    });
+    return cached;
+  }
+
+  const out: Record<string, ChapterMeta> = {};
+  onProgress?.({
+    phase: "scan",
+    done: 0,
+    total: jsonFiles.length,
+  });
+  for (let index = 0; index < jsonFiles.length; index += 1) {
+    const name = jsonFiles[index];
     try {
       const parsed = chapterSchema.safeParse(
-        JSON.parse(await fs2.readText(joinRel("works", workId, "chapters", name)))
+        JSON.parse(
+          await fs2.readText(joinRel("works", workId, "chapters", name))
+        )
       );
-      if (!parsed.success) continue;
+      if (!parsed.success) {
+        log.warn("chapter meta: invalid", name);
+        onProgress?.({
+          phase: "scan",
+          done: index + 1,
+          total: jsonFiles.length,
+          chapterId: name.slice(0, -".json".length),
+        });
+        continue;
+      }
       out[parsed.data.id] = {
         title: parsed.data.title,
         updatedAt: parsed.data.updatedAt,
         words: chapterWords(parsed.data),
       };
+      onProgress?.({
+        phase: "scan",
+        done: index + 1,
+        total: jsonFiles.length,
+        chapterId: parsed.data.id,
+        title: parsed.data.title,
+      });
     } catch (err) {
       log.warn("chapter meta: unreadable", name, err);
+      onProgress?.({
+        phase: "scan",
+        done: index + 1,
+        total: jsonFiles.length,
+        chapterId: name.slice(0, -".json".length),
+      });
     }
   }
+  onProgress?.({
+    phase: "write",
+    done: jsonFiles.length,
+    total: jsonFiles.length,
+  });
+  await writeChapterIndex(root, workId, out);
+  log.info("chapter metas loaded", {
+    workId,
+    files: jsonFiles.length,
+    readable: Object.keys(out).length,
+    indexed: true,
+    ms: Math.round(performance.now() - startedAt),
+  });
   return out;
 }
 
-export interface ChapterMeta {
-  title: string;
-  updatedAt: number;
-  words: number;
+export async function loadChapterMetas(
+  root: string,
+  workId: string,
+  onProgress?: (progress: ChapterMetaLoadProgress) => void,
+  force = false
+): Promise<Record<string, ChapterMeta>> {
+  const key = chapterMetaLoadKey(root, workId);
+  for (;;) {
+    const active = chapterMetaLoads.get(key);
+    if (active) {
+      if (onProgress) active.listeners.add(onProgress);
+      if (!force || active.force) return active.promise;
+      await active.promise.catch(() => undefined);
+      continue;
+    }
+
+    const entry: ChapterMetaLoadEntry = {
+      force,
+      listeners: new Set(onProgress ? [onProgress] : []),
+      promise: Promise.resolve({}),
+    };
+    entry.promise = loadChapterMetasUncached(
+      root,
+      workId,
+      (progress) => {
+        for (const listener of entry.listeners) {
+          try {
+            listener(progress);
+          } catch (err) {
+            log.warn("chapter meta progress listener failed", err);
+          }
+        }
+      },
+      force
+    ).finally(() => {
+      if (chapterMetaLoads.get(key) === entry) {
+        chapterMetaLoads.delete(key);
+      }
+    });
+    chapterMetaLoads.set(key, entry);
+    return entry.promise;
+  }
+}
+
+/** 只读取一章的轻量元信息；保存后用它替代整部作品的元信息重扫。 */
+export async function loadChapterMeta(
+  root: string,
+  workId: string,
+  chapterId: string
+): Promise<ChapterMeta | null> {
+  const startedAt = performance.now();
+  const fs2 = createFs(root);
+  try {
+    const parsed = chapterSchema.safeParse(
+      JSON.parse(await fs2.readText(chapterFile(workId, chapterId)))
+    );
+    if (!parsed.success) {
+      log.warn("chapter meta: invalid", chapterId);
+      return null;
+    }
+    const meta = {
+      title: parsed.data.title,
+      updatedAt: parsed.data.updatedAt,
+      words: chapterWords(parsed.data),
+    };
+    log.info("chapter meta loaded", {
+      workId,
+      chapterId,
+      ms: Math.round(performance.now() - startedAt),
+    });
+    return meta;
+  } catch (err) {
+    log.warn("chapter meta: unreadable", chapterId, err);
+    return null;
+  }
 }
 
 /** 仅取 id 的小工具（避免上面把参数名写错）。 */

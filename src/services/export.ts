@@ -42,7 +42,10 @@ export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
 };
 
 /** 章标题按所选格式渲染。 */
-function formatTitle(title: string, format: ExportOptions["titleFormat"]): string {
+function formatTitle(
+  title: string,
+  format: ExportOptions["titleFormat"]
+): string {
   const name = title.trim();
   switch (format) {
     case "bracket":
@@ -60,7 +63,9 @@ function formatBody(text: string, opts: ExportOptions): string {
     .split("\n")
     .map((l) => l.trimEnd())
     .filter((l) => l.length > 0);
-  return lines.map((l) => (opts.indentParagraph ? `\u3000\u3000${l}` : l)).join("\n");
+  return lines
+    .map((l) => (opts.indentParagraph ? `\u3000\u3000${l}` : l))
+    .join("\n");
 }
 
 /**
@@ -86,10 +91,12 @@ export async function buildExportText(
   if (onlyChapterId) chapters = chapters.filter((n) => n.id === onlyChapterId);
 
   /* 卷标题：只在该卷第一章之前输出一次。 */
-  const volumeTitleFor = (node: OutlineNode): string | null => {
+  const volumeTitleFor = (node: OutlineNode): OutlineNode | null => {
     if (!opts.includeVolumeTitle || !node.parentId) return null;
-    const vol = outline.nodes.find((n) => n.id === node.parentId && n.type === "volume");
-    return vol ? vol.title.trim() : null;
+    const vol = outline.nodes.find(
+      (n) => n.id === node.parentId && n.type === "volume"
+    );
+    return vol ?? null;
   };
   let lastVolume: string | null = null;
 
@@ -109,9 +116,11 @@ export async function buildExportText(
     }
 
     const vol = volumeTitleFor(node);
-    if (vol && vol !== lastVolume) {
-      blocks.push(vol);
-      lastVolume = vol;
+    if (vol && vol.title.trim() !== lastVolume) {
+      blocks.push(vol.title.trim());
+      const preface = vol.preface.trim();
+      if (preface) blocks.push(formatBody(preface, opts));
+      lastVolume = vol.title.trim();
     }
     if (opts.includeChapterTitle) {
       blocks.push(formatTitle(node.title, opts.titleFormat));

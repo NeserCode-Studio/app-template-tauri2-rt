@@ -8,14 +8,11 @@
 
 import { open } from "@tauri-apps/plugin-dialog";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
+import { invoke } from "@tauri-apps/api/core";
 import { createFs } from "./fs";
 import { joinRel } from "./fs";
 import { moveToTrash } from "./trash";
-import {
-  loadOutline,
-  reconcileChapterIds,
-  saveOutline,
-} from "./outline";
+import { loadOutline, reconcileChapterIds, saveOutline } from "./outline";
 import { workspaceFile, workMetaFile, workDir, WORKS_DIR } from "./paths";
 import {
   chapterSchema,
@@ -35,14 +32,37 @@ export function emptyWorkspace(): Workspace {
 }
 
 /** 弹出目录选择框，返回用户选定的绝对路径或 null。 */
-export async function pickWorkspaceDir(): Promise<string | null> {
+export async function pickWorkspaceDir(
+  title = "选择 novels-yes 书库目录"
+): Promise<string | null> {
   const selected = await open({
     directory: true,
     multiple: false,
-    title: "选择 novels-yes 书库目录",
+    title,
   });
   if (Array.isArray(selected)) return selected[0] ?? null;
   return selected;
+}
+
+/** 永久删除整个工作区目录；该操作没有回收站兜底。 */
+export async function deleteWorkspaceDir(root: string): Promise<void> {
+  await invoke("workspace_delete", { root });
+}
+
+export interface WorkspaceMigrationResult {
+  root: string;
+  sourceRemoved: boolean;
+}
+
+/** 把当前工作区迁移到用户选择的空目录。 */
+export async function migrateWorkspaceDir(
+  root: string,
+  target: string
+): Promise<WorkspaceMigrationResult> {
+  return invoke<WorkspaceMigrationResult>("workspace_migrate", {
+    root,
+    target,
+  });
 }
 
 /**
@@ -117,8 +137,33 @@ export async function loadWorkspace(root: string): Promise<Workspace> {
   }
 }
 
+/**
+ * 只读检查目录是否已经是可用工作区。
+ *
+ * 打开 / 更换工作区必须先判断再跳转，不能借 `loadWorkspace` 的初始化
+ * 分支顺手写清单；创建新工作区才允许产生文件。
+ */
+export async function inspectWorkspace(
+  root: string
+): Promise<"ready" | "missing" | "invalid"> {
+  const fs2 = createFs(root);
+  const file = workspaceFile();
+  try {
+    if (!(await fs2.exists(file))) return "missing";
+    const raw = await fs2.readText(file);
+    workspaceSchema.parse(JSON.parse(raw));
+    return "ready";
+  } catch (err) {
+    log.warn("workspace inspection failed", { root, err });
+    return "invalid";
+  }
+}
+
 /** 持久化工作区清单。 */
-export async function saveWorkspace(root: string, ws: Workspace): Promise<void> {
+export async function saveWorkspace(
+  root: string,
+  ws: Workspace
+): Promise<void> {
   const fs2 = createFs(root);
   const validated = workspaceSchema.parse(ws);
   await fs2.writeText(workspaceFile(), JSON.stringify(validated, null, 2));
@@ -129,7 +174,9 @@ export async function createWork(
   root: string,
   ws: Workspace,
   title: string,
-  type = ""
+  type = "",
+  synopsis = "",
+  autoParagraph = true
 ): Promise<{ ws: Workspace; work: Work }> {
   const fs2 = createFs(root);
   const now = Date.now();
@@ -137,6 +184,8 @@ export async function createWork(
     id: crypto.randomUUID(),
     title,
     type,
+    synopsis,
+    autoParagraph,
     createdAt: now,
     updatedAt: now,
   });
@@ -160,10 +209,14 @@ export async function loadWork(root: string, workId: string): Promise<Work> {
 }
 
 /** 保存作品元数据。 */
-export async function saveWork(root: string, work: Work): Promise<void> {
+export async function saveWork(root: string, work: Work): Promise<Work> {
   const fs2 = createFs(root);
   const validated = workSchema.parse({ ...work, updatedAt: Date.now() });
-  await fs2.writeText(workMetaFile(work.id), JSON.stringify(validated, null, 2));
+  await fs2.writeText(
+    workMetaFile(work.id),
+    JSON.stringify(validated, null, 2)
+  );
+  return validated;
 }
 
 /**
@@ -177,11 +230,17 @@ export async function saveWork(root: string, work: Work): Promise<void> {
  * 一离开作品库界面重新加载，归档标记就没了：继续写作重新亮起，
  * 菜单里也退回"归档"。两处必须一起写。
  */
-export async function archiveWork(root: string, ws: Workspace, workId: string): Promise<Workspace> {
+export async function archiveWork(
+  root: string,
+  ws: Workspace,
+  workId: string
+): Promise<Workspace> {
   const next = workspaceSchema.parse({
     ...ws,
     order: ws.order.filter((id) => id !== workId),
-    archived: ws.archived.includes(workId) ? ws.archived : [...ws.archived, workId],
+    archived: ws.archived.includes(workId)
+      ? ws.archived
+      : [...ws.archived, workId],
   });
   await saveWorkspace(root, next);
   await setWorkArchived(root, workId, true);
@@ -189,7 +248,11 @@ export async function archiveWork(root: string, ws: Workspace, workId: string): 
 }
 
 /** 从归档恢复。 */
-export async function unarchiveWork(root: string, ws: Workspace, workId: string): Promise<Workspace> {
+export async function unarchiveWork(
+  root: string,
+  ws: Workspace,
+  workId: string
+): Promise<Workspace> {
   const next = workspaceSchema.parse({
     ...ws,
     order: ws.order.includes(workId) ? ws.order : [...ws.order, workId],
@@ -241,7 +304,9 @@ export async function scanAndRepair(root: string): Promise<ScanReport> {
     recoveredChapters: [],
   };
 
-  const dirNames = (await fs2.exists(WORKS_DIR)) ? await fs2.readDir(WORKS_DIR) : [];
+  const dirNames = (await fs2.exists(WORKS_DIR))
+    ? await fs2.readDir(WORKS_DIR)
+    : [];
   /* works/ 下只有作品目录；混入文件时 loadWork 会失败，跳过即可。 */
   const onDisk = new Set<string>();
   for (const name of dirNames) {
@@ -249,7 +314,11 @@ export async function scanAndRepair(root: string): Promise<ScanReport> {
       const work = await loadWork(root, name);
       onDisk.add(name);
       if (!ws.order.includes(name) && !ws.archived.includes(name)) {
-        report.orphans.push({ id: name, title: work.title, updatedAt: work.updatedAt });
+        report.orphans.push({
+          id: name,
+          title: work.title,
+          updatedAt: work.updatedAt,
+        });
       }
     } catch {
       /* 非作品目录或元数据损坏，不认领。 */
@@ -294,7 +363,11 @@ export async function scanAndRepair(root: string): Promise<ScanReport> {
    * 外部删了节点还在，用户点进去就是一片空白。这两类同样需要扫描，
    * 但要分给每部作品自己的目录去查。
    */
-  await scanWorkOutlines(root, [...ws.order, ...ws.archived, ...report.orphans.map((o) => o.id)], report);
+  await scanWorkOutlines(
+    root,
+    [...ws.order, ...ws.archived, ...report.orphans.map((o) => o.id)],
+    report
+  );
 
   log.info("workspace scan done", {
     orphans: report.orphans.length,
@@ -335,11 +408,15 @@ async function scanWorkOutlines(
         /* 没有章目录：新作品或全删光了。 */
       }
       const diskIds = new Set(
-        files.filter((f) => f.endsWith(".json")).map((f) => f.slice(0, -".json".length))
+        files
+          .filter((f) => f.endsWith(".json"))
+          .map((f) => f.slice(0, -".json".length))
       );
 
       const claimed = new Set(
-        aligned.nodes.filter((n) => n.type === "chapter" && diskIds.has(n.id)).map((n) => n.id)
+        aligned.nodes
+          .filter((n) => n.type === "chapter" && diskIds.has(n.id))
+          .map((n) => n.id)
       );
       const dangling = aligned.nodes.filter(
         (n) => n.type === "chapter" && !diskIds.has(n.id)
@@ -377,7 +454,9 @@ async function adoptChapterFiles(
   let added = 0;
   for (const id of free) {
     try {
-      const raw = await fs2.readText(joinRel("works", workId, "chapters", id + ".json"));
+      const raw = await fs2.readText(
+        joinRel("works", workId, "chapters", id + ".json")
+      );
       const parsed = chapterSchema.safeParse(JSON.parse(raw));
       /* 时间取自文件本身，恢复后的排序才和写作顺序一致。 */
       const createdAt = parsed.success ? parsed.data.createdAt : now;
@@ -389,6 +468,7 @@ async function adoptChapterFiles(
         order: nodes.length,
         status: "draft",
         synopsis: "",
+        preface: "",
         plotSummary: "",
         collapsed: false,
         createdAt,
@@ -412,7 +492,11 @@ async function adoptChapterFiles(
  * 已经落盘成功了，为了一条附属标记把整个操作报失败不划算——
  * 冷启动时的目录兜底扫描仍会把这这部作品捡回来。
  */
-async function setWorkArchived(root: string, workId: string, archived: boolean): Promise<void> {
+async function setWorkArchived(
+  root: string,
+  workId: string,
+  archived: boolean
+): Promise<void> {
   try {
     const work = await loadWork(root, workId);
     if (work.archived === archived) return;

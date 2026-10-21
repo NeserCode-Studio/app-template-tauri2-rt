@@ -37,6 +37,8 @@ export interface OutlineContextValue {
   reload: () => Promise<void>;
   /** 重新读取章元信息（保存、切章后调用）。 */
   reloadChapterMetas: () => Promise<void>;
+  /** 只刷新一章的元信息，避免保存后重读整部作品。 */
+  refreshChapterMeta: (chapterId: string) => Promise<void>;
 }
 
 export const OutlineContext = createContext<OutlineContextValue>({
@@ -52,6 +54,7 @@ export const OutlineContext = createContext<OutlineContextValue>({
   openChapter: () => {},
   reload: async () => {},
   reloadChapterMetas: async () => {},
+  refreshChapterMeta: async () => {},
 });
 
 export function useOutline(): OutlineContextValue {
