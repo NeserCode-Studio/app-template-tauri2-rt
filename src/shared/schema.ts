@@ -31,9 +31,16 @@ export const outlineNodeSchema = z.object({
    * 情节小结：比 synopsis 长的自由文本，只在章节详情 Dialog 里编辑。
    *
    * synopsis 是"给结构树扫读用的一句"，情节小结是"给写作回忆用的段落"，
- * 两者长度与用途都不同，塞进同一个字段会互相将就。
+   * 两者长度与用途都不同，塞进同一个字段会互相将就。
    */
   plotSummary: z.string().default(""),
+  /**
+   * 卷首语：卷（或同层级分组节点）自己的内容。
+   *
+   * 章的内容在章文件里，卷没有对应正文文件；卷首语是唯一挂在卷节点上的
+   * 长文本。存为纯文本即可，导出与编辑都按段落处理。
+   */
+  preface: z.string().default(""),
   /** 是否折叠（仅 volume 有意义，但统一携带以便持久化）。 */
   collapsed: z.boolean().default(false),
   /** scene 可折叠，记录是否折叠。 */
@@ -67,6 +74,8 @@ export const chapterSchema = z.object({
   title: z.string(),
   status: z.enum(["draft", "revising", "final"]).default("draft"),
   cards: z.array(cardSchema),
+  /** 乐观并发版本号；每次成功写入严格加一。 */
+  revision: z.number().int().nonnegative().default(0),
   /**
    * 历史快照：每次保存前的上一版正文。
    *
@@ -87,21 +96,54 @@ export const chapterSchema = z.object({
     )
     .default([]),
   /** 光标位置：卡片下标 + 卡内偏移，两者都持久化。 */
-  cursor: z.object({ cardIndex: z.number().int(), offset: z.number().int() }).default({
-    cardIndex: 0,
-    offset: 0,
-  }),
+  cursor: z
+    .object({ cardIndex: z.number().int(), offset: z.number().int() })
+    .default({
+      cardIndex: 0,
+      offset: 0,
+    }),
   createdAt: z.number().int(),
   updatedAt: z.number().int(),
 });
 
 export type Chapter = z.infer<typeof chapterSchema>;
 
+/**
+ * 章节索引项。
+ *
+ * 结构树和作品库只需要标题、正文更新时间与字数。把这些轻量信息集中到
+ * 一个索引文件，打开千章作品时就不必逐个读取完整章 JSON。
+ */
+export const chapterMetaSchema = z.object({
+  title: z.string(),
+  updatedAt: z.number().int(),
+  words: z.number().int(),
+});
+
+export type ChapterMeta = z.infer<typeof chapterMetaSchema>;
+
+/** 单部作品的章节索引。键是章 id，与 chapters/<id>.json 对应。 */
+export const chapterIndexSchema = z.object({
+  version: z.number().int().default(1),
+  chapters: z.record(idSchema, chapterMetaSchema),
+});
+
+export type ChapterIndex = z.infer<typeof chapterIndexSchema>;
+
 /** 作品元数据。 */
 export const workSchema = z.object({
   id: idSchema,
   title: z.string(),
   type: z.string().default(""),
+  /** 作品简介：导入时由标题之前的前置信息填充，可随时编辑。 */
+  synopsis: z.string().default(""),
+  /**
+   * 后续导入默认整理段落。
+   *
+   * 这是作品级偏好，不会在开关变化时静默改写正文；已有正文由书本设置
+   * 里的“整理现有正文”显式触发，二者语义分开。
+   */
+  autoParagraph: z.boolean().default(true),
   /** 封面占位（暂无外部图片，记录一个本地相对路径或空）。 */
   cover: z.string().default(""),
   archived: z.boolean().default(false),
