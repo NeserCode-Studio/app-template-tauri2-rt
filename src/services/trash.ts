@@ -26,8 +26,17 @@ import {
 } from "./paths";
 import { z } from "zod";
 import { createLogger } from "@/lib/logger";
+import { chapterSchema, outlineSchema, workSchema } from "@/shared/schema";
 
 const log = createLogger("TrashService");
+
+export const TRASH_CHANGED_EVENT = "novels-yes:trash-changed";
+
+function notifyTrashChanged(): void {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(TRASH_CHANGED_EVENT));
+  }
+}
 
 /** 被删项的类型。 */
 export const TRASH_KINDS = ["workspace", "work", "chapter", "volume"] as const;
@@ -54,6 +63,12 @@ export const trashItemSchema = z.object({
   originPath: z.string(),
   /** 展示用标题。 */
   title: z.string(),
+  /** 删除时所属作品 / 卷的展示名，避免恢复前还要反查结构树。 */
+  sourceTitle: z.string().default(""),
+  /** 删除时的内容摘要，供回收站列表与预览使用。 */
+  preview: z.string().default(""),
+  /** 内容最后修改时间；历史记录没有时由页面回退到节点或删除时间。 */
+  modifiedAt: z.number().int().nullable().default(null),
   /** 同级排序信息，恢复时用。 */
   parentId: z.string().uuid().nullable().default(null),
   order: z.number().int().default(0),
@@ -133,6 +148,17 @@ export const trashItemSchema = z.object({
 
 export type TrashItem = z.infer<typeof trashItemSchema>;
 
+const storedTrashItemSchema = trashItemSchema.extend({
+  moved: z
+    .array(
+      z.object({
+        rel: z.string(),
+        dest: z.string(),
+      })
+    )
+    .default([]),
+});
+
 /** 清单：仅存 id 列表，详情在各自文件里，便于单条增删不重写全量。 */
 const trashIndexSchema = z.object({
   items: z.array(z.string().uuid()).default([]),
@@ -176,6 +202,10 @@ export async function moveToTrash(
     /** 章：json 与 txt 的相对路径；作品：目录；卷：空。 */
     paths: string[];
     title: string;
+    /** 来源作品 / 卷，以及列表摘要和最后修改时间。 */
+    sourceTitle?: string;
+    preview?: string;
+    modifiedAt?: number | null;
     /** 章 / 卷：被删节点的完整快照，恢复时原样挂回。 */
     node?: TrashItem["node"];
     parentId?: string | null;
@@ -195,6 +225,9 @@ export async function moveToTrash(
     workId: input.workId ?? null,
     originPath: input.paths[0] ?? "",
     title: input.title,
+    sourceTitle: input.sourceTitle ?? "",
+    preview: input.preview ?? "",
+    modifiedAt: input.modifiedAt ?? null,
     parentId: input.parentId ?? null,
     order: input.order ?? 0,
     manifestIndex: input.manifestIndex ?? null,
@@ -226,6 +259,7 @@ export async function moveToTrash(
     JSON.stringify({ ...item, moved }, null, 2)
   );
   await writeIndex(root, [...(await readIndex(root)), item.itemId]);
+  notifyTrashChanged();
   log.info("moved to trash", { kind: input.kind, title: input.title });
   return item;
 }
@@ -250,6 +284,9 @@ export async function moveWorkspaceToTrash(
     originId: crypto.randomUUID(),
     originPath: "",
     title,
+    sourceTitle: "",
+    preview: "",
+    modifiedAt: null,
     parentId: null,
     order: 0,
     subtree: [],
@@ -277,6 +314,7 @@ export async function moveWorkspaceToTrash(
    * 记下它原在哪，恢复时才能搬回原位。
    */
   await writeIndex(root, [...(await readIndex(root)), item.itemId]);
+  notifyTrashChanged();
   log.info("workspace moved to trash", { root, entries: moved.length });
   return item;
 }
@@ -294,7 +332,125 @@ export async function listTrash(root: string): Promise<TrashItem[]> {
       log.warn("trash item unreadable, skipped", itemId, err);
     }
   }
-  return out.sort((a, b) => b.deletedAt - a.deletedAt);
+  /*
+   * 删除卷时会同时留下卷记录和每个子章的记录。子章记录必须继续留在
+   * 索引里，供整卷恢复后的清理与单章追溯使用；但列表只展示卷这一条，
+   * 否则用户会看到同一批正文被重复列出 N+1 次。
+   */
+  const rolledUpChapterIds = new Set(
+    out
+      .filter((item) => item.kind === "volume")
+      .flatMap((item) =>
+        item.subtree
+          .filter((node) => node.type === "chapter")
+          .map((node) => node.id)
+      )
+  );
+  return out
+    .filter(
+      (item) =>
+        item.kind !== "chapter" || !rolledUpChapterIds.has(item.originId)
+    )
+    .sort((a, b) => b.deletedAt - a.deletedAt);
+}
+
+export interface TrashPreview {
+  description: string;
+  body: string;
+  truncated: boolean;
+  outline: {
+    id: string;
+    type: string;
+    title: string;
+  }[];
+}
+
+/**
+ * 读取回收项的可预览内容。
+ *
+ * 章直接读取搬进 `.trash/` 的正文；作品从仍在回收目录里的 work.json /
+ * outline.json 还原简介与结构；卷优先使用删除时保存的子树快照。
+ * 历史记录缺少这些附加字段时仍返回可用结果，不影响恢复。
+ */
+export async function loadTrashPreview(
+  root: string,
+  itemId: string
+): Promise<TrashPreview> {
+  const fs2 = createFs(root);
+  const file = trashItemFile(itemId);
+  if (!(await fs2.exists(file))) {
+    return { description: "", body: "", truncated: false, outline: [] };
+  }
+
+  let raw: unknown;
+  try {
+    raw = JSON.parse(await fs2.readText(file));
+  } catch (err) {
+    log.warn("trash preview record unreadable", itemId, err);
+    return { description: "", body: "", truncated: false, outline: [] };
+  }
+
+  const stored = storedTrashItemSchema.safeParse(raw);
+  if (!stored.success) {
+    return { description: "", body: "", truncated: false, outline: [] };
+  }
+  const item = stored.data;
+  let description = item.preview;
+  let body = "";
+  let truncated = false;
+  let outline = item.subtree.map((node) => ({
+    id: node.id,
+    type: node.type,
+    title: node.title,
+  }));
+
+  if (item.kind === "chapter") {
+    const storedChapter = item.moved.find((entry) =>
+      entry.rel.endsWith(".json")
+    );
+    if (storedChapter) {
+      try {
+        const chapter = chapterSchema.parse(
+          JSON.parse(await fs2.readText(joinRel(TRASH_DIR, storedChapter.dest)))
+        );
+        body = chapter.cards.map((card) => card.text).join("\n\n");
+        description ||= chapter.cards[0]?.text ?? "";
+      } catch (err) {
+        log.warn("trash chapter preview unreadable", itemId, err);
+      }
+    }
+  } else if (item.kind === "work" && item.moved[0]) {
+    const workDir = joinRel(TRASH_DIR, item.moved[0].dest);
+    try {
+      const work = workSchema.parse(
+        JSON.parse(await fs2.readText(joinRel(workDir, "work.json")))
+      );
+      description ||= work.synopsis;
+      const parsedOutline = outlineSchema.parse(
+        JSON.parse(await fs2.readText(joinRel(workDir, "outline.json")))
+      );
+      outline = [...parsedOutline.nodes]
+        .sort(
+          (left, right) =>
+            (left.parentId ?? "").localeCompare(right.parentId ?? "") ||
+            left.order - right.order
+        )
+        .map((node) => ({
+          id: node.id,
+          type: node.type,
+          title: node.title,
+        }));
+    } catch (err) {
+      log.warn("trash work preview unreadable", itemId, err);
+    }
+  }
+
+  const limit = 50_000;
+  if (body.length > limit) {
+    body = body.slice(0, limit);
+    truncated = true;
+  }
+  return { description, body, truncated, outline };
 }
 
 /**
@@ -348,6 +504,7 @@ export async function restoreFromTrash(
     root,
     (await readIndex(root)).filter((id) => id !== itemId)
   );
+  notifyTrashChanged();
   log.info("restored from trash", { itemId });
   return true;
 }
@@ -540,25 +697,62 @@ async function reattachNode(root: string, item: TrashItem): Promise<void> {
     updatedAt: item.node?.updatedAt ?? now,
   };
   /*
-   * 按 order 插回同级中间，而不是一律 push 到末尾。
-   *
-   * 结构树的 order 即显示顺序，push 会让"删掉首卷第二章再恢复"变成
-   * "它跑到了整棵树最后"。先找同级中第一个 order 大于它的节点，
-   * 插到那个位置之前；找不到（它是该级最大的）才追加。
-   *
-   * 卷：连同记录下来的子树一起挂回，章节点才不会变成孤儿文件。
+   * `subtree` 是删除时整棵子树的快照，包含被删节点自身。这里只取后代，
+   * 否则恢复时会把卷或章节点插入两次。
    */
-  const siblings = raw.nodes.filter(
-    (n) =>
-      (n as { id?: string }).id !== node.id &&
-      (n as { parentId?: string | null }).parentId === node.parentId
+  const restored = [
+    node,
+    ...item.subtree.filter((child) => child.id !== item.originId),
+  ];
+  const restoredIds = new Set(
+    restored.map((child) => (child as { id: string }).id)
+  );
+  const nextNodes = raw.nodes.filter(
+    (child) => !restoredIds.has((child as { id?: string }).id ?? "")
+  );
+
+  /*
+   * 按 order 插回同级中间，而不是一律 push 到末尾。恢复后同级可能已有
+   * 重号，因此只对受影响的父级按“原 order + 当前数组次序”稳定排序，
+   * 再统一重编号为 0..n-1。这样既保留用户原来的插入位置，也消除了
+   * 历史重号导致的不确定顺序。
+   */
+  const siblings = nextNodes.filter(
+    (child) =>
+      (child as { parentId?: string | null }).parentId === node.parentId
   );
   const before = siblings.find(
-    (n) => ((n as { order?: number }).order ?? 0) > node.order
+    (child) => ((child as { order?: number }).order ?? 0) >= node.order
   );
-  const at = before ? raw.nodes.indexOf(before) : raw.nodes.length;
-  raw.nodes.splice(at, 0, node, ...item.subtree);
-  await fs2.writeText(file, JSON.stringify(raw, null, 2));
+  const at = before ? nextNodes.indexOf(before) : nextNodes.length;
+  nextNodes.splice(at, 0, ...restored);
+
+  const affectedParents = new Set<string | null>([node.parentId]);
+  for (const child of restored) {
+    affectedParents.add(
+      (child as { parentId?: string | null }).parentId ?? null
+    );
+  }
+  for (const parentId of affectedParents) {
+    const group = nextNodes
+      .map((child, index) => ({ child, index }))
+      .filter(
+        ({ child }) =>
+          ((child as { parentId?: string | null }).parentId ?? null) ===
+          parentId
+      )
+      .sort(
+        (left, right) =>
+          ((left.child as { order?: number }).order ?? 0) -
+            ((right.child as { order?: number }).order ?? 0) ||
+          left.index - right.index
+      );
+    group.forEach(({ child }, index) => {
+      (child as { order: number }).order = index;
+    });
+  }
+
+  await fs2.writeText(file, JSON.stringify({ nodes: nextNodes }, null, 2));
   log.info("outline node restored", { id: item.originId, parentGone });
 }
 
@@ -631,4 +825,14 @@ export async function purgeFromTrash(
     root,
     (await readIndex(root)).filter((id) => id !== itemId)
   );
+  notifyTrashChanged();
+}
+
+/** 彻底清空回收站；包括列表中折叠隐藏的子章记录。 */
+export async function purgeAllFromTrash(root: string): Promise<number> {
+  const itemIds = await readIndex(root);
+  for (const itemId of itemIds) {
+    await purgeFromTrash(root, itemId);
+  }
+  return itemIds.length;
 }

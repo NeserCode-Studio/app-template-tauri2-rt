@@ -24,6 +24,8 @@ export default function ChapterBody({
   onDelete,
   onOpenCodexEntry,
   listRef,
+  highlightedCardId,
+  locked = false,
 }: {
   cards: Card[];
   editingIndex: number;
@@ -38,14 +40,18 @@ export default function ChapterBody({
   onOpenCodexEntry?: (entryId: string) => void;
   /** 滚动容器由宿主提供，这里只挂 ref 供打字机模式定位活动卡。 */
   listRef?: React.Ref<HTMLDivElement>;
+  highlightedCardId?: string | null;
+  locked?: boolean;
 }) {
   const { t } = useI18n();
 
   if (!cards.length) {
     return (
       <div className="mx-auto flex h-full max-w-md flex-col items-center justify-center gap-2 text-center">
-        <p className="text-sm text-muted-foreground">{t("Editor.empty")}</p>
-        <p className="text-xs text-muted-foreground/70">{t("Editor.empty.hint")}</p>
+        <p className="text-muted-foreground text-sm">{t("Editor.empty")}</p>
+        <p className="text-muted-foreground/70 text-xs">
+          {t("Editor.empty.hint")}
+        </p>
       </div>
     );
   }
@@ -53,7 +59,11 @@ export default function ChapterBody({
   return (
     <div
       ref={listRef}
-      className="article-body prose-article mx-auto flex flex-col"
+      aria-disabled={locked}
+      className={[
+        "article-body prose-article mx-auto flex flex-col",
+        locked ? "pointer-events-none select-none" : "",
+      ].join(" ")}
     >
       {cards.map((card, index) => (
         <CardItem
@@ -63,6 +73,7 @@ export default function ChapterBody({
           total={cards.length}
           dimmed={dimOthers && editingIndex !== index}
           isActive={editingIndex === index}
+          highlighted={highlightedCardId === card.id}
           onEdit={onEdit}
           onMoveUp={onMoveUp}
           onMoveDown={onMoveDown}

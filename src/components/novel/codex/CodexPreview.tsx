@@ -1,16 +1,19 @@
-import { BookOpen, Link2, Pencil } from "lucide-react";
-import type { ReactNode } from "react";
+import { ArrowUpRight, BookOpen, Link2, Pencil } from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { useI18n } from "@/composables";
 import { useCodex } from "@/contexts/codex";
 import { useLibrary } from "@/contexts/library";
+import { useWorkspace } from "@/contexts/workspace";
 import {
   fieldLabel,
+  loadMentionChapterTitles,
   relationLabel,
   typeLabel,
   type Entry,
   type FieldTemplate,
   type FieldValue,
+  type MentionRecord,
 } from "@/services/codex";
 import { Button } from "@/components/ui/button";
 import { TypeGlyph } from "./TypeGlyph";
@@ -62,14 +65,38 @@ export function CodexPreview({
   entry,
   onEdit,
   onSelectEntry,
+  onJumpMention,
 }: {
   entry: Entry | null;
   onEdit: () => void;
   onSelectEntry: (entryId: string) => void;
+  onJumpMention: (record: MentionRecord) => void;
 }) {
   const { lang, t } = useI18n();
   const { works } = useLibrary();
+  const { root } = useWorkspace();
   const { entries, relations, mentions, typeConfigs, colorOf } = useCodex();
+  const mentionRecords = useMemo(
+    () => (entry ? [...(mentions[entry.id] ?? [])] : []),
+    [entry, mentions]
+  );
+  const [chapterTitles, setChapterTitles] = useState<Record<string, string>>(
+    {}
+  );
+
+  useEffect(() => {
+    if (!root || !entry || !mentionRecords.length) {
+      setChapterTitles({});
+      return;
+    }
+    let alive = true;
+    void loadMentionChapterTitles(root, mentionRecords).then((next) => {
+      if (alive) setChapterTitles(next);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [root, entry, mentionRecords]);
 
   if (!entry) {
     return (
@@ -125,7 +152,7 @@ export function CodexPreview({
           "{count}",
           String(entry.scope.workIds.length)
         );
-  const mentionCount = mentions[entry.id]?.length ?? 0;
+  const mentionCount = mentionRecords.length;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -247,14 +274,45 @@ export function CodexPreview({
           </PreviewSection>
         ) : null}
 
-        <PreviewSection title={t("Codex.mentions.chapters")}>
-          <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-            <BookOpen className="size-3.5" />
-            <span className="text-foreground font-medium tabular-nums">
-              {mentionCount}
-            </span>
-            {t("Codex.mentions.short")}
-          </p>
+        <PreviewSection
+          title={`${t("Codex.mentions.chapters")} · ${mentionCount} ${t("Codex.mentions.short")}`}
+        >
+          {mentionRecords.length ? (
+            <div className="flex flex-col gap-1">
+              {mentionRecords.map((record: MentionRecord) => {
+                const key = `${record.workId}:${record.chapterId}`;
+                const title = chapterTitles[key] || record.chapterId;
+                const workTitle = works[record.workId]?.title ?? record.workId;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    title={`${workTitle} · ${title}`}
+                    className="hover:bg-accent/55 group flex min-w-0 items-center gap-1.5 rounded px-1 py-1 text-left"
+                    onClick={() => onJumpMention(record)}
+                  >
+                    <BookOpen className="text-muted-foreground size-3.5 shrink-0" />
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate text-xs">{title}</span>
+                      <span className="text-muted-foreground/60 truncate text-[10px]">
+                        {workTitle}
+                      </span>
+                    </span>
+                    {record.count > 1 ? (
+                      <span className="text-muted-foreground/60 shrink-0 text-[11px] tabular-nums">
+                        {record.count}×
+                      </span>
+                    ) : null}
+                    <ArrowUpRight className="text-muted-foreground/45 group-hover:text-muted-foreground size-3 shrink-0 transition-colors" />
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-muted-foreground/70 text-xs">
+              {t("Codex.mentions.empty")}
+            </p>
+          )}
         </PreviewSection>
       </div>
     </div>

@@ -33,6 +33,10 @@ export interface CodexContextValue {
   /** 当前主题下的类型色。 */
   colorOf: (typeId: string) => string;
   setCurrentEntryId: (id: string | null) => void;
+  /** 写入一次性素材库搜索请求；只存在于内存，不进入导航历史。 */
+  requestSearch: (query: string) => void;
+  /** 读取并清除一次性素材库搜索请求。 */
+  takeSearchRequest: () => string | null;
   reload: () => Promise<void>;
   create: (typeId: string, name: string) => Promise<Entry | null>;
   save: (entry: Entry) => Promise<Entry | null>;

@@ -1,6 +1,7 @@
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
@@ -13,6 +14,7 @@ import {
   CalendarClock,
   ChevronRight,
   Grid2X2,
+  History,
   List,
   Loader2,
   MousePointerClick,
@@ -22,13 +24,18 @@ import {
   Settings2,
   X,
 } from "lucide-react";
+import { useLocalStorageState } from "ahooks";
 
 import { useI18n, useToast } from "@/composables";
 import { useCodex } from "@/contexts/codex";
+import { useLibrary } from "@/contexts/library";
 import { useLongTask } from "@/contexts/long-task";
+import { useOutline } from "@/contexts/outline";
+import { useWorkspace } from "@/contexts/workspace";
 import {
   typeLabel,
   type Entry,
+  type MentionRecord,
   type Relation,
   type TypeConfig,
 } from "@/services/codex";
@@ -58,14 +65,24 @@ import { CodexPreview } from "@/components/novel/codex/CodexPreview";
 import { CodexTypeManager } from "@/components/novel/codex/CodexTypeManager";
 import { TypeGlyph } from "@/components/novel/codex/TypeGlyph";
 import { useJumpHighlight } from "@/hooks/useJumpHighlight";
+import { loadChapter } from "@/services/chapter";
 import { createLogger } from "@/lib/logger";
+import { useAppNavigation } from "@/lib/navigation";
 
 type ViewMode = "grid" | "list" | "timeline";
 type SortMode = "name" | "updated" | "type";
 type SortDirection = "asc" | "desc";
+type SearchSuggestionKind = "recent" | "work";
+
+interface SearchSuggestion {
+  kind: SearchSuggestionKind;
+  value: string;
+}
 
 const LIST_GRID_CLASS =
   "grid w-full min-w-0 grid-cols-[minmax(0,1fr)_5rem] items-center gap-3 sm:grid-cols-[minmax(10rem,1fr)_7rem_minmax(10rem,1.4fr)_5.5rem]";
+const RECENT_SEARCH_KEY = "novels-yes:codex-recent-searches";
+const RECENT_SEARCH_LIMIT = 8;
 const log = createLogger("CodexLibrary");
 
 function useNarrowLayout() {
@@ -81,7 +98,7 @@ function useNarrowLayout() {
   return narrow;
 }
 
-function entryHaystack(entry: Entry): string {
+function entryHaystack(entry: Entry, workTitles: string[] = []): string {
   const fields = Object.values(entry.fields)
     .map((value) =>
       value.kind === "refs"
@@ -98,6 +115,7 @@ function entryHaystack(entry: Entry): string {
     entry.summary,
     entry.body,
     fields,
+    workTitles.join("\n"),
   ].join("\n");
 }
 
@@ -523,6 +541,10 @@ export default function CodexLibrary() {
   const toast = useToast();
   const { run: runLongTask } = useLongTask();
   const narrow = useNarrowLayout();
+  const { go } = useAppNavigation();
+  const { works, workspace } = useLibrary();
+  const { openChapter } = useOutline();
+  const { root } = useWorkspace();
   const {
     entries,
     relations,
@@ -532,8 +554,15 @@ export default function CodexLibrary() {
     setCurrentEntryId,
     colorOf,
     scanAllMentions,
+    takeSearchRequest,
   } = useCodex();
   const [query, setQuery] = useState("");
+  const [searchSuggestionsOpen, setSearchSuggestionsOpen] = useState(false);
+  const [activeSearchSuggestion, setActiveSearchSuggestion] = useState(0);
+  const [recentSearchByWorkspace, setRecentSearchByWorkspace] =
+    useLocalStorageState<Record<string, string[]>>(RECENT_SEARCH_KEY, {
+      defaultValue: {},
+    });
   const [typeFilter, setTypeFilter] = useState<string | "all">("all");
   const [viewMode, setViewMode] = useState<ViewMode>("grid");
   const [sortMode, setSortMode] = useState<SortMode>("name");
@@ -547,11 +576,42 @@ export default function CodexLibrary() {
     total: number;
   } | null>(null);
   const { highlightId, jumpTo } = useJumpHighlight("data-codex-entry");
+  const initialEntryJumpedRef = useRef(false);
+  const pinnedEntryIdRef = useRef<string | null>(null);
+  const searchBoxRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const requestedQuery = takeSearchRequest();
+    if (!requestedQuery) return;
+    pinnedEntryIdRef.current = currentEntryId;
+    setQuery(requestedQuery);
+  }, [currentEntryId, takeSearchRequest]);
 
   const current = entries.find((entry) => entry.id === currentEntryId) ?? null;
   const timelineEventType =
     typeConfigs.find((type) => type.id === "event") ?? null;
   const timelineAvailable = Boolean(timelineEventType);
+
+  useEffect(() => {
+    if (
+      initialEntryJumpedRef.current ||
+      !currentEntryId ||
+      !entries.some((entry) => entry.id === currentEntryId)
+    ) {
+      return;
+    }
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        initialEntryJumpedRef.current = true;
+        jumpTo(currentEntryId);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }, [currentEntryId, entries, jumpTo]);
 
   useEffect(() => {
     if (
@@ -630,11 +690,105 @@ export default function CodexLibrary() {
     return next;
   }, [entries]);
 
+  const workTitleOptions = useMemo(() => {
+    const ids = workspace
+      ? [...workspace.order, ...workspace.archived]
+      : Object.keys(works);
+    const seen = new Set<string>();
+    return ids
+      .map((workId) => works[workId]?.title.trim() ?? "")
+      .filter((title) => {
+        if (!title) return false;
+        const key = title.toLocaleLowerCase();
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+  }, [works, workspace]);
+
+  const workTitleSuggestions = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle) return workTitleOptions;
+    return workTitleOptions.filter((title) =>
+      title.toLocaleLowerCase().includes(needle)
+    );
+  }, [query, workTitleOptions]);
+
+  const recentSearches = useMemo(() => {
+    if (!root) return [];
+    const stored = recentSearchByWorkspace?.[root];
+    if (!Array.isArray(stored)) return [];
+    const workTitleKeys = new Set(
+      workTitleOptions.map((title) => title.toLocaleLowerCase())
+    );
+    return stored.filter(
+      (term) => !workTitleKeys.has(term.toLocaleLowerCase())
+    );
+  }, [recentSearchByWorkspace, root, workTitleOptions]);
+
+  const recentSearchSuggestions = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    if (!needle) return recentSearches;
+    return recentSearches.filter((term) =>
+      term.toLocaleLowerCase().includes(needle)
+    );
+  }, [query, recentSearches]);
+
+  const remainingWorkTitleSuggestions = useMemo(() => {
+    const recentKeys = new Set(
+      recentSearchSuggestions.map((term) => term.toLocaleLowerCase())
+    );
+    return workTitleSuggestions.filter(
+      (title) => !recentKeys.has(title.toLocaleLowerCase())
+    );
+  }, [recentSearchSuggestions, workTitleSuggestions]);
+
+  const searchSuggestions = useMemo<SearchSuggestion[]>(() => {
+    return [
+      ...recentSearchSuggestions.map((value) => ({
+        kind: "recent" as const,
+        value,
+      })),
+      ...remainingWorkTitleSuggestions.map((value) => ({
+        kind: "work" as const,
+        value,
+      })),
+    ];
+  }, [recentSearchSuggestions, remainingWorkTitleSuggestions]);
+  const showSearchSuggestions =
+    searchSuggestionsOpen && searchSuggestions.length > 0;
+
+  const workTitlesByEntry = useMemo(() => {
+    const result = new Map<string, string[]>();
+    for (const entry of entries) {
+      const workIds = new Set<string>();
+      if (entry.scope.kind === "works") {
+        for (const workId of entry.scope.workIds) workIds.add(workId);
+      }
+      for (const mention of mentions[entry.id] ?? []) {
+        workIds.add(mention.workId);
+      }
+      result.set(
+        entry.id,
+        [...workIds]
+          .map((workId) => works[workId]?.title?.trim() ?? "")
+          .filter(Boolean)
+      );
+    }
+    return result;
+  }, [entries, mentions, works]);
+
   const filtered = useMemo(() => {
     const needle = query.trim().toLowerCase();
     const result = entries.filter((entry) => {
+      if (entry.id === pinnedEntryIdRef.current) return true;
       if (typeFilter !== "all" && entry.typeId !== typeFilter) return false;
-      return !needle || entryHaystack(entry).toLowerCase().includes(needle);
+      return (
+        !needle ||
+        entryHaystack(entry, workTitlesByEntry.get(entry.id))
+          .toLowerCase()
+          .includes(needle)
+      );
     });
     const typeOrder = new Map(typeConfigs.map((type) => [type.id, type.order]));
     result.sort((a, b) => {
@@ -651,7 +805,15 @@ export default function CodexLibrary() {
       return sortDirection === "asc" ? comparison : -comparison;
     });
     return result;
-  }, [entries, query, sortDirection, sortMode, typeConfigs, typeFilter]);
+  }, [
+    entries,
+    query,
+    sortDirection,
+    sortMode,
+    typeConfigs,
+    typeFilter,
+    workTitlesByEntry,
+  ]);
 
   const timelineEvents = useMemo(
     () => filtered.filter((entry) => entry.typeId === "event"),
@@ -675,11 +837,13 @@ export default function CodexLibrary() {
   }
 
   function selectEntry(entryId: string) {
+    pinnedEntryIdRef.current = null;
     setCurrentEntryId(entryId);
     if (narrow) setDetailOpen(true);
   }
 
   function jumpToEntry(entryId: string) {
+    pinnedEntryIdRef.current = null;
     const target = entries.find((entry) => entry.id === entryId);
     const targetVisible = filtered.some((entry) => entry.id === entryId);
     const timelineNeedsGrid =
@@ -693,6 +857,32 @@ export default function CodexLibrary() {
     window.requestAnimationFrame(() => jumpTo(entryId));
   }
 
+  async function jumpToMention(record: MentionRecord) {
+    let paragraphId: string | null = null;
+    const entry = current;
+    if (root && entry) {
+      try {
+        const chapter = await loadChapter(
+          root,
+          record.workId,
+          record.chapterId
+        );
+        const needles = [entry.name, ...entry.aliases]
+          .map((name) => name.trim())
+          .filter(Boolean)
+          .sort((a, b) => b.length - a.length);
+        paragraphId =
+          chapter?.cards.find((card) =>
+            needles.some((name) => card.text.includes(name))
+          )?.id ?? null;
+      } catch (err) {
+        log.warn("mention paragraph lookup failed", err);
+      }
+    }
+    openChapter(record.workId, record.chapterId, paragraphId);
+    go("editor");
+  }
+
   function editEntry(entryId: string | null = currentEntryId) {
     if (!entryId) return;
     setCurrentEntryId(entryId);
@@ -700,13 +890,127 @@ export default function CodexLibrary() {
   }
 
   function clearFilters() {
+    pinnedEntryIdRef.current = null;
     setQuery("");
     setTypeFilter("all");
+  }
+
+  function revealCurrentEntryAfterLayout() {
+    if (!currentEntryId) return;
+    let secondFrame = 0;
+    const firstFrame = window.requestAnimationFrame(() => {
+      secondFrame = window.requestAnimationFrame(() => {
+        jumpTo(currentEntryId);
+      });
+    });
+    return () => {
+      window.cancelAnimationFrame(firstFrame);
+      window.cancelAnimationFrame(secondFrame);
+    };
+  }
+
+  function changeTypeFilter(value: string | "all") {
+    setTypeFilter(value);
+    revealCurrentEntryAfterLayout();
+  }
+
+  function changeViewMode(value: ViewMode) {
+    setViewMode(value);
+    revealCurrentEntryAfterLayout();
   }
 
   function changeSortMode(value: SortMode) {
     setSortMode(value);
     setSortDirection(value === "updated" ? "desc" : "asc");
+    revealCurrentEntryAfterLayout();
+  }
+
+  function toggleSortDirection() {
+    setSortDirection((direction) => (direction === "asc" ? "desc" : "asc"));
+    revealCurrentEntryAfterLayout();
+  }
+
+  function rememberSearch(value: string) {
+    const term = value.trim();
+    if (!root || !term) return;
+    const normalized = term.toLocaleLowerCase();
+    if (
+      workTitleOptions.some((title) => title.toLocaleLowerCase() === normalized)
+    ) {
+      return;
+    }
+    setRecentSearchByWorkspace((previous) => {
+      const all = previous ?? {};
+      const current = Array.isArray(all[root]) ? all[root] : [];
+      const next = [
+        term,
+        ...current.filter(
+          (item) => item.trim() && item.toLocaleLowerCase() !== normalized
+        ),
+      ].slice(0, RECENT_SEARCH_LIMIT);
+      if (
+        next.length === current.length &&
+        next.every((item, index) => item === current[index])
+      ) {
+        return all;
+      }
+      return { ...all, [root]: next };
+    });
+  }
+
+  function clearRecentSearches() {
+    if (!root) return;
+    setActiveSearchSuggestion(0);
+    setRecentSearchByWorkspace((previous) => {
+      const all = previous ?? {};
+      if (!all[root]?.length) return all;
+      const next = { ...all };
+      delete next[root];
+      return next;
+    });
+  }
+
+  function selectSearchSuggestion(value: string) {
+    rememberSearch(value);
+    pinnedEntryIdRef.current = null;
+    setQuery(value);
+    setSearchSuggestionsOpen(false);
+    setActiveSearchSuggestion(0);
+    revealCurrentEntryAfterLayout();
+  }
+
+  function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
+    if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+    if (event.key === "Escape") {
+      setSearchSuggestionsOpen(false);
+      return;
+    }
+    if (event.key === "Enter") {
+      if (showSearchSuggestions) {
+        event.preventDefault();
+        const suggestion = searchSuggestions[activeSearchSuggestion];
+        if (suggestion) selectSearchSuggestion(suggestion.value);
+      } else {
+        rememberSearch(query);
+        setSearchSuggestionsOpen(false);
+      }
+      return;
+    }
+    if (!searchSuggestions.length) return;
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (!showSearchSuggestions) {
+        setSearchSuggestionsOpen(true);
+        setActiveSearchSuggestion(0);
+        return;
+      }
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      setActiveSearchSuggestion(
+        (index) =>
+          (index + direction + searchSuggestions.length) %
+          searchSuggestions.length
+      );
+    }
   }
 
   function handleKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
@@ -768,7 +1072,7 @@ export default function CodexLibrary() {
           type={null}
           count={entries.length}
           active={typeFilter === "all"}
-          onClick={() => setTypeFilter("all")}
+          onClick={() => changeTypeFilter("all")}
         />
         <p className="text-muted-foreground/70 px-2 pt-3 pb-1 text-[11px] font-semibold">
           {t("Codex.type.builtinSection")}
@@ -780,7 +1084,7 @@ export default function CodexLibrary() {
               type={type}
               count={counts.get(type.id) ?? 0}
               active={typeFilter === type.id}
-              onClick={() => setTypeFilter(type.id)}
+              onClick={() => changeTypeFilter(type.id)}
             />
           ))}
         </div>
@@ -796,7 +1100,7 @@ export default function CodexLibrary() {
                   type={type}
                   count={counts.get(type.id) ?? 0}
                   active={typeFilter === type.id}
-                  onClick={() => setTypeFilter(type.id)}
+                  onClick={() => changeTypeFilter(type.id)}
                 />
               ))}
             </div>
@@ -831,7 +1135,7 @@ export default function CodexLibrary() {
                 ? "border-primary/30 bg-accent text-accent-foreground font-medium"
                 : "text-muted-foreground hover:bg-accent/60 border-transparent",
             ].join(" ")}
-            onClick={() => setTypeFilter("all")}
+            onClick={() => changeTypeFilter("all")}
           >
             {t("Codex.all")} {entries.length}
           </button>
@@ -850,7 +1154,7 @@ export default function CodexLibrary() {
                   ? "border-primary/30 bg-accent text-accent-foreground font-medium"
                   : "text-muted-foreground hover:bg-accent/60 border-transparent",
               ].join(" ")}
-              onClick={() => setTypeFilter(type.id)}
+              onClick={() => changeTypeFilter(type.id)}
             >
               <span
                 className="size-1.5 rounded-full"
@@ -876,7 +1180,7 @@ export default function CodexLibrary() {
                       ? "border-primary/30 bg-accent text-accent-foreground font-medium"
                       : "text-muted-foreground hover:bg-accent/60 border-transparent",
                   ].join(" ")}
-                  onClick={() => setTypeFilter(type.id)}
+                  onClick={() => changeTypeFilter(type.id)}
                 >
                   <span
                     className="size-1.5 rounded-full"
@@ -1014,6 +1318,7 @@ export default function CodexLibrary() {
 
   const searchBox = (
     <div
+      ref={searchBoxRef}
       className={
         narrow ? "relative w-full" : "relative w-[min(20rem,28vw)] min-w-44"
       }
@@ -1023,9 +1328,124 @@ export default function CodexLibrary() {
         value={query}
         placeholder={t("Codex.searchShort")}
         aria-label={t("Codex.search")}
+        role="combobox"
+        aria-autocomplete="list"
+        aria-expanded={showSearchSuggestions}
+        aria-controls="codex-search-options"
+        aria-activedescendant={
+          showSearchSuggestions
+            ? `codex-search-option-${activeSearchSuggestion}`
+            : undefined
+        }
         className="h-9 bg-neutral-100/70 pr-3 pl-9 text-sm dark:bg-neutral-800/35"
-        onChange={(event) => setQuery(event.target.value)}
+        onFocus={() => {
+          setSearchSuggestionsOpen(true);
+          setActiveSearchSuggestion(0);
+        }}
+        onBlur={(event) => {
+          const next = event.relatedTarget;
+          if (!next || !searchBoxRef.current?.contains(next as Node)) {
+            rememberSearch(query);
+            setSearchSuggestionsOpen(false);
+          }
+        }}
+        onKeyDown={handleSearchKeyDown}
+        onChange={(event) => {
+          pinnedEntryIdRef.current = null;
+          setQuery(event.target.value);
+          setSearchSuggestionsOpen(true);
+          setActiveSearchSuggestion(0);
+        }}
       />
+      {showSearchSuggestions ? (
+        <div
+          id="codex-search-options"
+          role="listbox"
+          aria-label={t("Codex.search")}
+          className="bg-popover text-popover-foreground absolute top-full right-0 left-0 z-30 mt-1 overflow-hidden rounded-md border shadow-md"
+        >
+          <div className="scrollbar-app max-h-56 overflow-y-auto p-1">
+            {recentSearchSuggestions.length ? (
+              <>
+                <div className="text-muted-foreground flex items-center justify-between px-2 py-1 text-[11px] font-medium">
+                  <span>{t("Codex.search.recent")}</span>
+                  <button
+                    type="button"
+                    className="hover:text-foreground flex items-center gap-0.5 rounded px-1 py-0.5 transition-colors"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={clearRecentSearches}
+                  >
+                    <X className="size-3" />
+                    {t("Codex.search.clearRecent")}
+                  </button>
+                </div>
+                {recentSearchSuggestions.map((term, index) => (
+                  <button
+                    key={`recent:${term}`}
+                    id={`codex-search-option-${index}`}
+                    type="button"
+                    role="option"
+                    aria-selected={index === activeSearchSuggestion}
+                    tabIndex={-1}
+                    className={[
+                      "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors",
+                      index === activeSearchSuggestion
+                        ? "bg-accent text-accent-foreground"
+                        : "hover:bg-accent/60 hover:text-accent-foreground",
+                    ].join(" ")}
+                    onMouseDown={(event) => event.preventDefault()}
+                    onMouseEnter={() => setActiveSearchSuggestion(index)}
+                    onClick={() => selectSearchSuggestion(term)}
+                  >
+                    <History className="size-3.5 shrink-0 opacity-60" />
+                    <span className="min-w-0 truncate">{term}</span>
+                  </button>
+                ))}
+              </>
+            ) : null}
+            {remainingWorkTitleSuggestions.length ? (
+              <>
+                <div
+                  className={[
+                    "text-muted-foreground px-2 py-1 text-[11px] font-medium",
+                    recentSearchSuggestions.length ? "mt-1 border-t pt-2" : "",
+                  ].join(" ")}
+                >
+                  {t("Library.section.works")}
+                </div>
+                {remainingWorkTitleSuggestions.map((title, index) => {
+                  const suggestionIndex =
+                    recentSearchSuggestions.length + index;
+                  return (
+                    <button
+                      key={`work:${title}`}
+                      id={`codex-search-option-${suggestionIndex}`}
+                      type="button"
+                      role="option"
+                      aria-selected={suggestionIndex === activeSearchSuggestion}
+                      tabIndex={-1}
+                      className={[
+                        "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors",
+                        suggestionIndex === activeSearchSuggestion
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent/60 hover:text-accent-foreground",
+                      ].join(" ")}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() =>
+                        setActiveSearchSuggestion(suggestionIndex)
+                      }
+                      onClick={() => selectSearchSuggestion(title)}
+                    >
+                      <BookOpen className="size-3.5 shrink-0 opacity-60" />
+                      <span className="min-w-0 truncate">{title}</span>
+                    </button>
+                  );
+                })}
+              </>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 
@@ -1082,7 +1502,7 @@ export default function CodexLibrary() {
               ? "border-primary/30 bg-accent text-accent-foreground"
               : "text-muted-foreground hover:bg-accent/40 hover:text-foreground border-transparent",
           ].join(" ")}
-          onClick={() => setViewMode("grid")}
+          onClick={() => changeViewMode("grid")}
           aria-label={t("Codex.view.grid")}
           title={t("Codex.view.grid")}
         >
@@ -1097,7 +1517,7 @@ export default function CodexLibrary() {
               ? "border-primary/30 bg-accent text-accent-foreground"
               : "text-muted-foreground hover:bg-accent/40 hover:text-foreground border-transparent",
           ].join(" ")}
-          onClick={() => setViewMode("list")}
+          onClick={() => changeViewMode("list")}
           aria-label={t("Codex.view.list")}
           title={t("Codex.view.list")}
         >
@@ -1115,7 +1535,7 @@ export default function CodexLibrary() {
             ].join(" ")}
             onClick={() => {
               setViewMode("timeline");
-              setTypeFilter("event");
+              changeTypeFilter("event");
             }}
             aria-label={t("Codex.view.timeline")}
             title={t("Codex.view.timeline")}
@@ -1170,11 +1590,7 @@ export default function CodexLibrary() {
                 ? "Codex.sort.switchToDesc"
                 : "Codex.sort.switchToAsc"
             )}
-            onClick={() =>
-              setSortDirection((direction) =>
-                direction === "asc" ? "desc" : "asc"
-              )
-            }
+            onClick={toggleSortDirection}
           >
             {sortDirection === "asc" ? (
               <ArrowUp className="size-3.5" />
@@ -1256,6 +1672,7 @@ export default function CodexLibrary() {
                   entry={current}
                   onEdit={() => editEntry()}
                   onSelectEntry={jumpToEntry}
+                  onJumpMention={jumpToMention}
                 />
               </aside>
             </ResizablePanel>
@@ -1293,7 +1710,7 @@ export default function CodexLibrary() {
         open={managerOpen}
         onOpenChange={setManagerOpen}
         onTypeCreated={(typeId) => {
-          setTypeFilter(typeId);
+          changeTypeFilter(typeId);
         }}
       />
 

@@ -5,7 +5,7 @@ import {
   requestWorkspaceEntry,
 } from "@/lib/workspace-open";
 
-export type AppPage = "home" | "library" | "editor" | "codex";
+export type AppPage = "home" | "library" | "editor" | "codex" | "mcp" | "trash";
 export type PageTransitionDirection = "forward" | "back";
 
 export interface NavigationLocationState {
@@ -19,6 +19,8 @@ export const APP_PAGE_PATHS: Record<AppPage, string> = {
   library: "/library",
   editor: "/editor",
   codex: "/codex",
+  mcp: "/mcp",
+  trash: "/trash",
 };
 
 export const APP_PAGE_LABEL_KEYS: Record<AppPage, string> = {
@@ -26,12 +28,16 @@ export const APP_PAGE_LABEL_KEYS: Record<AppPage, string> = {
   library: "Library.title",
   editor: "Editor.page.title",
   codex: "Codex.library.title",
+  mcp: "Mcp.page.title",
+  trash: "Trash.title",
 };
 
 export function pageFromPath(pathname: string): AppPage {
   if (pathname.startsWith("/library")) return "library";
   if (pathname.startsWith("/editor")) return "editor";
   if (pathname.startsWith("/codex")) return "codex";
+  if (pathname.startsWith("/mcp")) return "mcp";
+  if (pathname.startsWith("/trash")) return "trash";
   return "home";
 }
 
@@ -42,6 +48,8 @@ export function defaultBackPage(page: AppPage): AppPage | null {
     case "editor":
       return "library";
     case "codex":
+    case "mcp":
+    case "trash":
       return "library";
     case "home":
       return null;
@@ -57,7 +65,13 @@ export function defaultPageTransition(
   to: AppPage
 ): PageTransitionDirection {
   if (to === "home") return from === "home" ? "forward" : "back";
-  if (to === "library" && (from === "editor" || from === "codex"))
+  if (
+    to === "library" &&
+    (from === "editor" ||
+      from === "codex" ||
+      from === "mcp" ||
+      from === "trash")
+  )
     return "back";
   if (to === "editor" && from === "codex") return "back";
   return "forward";
@@ -71,7 +85,9 @@ export function navigationStateOf(value: unknown): NavigationLocationState {
       state.from === "home" ||
       state.from === "library" ||
       state.from === "editor" ||
-      state.from === "codex"
+      state.from === "codex" ||
+      state.from === "mcp" ||
+      state.from === "trash"
         ? state.from
         : undefined,
     transition:

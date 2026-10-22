@@ -211,9 +211,7 @@ impl ServerHandler for NovelsServer {
         drop(permit);
 
         let duration_ms = started_at.elapsed().as_millis();
-        let client_name = client_info
-            .name
-            .unwrap_or_else(|| "unknown".into());
+        let client_name = client_info.name.unwrap_or_else(|| "unknown".into());
         match response {
             Ok(response) => {
                 self.shared.audit.record_tool(

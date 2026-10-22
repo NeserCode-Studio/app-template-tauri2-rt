@@ -12,7 +12,9 @@ import {
   Home,
   Library,
   PenLine,
+  Server,
   Settings2,
+  Trash2,
 } from "lucide-react";
 
 import { useI18n } from "@/composables";
@@ -46,19 +48,13 @@ interface MenuPosition {
 }
 
 const MENU_WIDTH = 208;
-const MENU_HEIGHT = 252;
+const MENU_HEIGHT = 322;
 
 function clampPosition(x: number, y: number): MenuPosition {
   const margin = 8;
   return {
-    x: Math.max(
-      margin,
-      Math.min(x, window.innerWidth - MENU_WIDTH - margin)
-    ),
-    y: Math.max(
-      margin,
-      Math.min(y, window.innerHeight - MENU_HEIGHT - margin)
-    ),
+    x: Math.max(margin, Math.min(x, window.innerWidth - MENU_WIDTH - margin)),
+    y: Math.max(margin, Math.min(y, window.innerHeight - MENU_HEIGHT - margin)),
   };
 }
 
@@ -186,6 +182,26 @@ export function AppNavigationContextMenu({
               >
                 <BookOpen />
                 {t("Navigation.context.codex")}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={itemClass}
+                disabled={currentPage === "trash"}
+                onClick={() => navigate("trash")}
+              >
+                <Trash2 />
+                {t("Trash.title")}
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                className={itemClass}
+                disabled={currentPage === "mcp"}
+                onClick={() => navigate("mcp")}
+              >
+                <Server />
+                {t("Navigation.context.mcp")}
               </button>
               <div className="bg-border my-1 h-px" role="separator" />
               <button

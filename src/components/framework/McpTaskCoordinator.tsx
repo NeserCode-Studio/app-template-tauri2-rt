@@ -19,7 +19,12 @@ export default function McpTaskCoordinator() {
       if (!activeIds.has(id)) handled.current.delete(id);
     }
     for (const task of activity.active) {
-      if (!task.page || handled.current.has(task.id)) continue;
+      const isExplicitNavigation =
+        task.toolName === "novels_navigate" ||
+        task.toolName === "novels_open_chapter";
+      if (!isExplicitNavigation || !task.page || handled.current.has(task.id)) {
+        continue;
+      }
       handled.current.add(task.id);
 
       if (task.workId && task.chapterId) {

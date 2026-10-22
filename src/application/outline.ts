@@ -18,6 +18,7 @@ import {
 } from "@/services/chapter";
 import { chapterFile, chapterTextFile } from "@/services/paths";
 import { moveToTrash } from "@/services/trash";
+import { loadWork } from "@/services/workspace";
 import type { OutlineNode } from "@/shared/schema";
 
 const nodeStatus = z.enum(["draft", "revising", "final"]);
@@ -239,9 +240,7 @@ const nodeUpdate = defineAppCommand({
       outline: await updateNode(root, workId, input.node_id, {
         ...(input.title !== undefined ? { title: input.title } : {}),
         ...(input.status !== undefined ? { status: input.status } : {}),
-        ...(input.synopsis !== undefined
-          ? { synopsis: input.synopsis }
-          : {}),
+        ...(input.synopsis !== undefined ? { synopsis: input.synopsis } : {}),
         ...(input.plot_summary !== undefined
           ? { plotSummary: input.plot_summary }
           : {}),
@@ -330,7 +329,8 @@ const nodeDelete = defineAppCommand({
     const workId = requireWorkId(context, input.work_id);
     const outline = await loadOutline(root, workId);
     const node = outline.nodes.find((item) => item.id === input.node_id);
-    if (!node) throw new AppError("not_found", "The outline node was not found.");
+    if (!node)
+      throw new AppError("not_found", "The outline node was not found.");
     if (node.type === "scene") {
       throw new AppError(
         "invalid_argument",
@@ -359,6 +359,11 @@ const nodeDelete = defineAppCommand({
     const chapterIds = subtree
       .filter((item) => item.type === "chapter")
       .map((item) => item.id);
+    const work = await loadWork(root, workId);
+    const parent =
+      node.type === "chapter"
+        ? outline.nodes.find((item) => item.id === node.parentId)
+        : null;
     await moveToTrash(root, {
       kind: node.type,
       originId: node.id,
@@ -368,6 +373,14 @@ const nodeDelete = defineAppCommand({
         chapterTextFile(workId, id),
       ]),
       title: node.title,
+      sourceTitle: [work.title, parent?.type === "volume" ? parent.title : ""]
+        .filter(Boolean)
+        .join(" / "),
+      preview: node.preface || node.synopsis || node.plotSummary || "",
+      modifiedAt: Math.max(
+        node.updatedAt,
+        ...subtree.map((item) => item.updatedAt)
+      ),
       parentId: node.parentId,
       order: node.order,
       node: trashNodeShape(node),

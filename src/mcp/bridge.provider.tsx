@@ -1,6 +1,7 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useLocation } from "react-router";
 
 import { AppError, toCommandError } from "@/application/errors";
 import { getAppCommand } from "@/application/registry";
@@ -10,7 +11,13 @@ import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useWorkspace } from "@/contexts/workspace";
 import { createLogger } from "@/lib/logger";
-import { beginActivity, finishActivity, updateActivity } from "./activity";
+import { pageFromPath, type AppPage } from "@/lib/navigation";
+import {
+  beginActivity,
+  finishActivity,
+  setActivityScope,
+  updateActivity,
+} from "./activity";
 import { requestApproval } from "./approval";
 import {
   type McpBridgeRequest,
@@ -21,6 +28,19 @@ import {
 } from "./contracts";
 import { canUsePermission } from "./permissions";
 import {
+  beginMcpEditorOperation,
+  clearMcpEditorOperations,
+  finishMcpEditorOperation,
+  markMcpEditorOperationRunning,
+  queueMcpEditorOperation,
+  receiveMcpEditorChunk,
+} from "./editor-operation";
+import {
+  chapterWritePreviewText,
+  chapterWriteTarget,
+  type ChapterWriteTarget,
+} from "./editor-write";
+import {
   countActivityResult,
   describeMcpPrompt,
   describeMcpResource,
@@ -29,10 +49,19 @@ import {
 import { getMcpPrompt } from "./prompts";
 import { readMcpResource } from "./resources";
 import { errorResponse, successResponse } from "./result";
+import {
+  appendStreamInput,
+  extractStreamInput,
+  finishStreamInput,
+  streamInputSnapshot,
+} from "./stream-input";
+import { TaskQueue } from "./task-queue";
 import { useMcpRuntime } from "./runtime";
 import { McpTaskReporter } from "./task-reporter";
 
 const log = createLogger("McpBridge");
+const MAX_CONCURRENT_TASKS = 1;
+const MIN_TASK_START_INTERVAL_MS = 1_200;
 const SENSITIVE_ARGUMENTS = new Set([
   "body",
   "cards",
@@ -46,6 +75,8 @@ const SENSITIVE_ARGUMENTS = new Set([
 interface BridgeState {
   root: string | null;
   workId: string | null;
+  chapterId: string | null;
+  page: AppPage;
   accessLevel: ReturnType<typeof useMcpRuntime>["accessLevel"];
   workspaceSessionId: string | null;
 }
@@ -126,12 +157,38 @@ function commandArguments(
   return next;
 }
 
+function assertChapterNavigation(
+  current: BridgeState,
+  target: ChapterWriteTarget
+): void {
+  if (
+    current.page === "editor" &&
+    current.workId === target.workId &&
+    current.chapterId === target.chapterId
+  ) {
+    return;
+  }
+  throw new AppError(
+    "navigation_required",
+    "Open the target work and chapter in the editor before writing chapter text.",
+    {
+      current_page: current.page,
+      current_work_id: current.workId,
+      current_chapter_id: current.chapterId,
+      required_work_id: target.workId,
+      required_chapter_id: target.chapterId,
+      required_tool: "novels_open_chapter",
+    }
+  );
+}
+
 export function McpBridgeProvider({ children }: { children: ReactNode }) {
   const workspace = useWorkspace();
   const library = useLibrary();
   const outline = useOutline();
   const codex = useCodex();
   const runtime = useMcpRuntime();
+  const location = useLocation();
   const controllers = useRef(new Map<string, AbortController>());
   const libraryRef = useRef(library);
   const outlineRef = useRef(outline);
@@ -139,18 +196,31 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
   libraryRef.current = library;
   outlineRef.current = outline;
   codexRef.current = codex;
+  const taskQueue = useMemo(
+    () => new TaskQueue(MAX_CONCURRENT_TASKS, MIN_TASK_START_INTERVAL_MS),
+    []
+  );
   const state = useRef<BridgeState>({
     root: workspace.root,
     workId: library.currentWorkId,
+    chapterId: outline.currentChapterId,
+    page: pageFromPath(location.pathname),
     accessLevel: runtime.accessLevel,
     workspaceSessionId: runtime.status.workspaceSessionId,
   });
   state.current = {
     root: workspace.root,
     workId: library.currentWorkId,
+    chapterId: outline.currentChapterId,
+    page: pageFromPath(location.pathname),
     accessLevel: runtime.accessLevel,
     workspaceSessionId: runtime.status.workspaceSessionId,
   };
+
+  useEffect(() => {
+    setActivityScope(workspace.root ?? "global");
+    clearMcpEditorOperations();
+  }, [workspace.root]);
 
   useEffect(() => {
     const activeControllers = controllers.current;
@@ -296,12 +366,147 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const writeTarget = chapterWriteTarget(
+        payload.tool_name,
+        payload.arguments,
+        current.workId
+      );
+      if (writeTarget) {
+        try {
+          assertChapterNavigation(current, writeTarget);
+        } catch (error) {
+          await sendError(payload.request_id, error);
+          return;
+        }
+      }
+
+      let editorOperationId: string | null = null;
+      let editorReceivedChunks = 0;
+      let editorChunkTotal = 0;
+      try {
+        const streamed = extractStreamInput(payload.arguments);
+        payload.arguments = streamed.argumentsValue;
+        if (streamed.envelope) {
+          if (command.annotations?.readOnlyHint) {
+            throw new AppError(
+              "invalid_argument",
+              "Read-only tools do not accept streamed input."
+            );
+          }
+          const envelope = streamed.envelope;
+          if (!envelope.final) {
+            if (writeTarget) {
+              editorOperationId = envelope.stream_id;
+            }
+            const received = appendStreamInput(envelope);
+            if (writeTarget) {
+              const stream = streamInputSnapshot(envelope.stream_id);
+              editorReceivedChunks = received;
+              editorChunkTotal = envelope.chunk_total;
+              receiveMcpEditorChunk({
+                streamId: envelope.stream_id,
+                toolName: payload.tool_name,
+                workId: writeTarget.workId,
+                chapterId: writeTarget.chapterId,
+                previewText:
+                  envelope.field === "text" || envelope.field === "body"
+                    ? (stream?.text ?? envelope.text)
+                    : "",
+                receivedChunks: received,
+                chunkTotal: envelope.chunk_total,
+              });
+            }
+            await sendResponse(
+              successResponse(payload.request_id, {
+                stream_id: envelope.stream_id,
+                field: envelope.field,
+                chunk_index: envelope.chunk_index,
+                chunk_total: envelope.chunk_total,
+                received_chunks: received,
+                finished: false,
+              })
+            );
+            return;
+          }
+          const text = finishStreamInput(envelope);
+          payload.arguments = {
+            ...payload.arguments,
+            [envelope.field]: text,
+          };
+          if (writeTarget) {
+            editorOperationId = envelope.stream_id;
+            editorReceivedChunks = envelope.chunk_total;
+            editorChunkTotal = envelope.chunk_total;
+            receiveMcpEditorChunk({
+              streamId: envelope.stream_id,
+              toolName: payload.tool_name,
+              workId: writeTarget.workId,
+              chapterId: writeTarget.chapterId,
+              previewText:
+                envelope.field === "text" || envelope.field === "body"
+                  ? text
+                  : "",
+              receivedChunks: envelope.chunk_total,
+              chunkTotal: envelope.chunk_total,
+            });
+          }
+        }
+      } catch (error) {
+        if (editorOperationId) {
+          finishMcpEditorOperation(
+            editorOperationId,
+            "failed",
+            normalizeError(error)?.message
+          );
+        }
+        await sendError(payload.request_id, error, "invalid_argument");
+        return;
+      }
+
       const parsed = command.input.safeParse(
         commandArguments(command, payload.arguments)
       );
       if (!parsed.success) {
+        if (editorOperationId) {
+          finishMcpEditorOperation(
+            editorOperationId,
+            "failed",
+            errorFromValidation(parsed.error).message
+          );
+        }
         await sendError(payload.request_id, errorFromValidation(parsed.error));
         return;
+      }
+
+      if (writeTarget) {
+        const previewText = chapterWritePreviewText(
+          payload.tool_name,
+          payload.arguments
+        );
+        if (!editorOperationId) {
+          editorOperationId = payload.request_id;
+          beginMcpEditorOperation({
+            id: editorOperationId,
+            requestId: payload.request_id,
+            toolName: payload.tool_name,
+            workId: writeTarget.workId,
+            chapterId: writeTarget.chapterId,
+            previewText,
+            receivedChars: previewText.length,
+            receivedChunks: editorReceivedChunks || 1,
+            chunkTotal: editorChunkTotal || 1,
+          });
+        }
+        queueMcpEditorOperation({
+          id: editorOperationId,
+          requestId: payload.request_id,
+          toolName: payload.tool_name,
+          workId: writeTarget.workId,
+          chapterId: writeTarget.chapterId,
+          previewText,
+          receivedChunks: editorReceivedChunks || 1,
+          chunkTotal: editorChunkTotal || 1,
+        });
       }
 
       const controller = new AbortController();
@@ -311,8 +516,9 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
         payload.request_id,
         clientName,
         payload.client_info.version,
-        describeMcpTool(command.id, payload.arguments)
+        describeMcpTool(command.id, payload.arguments, current.workId)
       );
+      updateActivity(payload.request_id, { queued: true });
       try {
         if (command.risk === "R2" || command.risk === "R3") {
           const approved = await requestApproval(
@@ -337,23 +543,41 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
         }
 
         const context = buildContext(payload.request_id, controller);
-        const data = await command.execute(parsed.data, context);
-        if (controller.signal.aborted) {
-          throw new AppError("cancelled", "The MCP request was cancelled.");
-        }
-        await sendResponse(
-          successResponse(
-            payload.request_id,
-            data,
-            responseFormatOf(payload.arguments)
-          )
-        );
-        if (!command.annotations?.readOnlyHint) {
-          updateActivity(payload.request_id, {
-            refreshing: true,
-            detail: undefined,
-          });
-          await refreshAfterWrite(command.id);
+        const data = await taskQueue.run(async () => {
+          if (controller.signal.aborted) {
+            throw new AppError("cancelled", "The MCP request was cancelled.");
+          }
+          updateActivity(payload.request_id, { queued: false });
+          if (editorOperationId) {
+            markMcpEditorOperationRunning(editorOperationId);
+          }
+          const result = await command.execute(parsed.data, context);
+          if (!command.annotations?.readOnlyHint) {
+            updateActivity(payload.request_id, {
+              refreshing: true,
+              detail: undefined,
+            });
+            try {
+              await refreshAfterWrite(command.id);
+            } catch (err) {
+              log.warn("MCP refresh after write failed", {
+                requestId: payload.request_id,
+                toolName: command.id,
+                err,
+              });
+            }
+          }
+          await sendResponse(
+            successResponse(
+              payload.request_id,
+              result,
+              responseFormatOf(payload.arguments)
+            )
+          );
+          return result;
+        });
+        if (editorOperationId) {
+          finishMcpEditorOperation(editorOperationId, "completed");
         }
         finishActivity(payload.request_id, "completed", {
           resultCount: countActivityResult(command.id, data),
@@ -364,6 +588,13 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
           controller.signal.aborted ||
           normalized?.code === "cancelled" ||
           normalized?.code === "confirmation_required";
+        if (editorOperationId) {
+          finishMcpEditorOperation(
+            editorOperationId,
+            cancelled ? "cancelled" : "failed",
+            normalized?.message
+          );
+        }
         finishActivity(payload.request_id, cancelled ? "cancelled" : "failed", {
           error: normalized?.message,
         });
@@ -516,7 +747,7 @@ export function McpBridgeProvider({ children }: { children: ReactNode }) {
       for (const controller of activeControllers.values()) controller.abort();
       activeControllers.clear();
     };
-  }, []);
+  }, [taskQueue]);
 
   return children;
 }

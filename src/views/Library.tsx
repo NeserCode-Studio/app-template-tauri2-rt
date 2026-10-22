@@ -42,12 +42,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 
 import WorkCard from "@/components/novel/WorkCard";
-import TrashDialog from "@/components/novel/TrashDialog";
 import ConfirmDeleteDialog from "@/components/framework/ConfirmDeleteDialog";
 import ImportDialog, {
   type ImportPreview,
 } from "@/components/novel/ImportDialog";
-import { useI18n, useToast } from "@/composables";
+import { useI18n, useToast, useTrashCount } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useWorkspace } from "@/contexts/workspace";
 import { useLongTask } from "@/contexts/long-task";
@@ -110,7 +109,7 @@ export default function Library() {
     archive,
     unarchive,
     remove,
-    refresh,
+    dataVersion,
     bumpDataVersion,
     setWorkspaceAlias,
     setCurrentWorkId,
@@ -142,8 +141,8 @@ export default function Library() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [aliasName, setAliasName] = useState("");
   const [wordCounts, setWordCounts] = useState<Record<string, number>>({});
-  const [trashOpen, setTrashOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
+  const trashCount = useTrashCount(root, dataVersion);
   const createRequested =
     navigationStateOf(location.state).intent === "create-work";
   const legacyMaterialsView =
@@ -595,9 +594,14 @@ export default function Library() {
             <Database className="icon-md" />
             {t("Codex.library.title")}
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => setTrashOpen(true)}>
+          <Button variant="ghost" size="sm" onClick={() => go("trash")}>
             <Trash2 className="icon-md" />
             {t("Trash.title")}
+            {trashCount > 0 ? (
+              <span className="bg-muted text-muted-foreground min-w-5 rounded-full px-1.5 py-0.5 text-[10px] tabular-nums">
+                {trashCount}
+              </span>
+            ) : null}
           </Button>
           <Button variant="ghost" size="sm" onClick={() => setImportOpen(true)}>
             <FileUp className="icon-md" />
@@ -885,32 +889,6 @@ export default function Library() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-
-        {/* 归档确认 */}
-        <TrashDialog
-          open={trashOpen}
-          root={root}
-          onOpenChange={setTrashOpen}
-          onRestored={() => {
-            /*
-             * 恢复后必须重读清单，不能只刷字数。
-             *
-             * 原先这里只调 loadWordCounts()，而它是按 workspace.order /
-             * workspace.archived 遍历的——恢复一部作品时清单刚变，React 里的
-             * workspace 还是旧的，那个 id 根本不在遍历范围里，于是既不显示
-             * 也不报错，看上去就是"恢复没反应"。refresh() 会重读
-             * novels-yes.json 与各 work.json，字数随后由 orderKey 的 effect 补上。
-             */
-            void refresh();
-            /*
-             * refresh() 只更新作品库自己的状态。结构树 provider 挂在另一个
-             * context 上，它只在 [root, currentWorkId] 变化时重读 outline.json，
-             * 不通知它就继续拿着"已删除"的旧快照——于是恢复完当场看不见，
-             * 刷新页面才出现。bump 一下版本号让它跟着重载。
-             */
-            bumpDataVersion();
-          }}
-        />
 
         {/*
          * 工作区设置。

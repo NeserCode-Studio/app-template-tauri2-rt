@@ -4,6 +4,7 @@ import { pageItems, requireRoot } from "./helpers";
 import { defineAppCommand } from "./types";
 import {
   listTrash,
+  purgeAllFromTrash,
   purgeFromTrash,
   restoreFromTrash,
 } from "@/services/trash";
@@ -92,15 +93,18 @@ const trashPurgeAll = defineAppCommand({
   async execute(_input, context) {
     const root = requireRoot(context);
     const items = await listTrash(root);
-    for (let index = 0; index < items.length; index += 1) {
-      await purgeFromTrash(root, items[index].itemId);
-      context.progress.report({
-        progress: index + 1,
-        total: items.length,
-        message: items[index].title,
-      });
-    }
-    return { purged_count: items.length };
+    context.progress.report({
+      progress: 0,
+      total: items.length,
+      message: "Clearing workspace trash",
+    });
+    const purgedCount = await purgeAllFromTrash(root);
+    context.progress.report({
+      progress: purgedCount,
+      total: purgedCount,
+      message: "Workspace trash cleared",
+    });
+    return { purged_count: purgedCount };
   },
 });
 

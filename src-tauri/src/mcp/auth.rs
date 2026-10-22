@@ -4,6 +4,7 @@ use std::{
 };
 
 use axum::{
+    body::{to_bytes, Body},
     extract::{Request, State},
     http::{header, HeaderMap, StatusCode},
     middleware::Next,
@@ -17,6 +18,7 @@ use super::runtime::RuntimeShared;
 
 const RATE_LIMIT: u32 = 120;
 const RATE_WINDOW: Duration = Duration::from_secs(60);
+const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthFailure {
@@ -163,7 +165,16 @@ pub async fn authorize_request(
         &shared.token_hash,
         &shared.rate_limiter,
     ) {
-        Ok(()) => next.run(request).await,
+        Ok(()) => {
+            let (parts, body) = request.into_parts();
+            match to_bytes(body, MAX_BODY_BYTES).await {
+                Ok(bytes) => {
+                    next.run(Request::from_parts(parts, Body::from(bytes)))
+                        .await
+                }
+                Err(_) => (StatusCode::PAYLOAD_TOO_LARGE, "request body too large").into_response(),
+            }
+        }
         Err(error) => {
             log::warn!("MCP request rejected: {:?}", error);
             (error.status(), error.message()).into_response()

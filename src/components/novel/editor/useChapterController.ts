@@ -84,6 +84,7 @@ export interface ChapterControllerOptions {
   chapter: Chapter;
   root: string;
   workId: string;
+  locked?: boolean;
   onWordsChange?: (words: number) => void;
   onSaved?: (chapter: Chapter) => void;
   onWordsCommitted?: (
@@ -107,12 +108,15 @@ export function useChapterController({
   chapter,
   root,
   workId,
+  locked = false,
   onWordsChange,
   onSaved,
   onWordsCommitted,
 }: ChapterControllerOptions) {
   const toast = useToast();
   const { syncChapterMentions } = useCodex();
+  const lockedRef = useRef(locked);
+  lockedRef.current = locked;
 
   const [cards, setCards] = useState<Card[]>(chapter.cards);
   const [editingIndex, setEditingIndex] = useState(-1);
@@ -334,6 +338,7 @@ export function useChapterController({
    */
   const dropVersion = useCallback(
     async (index: number) => {
+      if (lockedRef.current) return;
       const base = chapterRef.current;
       const next = dropHistory(base, index);
       if (next === base) return;
@@ -424,6 +429,7 @@ export function useChapterController({
    */
   const rollback = useCallback(
     async (index: number) => {
+      if (lockedRef.current) return;
       const base = chapterRef.current;
       const previousWords = countWords(cardsToText(base.cards));
       const restored = rollbackTo(base, index);
@@ -521,8 +527,37 @@ export function useChapterController({
   /** chapter 的 ref 副本，避免 persistNow 随每次保存重建。 */
   const chapterRef = useRef(chapter);
   useEffect(() => {
+    const previous = chapterRef.current;
     chapterRef.current = chapter;
-  }, [chapter]);
+    if (previous.id !== chapter.id || previous.revision === chapter.revision) {
+      return;
+    }
+
+    /*
+     * MCP 写入会以新 revision 重新装载同一章。这里只同步正文与历史，
+     * 输入框里未提交的草稿保持原样，避免外部刷新把用户正在写的内容清掉。
+     */
+    if (saveTimer.current !== null) {
+      window.clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    pendingCards.current = null;
+    cardsRef.current = chapter.cards;
+    setCards(chapter.cards);
+    setChapterWithHistory(chapter);
+    setSaveState("saved");
+    setLastMerge(null);
+    historyRef.current = new CommandHistory<Card[]>(chapter.cards);
+
+    const editingCardId =
+      editingIndexRef.current >= 0
+        ? previous.cards[editingIndexRef.current]?.id
+        : undefined;
+    const nextEditingIndex = editingCardId
+      ? chapter.cards.findIndex((card) => card.id === editingCardId)
+      : -1;
+    setEditingTarget(nextEditingIndex);
+  }, [chapter, setEditingTarget]);
 
   /** 统一的卡片变更入口：更新 state、记历史、排保存。 */
   const applyCards = useCallback(
@@ -543,6 +578,7 @@ export function useChapterController({
    */
   const importCards = useCallback(
     (incoming: Card[]) => {
+      if (lockedRef.current) return 0;
       if (!incoming.length) return 0;
       const next = [...cardsRef.current, ...incoming];
       cardsRef.current = next;
@@ -559,6 +595,7 @@ export function useChapterController({
    * 重试，都必须能真正写一次盘。没有待写内容时以当前卡片为准。
    */
   const saveNow = useCallback(() => {
+    if (lockedRef.current) return;
     if (saveTimer.current !== null) {
       window.clearTimeout(saveTimer.current);
       saveTimer.current = null;
@@ -569,6 +606,7 @@ export function useChapterController({
   /* ---------- 撤销 / 重做 ----------
      放在合并操作之前：撤回合并在结构对不上时会退回到通用撤销。 */
   const undo = useCallback(() => {
+    if (lockedRef.current) return;
     const prev = historyRef.current?.undo();
     if (!prev) return;
     setCards(prev);
@@ -576,6 +614,7 @@ export function useChapterController({
   }, [scheduleSave]);
 
   const redo = useCallback(() => {
+    if (lockedRef.current) return;
     const next = historyRef.current?.redo();
     if (!next) return;
     setCards(next);
@@ -585,6 +624,7 @@ export function useChapterController({
   /** 回车提交：editingIndex 为 -1 新建，否则更新该卡。 */
   const handleSubmit = useCallback(
     (text: string, index: number) => {
+      if (lockedRef.current) return;
       const startedAt = performance.now();
       const changed = index < 0 || cards[index]?.text !== text;
       const now = Date.now();
@@ -660,6 +700,7 @@ export function useChapterController({
   /** 点击卡片：载入输入框编辑。 */
   const handleCardClick = useCallback(
     (index: number) => {
+      if (lockedRef.current) return;
       const card = cardsRef.current[index];
       if (!card) return;
       /*
@@ -695,6 +736,7 @@ export function useChapterController({
    * 两种放弃方式行为一致，不会静默吃掉用户输入。
    */
   const returnToNew = useCallback(() => {
+    if (lockedRef.current) return;
     const index = editingIndexRef.current;
     const typed = composerRef.current?.read().trim() ?? "";
     if (index >= 0 && typed) {
@@ -724,6 +766,7 @@ export function useChapterController({
 
   /** 取回暂存段落：清空输入框回到追加模式，并把草稿放回去。 */
   const restoreDraft = useCallback(() => {
+    if (lockedRef.current) return;
     const text = draft ?? "";
     setEditingTarget(-1);
     setPendingDraft(null);
@@ -740,6 +783,7 @@ export function useChapterController({
    * 同时重写一份只保留当前旧卡内容的快照。
    */
   const discardDraft = useCallback(() => {
+    if (lockedRef.current) return;
     setPendingDraft(null);
     persistDraftSnapshot(
       composerRef.current?.read() ?? "",
@@ -756,6 +800,7 @@ export function useChapterController({
   /** 上移：与前一张交换。 */
   const moveUp = useCallback(
     (index: number) => {
+      if (lockedRef.current) return;
       if (index <= 0) return;
       const next = [...cards];
       [next[index - 1], next[index]] = [next[index], next[index - 1]];
@@ -767,6 +812,7 @@ export function useChapterController({
   /** 下移：与后一张交换。 */
   const moveDown = useCallback(
     (index: number) => {
+      if (lockedRef.current) return;
       if (index >= cards.length - 1) return;
       const next = [...cards];
       [next[index + 1], next[index]] = [next[index], next[index + 1]];
@@ -778,6 +824,7 @@ export function useChapterController({
   /** 拆分：在光标处把一张卡分成两张。 */
   const splitCard = useCallback(
     (index: number) => {
+      if (lockedRef.current) return;
       if (!cards[index]?.text.trim()) return;
       setSplitTarget(index);
     },
@@ -787,6 +834,7 @@ export function useChapterController({
   /** 在指定偏移处真正执行拆分。 */
   const confirmSplit = useCallback(
     (offset: number) => {
+      if (lockedRef.current) return;
       const index = splitTarget;
       if (index === null) return;
       const card = cards[index];
@@ -821,6 +869,7 @@ export function useChapterController({
    */
   const mergeDown = useCallback(
     (index: number) => {
+      if (lockedRef.current) return;
       if (index >= cards.length - 1) return;
       const head = cards[index].text.trimEnd();
       if (!isTerminated(head)) {
@@ -848,6 +897,7 @@ export function useChapterController({
 
   /** 撤回上一次的合并：把被并进来的那张卡还原成独立一张。 */
   const undoMerge = useCallback(() => {
+    if (lockedRef.current) return;
     const merge = lastMerge;
     if (!merge) return;
     /* 内容可能已经被再次编辑过，结构对不上时交给通用撤销处理。 */
@@ -876,6 +926,7 @@ export function useChapterController({
   /** 删除一张卡。 */
   const deleteCard = useCallback(
     (index: number) => {
+      if (lockedRef.current) return;
       applyCards(cards.filter((_, i) => i !== index));
       if (editingIndexRef.current === index) {
         setPendingDraft(null);
@@ -892,6 +943,7 @@ export function useChapterController({
   /* 全局快捷键：Ctrl+Z / Ctrl+Shift+Z。输入框内让位给原生 undo。 */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (lockedRef.current) return;
       if (!(e.ctrlKey || e.metaKey)) return;
       const inTextarea = (e.target as HTMLElement)?.tagName === "TEXTAREA";
       if (inTextarea) return;

@@ -12,6 +12,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
+  Trash2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -68,7 +69,7 @@ import NewChapterDialog from "@/components/novel/editor/NewChapterDialog";
 import OutlinePane from "@/components/novel/editor/OutlinePane";
 import SubtreePreview from "@/components/novel/SubtreePreview";
 
-import { useI18n, useToast } from "@/composables";
+import { useI18n, useToast, useTrashCount } from "@/composables";
 import { useLibrary } from "@/contexts/library";
 import { useOutline } from "@/contexts/outline";
 import { useWorkspace } from "@/contexts/workspace";
@@ -129,7 +130,8 @@ export default function Editor() {
   const { go } = useAppNavigation();
   const { root } = useWorkspace();
   const { setCurrentEntryId } = useCodex();
-  const { currentWorkId, works } = useLibrary();
+  const { currentWorkId, works, dataVersion } = useLibrary();
+  const trashCount = useTrashCount(root, dataVersion);
   const draftWorkIds = useMemo(() => new Set(Object.keys(works)), [works]);
   const {
     chapters,
@@ -137,6 +139,8 @@ export default function Editor() {
     currentChapterId,
     setCurrentChapterId,
     openChapter,
+    pendingParagraphId,
+    setPendingParagraphId,
     setOutline,
     refreshChapterMeta,
   } = useOutline();
@@ -144,6 +148,10 @@ export default function Editor() {
   const [chapter, setChapter] = useState<Chapter | null>(null);
   const [words, setWords] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [failedChapterId, setFailedChapterId] = useState<string | null>(null);
+  const [focusedParagraphId, setFocusedParagraphId] = useState<string | null>(
+    null
+  );
   /** 新建章节对话框：打开时只做命名，命名后才真正建章。 */
   const [newChapterFor, setNewChapterFor] = useState<string | null | undefined>(
     undefined
@@ -318,6 +326,7 @@ export default function Editor() {
    */
   const selectChapter = useCallback(
     (id: string | null, landing: ChapterLanding = "remember") => {
+      setFocusedParagraphId(null);
       pendingLandingRef.current = id ? { chapterId: id, landing } : null;
       setCurrentChapterId(id);
     },
@@ -344,6 +353,12 @@ export default function Editor() {
   /* 打开作品时若尚未选中章节，选第一张；后续切换由 OutlineContext 驱动。 */
   const chapterIdsKey = chapters.map((c) => c.id).join(",");
   useEffect(() => {
+    if (!pendingParagraphId) return;
+    setFocusedParagraphId(pendingParagraphId);
+    setPendingParagraphId(null);
+  }, [pendingParagraphId, setPendingParagraphId]);
+
+  useEffect(() => {
     if (!root || !currentWorkId) return;
     if (chapters.length === 0) {
       setChapter(null);
@@ -361,6 +376,7 @@ export default function Editor() {
     if (!root || !currentWorkId || !activeChapterId) return;
     let alive = true;
     setLoading(true);
+    setFailedChapterId(null);
     loadChapter(root, currentWorkId, activeChapterId)
       .then((next) => {
         /*
@@ -373,19 +389,31 @@ export default function Editor() {
             workId: currentWorkId,
             chapterId: activeChapterId,
           });
-          if (alive) setChapter(null);
+          if (alive) {
+            setChapter(null);
+            setFailedChapterId(activeChapterId);
+          }
           return;
         }
-        if (alive) setChapter(next);
+        if (alive) {
+          setChapter(next);
+          setFailedChapterId(null);
+        }
       })
-      .catch((err) => log.error("chapter load failed", err))
+      .catch((err) => {
+        log.error("chapter load failed", err);
+        if (alive) {
+          setChapter(null);
+          setFailedChapterId(activeChapterId);
+        }
+      })
       .finally(() => {
         if (alive) setLoading(false);
       });
     return () => {
       alive = false;
     };
-  }, [root, currentWorkId, activeChapterId]);
+  }, [root, currentWorkId, activeChapterId, dataVersion]);
 
   /* ---------- 新建卷 / 章 ---------- */
 
@@ -493,6 +521,10 @@ export default function Editor() {
       : null;
 
   const work = currentWorkId ? works[currentWorkId] : null;
+  const chapterPending =
+    Boolean(activeChapterId) &&
+    chapter?.id !== activeChapterId &&
+    failedChapterId !== activeChapterId;
   /** 当前章在结构树里的节点：右栏读状态与小结用。 */
   const currentChapterNode = useMemo(
     () => chapters.find((c) => c.id === chapter?.id) ?? null,
@@ -532,6 +564,9 @@ export default function Editor() {
      * 恢复时拿不到任何数据。反过来则先有备份，后摘引用。
      */
     const node = chapters[index];
+    const parentVolume = volumes.find(
+      (volume) => volume.id === (node?.parentId ?? null)
+    );
     await moveToTrash(root, {
       kind: "chapter",
       originId: chapter.id,
@@ -542,6 +577,12 @@ export default function Editor() {
         chapterTextFile(currentWorkId, chapter.id),
       ],
       title: chapter.title,
+      sourceTitle: [work?.title, parentVolume?.title]
+        .filter(Boolean)
+        .join(" / "),
+      preview:
+        node?.synopsis || node?.plotSummary || chapter.cards[0]?.text || "",
+      modifiedAt: node?.updatedAt ?? chapter.updatedAt,
       parentId: node?.parentId ?? null,
       order: node?.order ?? 0,
       node: node
@@ -572,7 +613,16 @@ export default function Editor() {
     );
     setChapter(null);
     setPendingDelete(null);
-  }, [root, currentWorkId, chapter, chapters, setOutline, selectChapter]);
+  }, [
+    root,
+    currentWorkId,
+    chapter,
+    chapters,
+    volumes,
+    work,
+    setOutline,
+    selectChapter,
+  ]);
 
   /**
    * 删除整卷：连同其下所有章一起进回收站。
@@ -598,6 +648,12 @@ export default function Editor() {
         workId: currentWorkId,
         paths,
         title: volume.title,
+        sourceTitle: work?.title ?? "",
+        preview: volume.preface || volume.synopsis || "",
+        modifiedAt: Math.max(
+          volume.updatedAt,
+          ...kids.map((child) => child.updatedAt)
+        ),
         parentId: volume.parentId,
         order: volume.order,
         subtree: [volume, ...kids].map((n) => ({
@@ -630,7 +686,16 @@ export default function Editor() {
       }
       setPendingVolumeDelete(null);
     },
-    [root, currentWorkId, volumes, chapters, chapter, setOutline, selectChapter]
+    [
+      root,
+      currentWorkId,
+      volumes,
+      chapters,
+      chapter,
+      work,
+      setOutline,
+      selectChapter,
+    ]
   );
 
   /*
@@ -850,7 +915,17 @@ export default function Editor() {
            * 卡片区随正文长短伸缩，底部输入框被顶在正文后面而非贴底。
            */}
           <div className="flex h-full min-h-0 flex-col">
-            {chapter ? (
+            {chapterPending ? (
+              <div
+                role="status"
+                aria-live="polite"
+                className="flex h-full items-center justify-center px-6"
+              >
+                <p className="text-muted-foreground/75 text-sm">
+                  {t("Editor.chapter.loading")}
+                </p>
+              </div>
+            ) : chapter ? (
               /*
                * Continuous chapter stream: the active chapter still runs on
                * ChapterEditor (save, history, undo, drafts all unchanged), while
@@ -868,6 +943,11 @@ export default function Editor() {
                     : "remember"
                 }
                 onSelectChapter={selectChapter}
+                focusCardId={
+                  chapter.id === activeChapterId
+                    ? (pendingParagraphId ?? focusedParagraphId)
+                    : null
+                }
                 key={chapter.id}
                 chapter={chapter}
                 root={root}
@@ -1127,6 +1207,22 @@ export default function Editor() {
                       />
                     </PopoverContent>
                   </Popover>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-2 h-8 w-full justify-start gap-2 text-xs"
+                    onClick={() => go("trash")}
+                  >
+                    <Trash2 className="icon-sm" />
+                    {t("Trash.title")}
+                    {trashCount > 0 ? (
+                      <span className="bg-muted text-muted-foreground min-w-5 rounded-full px-1.5 py-0.5 text-[10px] tabular-nums">
+                        {trashCount}
+                      </span>
+                    ) : null}
+                    <ChevronRight className="text-muted-foreground ml-auto size-3.5" />
+                  </Button>
                 </div>
               </div>
             </ResizablePanel>

@@ -15,12 +15,15 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { createFs, joinRel } from "./fs";
 import { cardsToText } from "./chapter";
 import { loadOutline } from "./outline";
+import { loadWork } from "./workspace";
 import { chapterSchema, type OutlineNode } from "@/shared/schema";
 import { createLogger } from "@/lib/logger";
 
 const log = createLogger("ExportService");
 
 export interface ExportOptions {
+  /** 导出文件格式。 */
+  format: "txt" | "md";
   /** 是否输出章节标题行。 */
   includeChapterTitle: boolean;
   /** 是否输出卷标题行。 */
@@ -34,6 +37,7 @@ export interface ExportOptions {
 }
 
 export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
+  format: "txt",
   includeChapterTitle: true,
   includeVolumeTitle: true,
   indentParagraph: true,
@@ -44,9 +48,11 @@ export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
 /** 章标题按所选格式渲染。 */
 function formatTitle(
   title: string,
-  format: ExportOptions["titleFormat"]
+  format: ExportOptions["titleFormat"],
+  markdownLevel?: number
 ): string {
   const name = title.trim();
+  if (markdownLevel) return `${"#".repeat(markdownLevel)} ${name}`;
   switch (format) {
     case "bracket":
       return `\u300a${name}\u300b`;
@@ -63,6 +69,7 @@ function formatBody(text: string, opts: ExportOptions): string {
     .split("\n")
     .map((l) => l.trimEnd())
     .filter((l) => l.length > 0);
+  if (opts.format === "md") return lines.join("\n\n");
   return lines
     .map((l) => (opts.indentParagraph ? `\u3000\u3000${l}` : l))
     .join("\n");
@@ -81,7 +88,10 @@ export async function buildExportText(
   /** 限定导出单章时传入章 id。 */
   onlyChapterId?: string
 ): Promise<string> {
-  const outline = await loadOutline(root, workId);
+  const [outline, work] = await Promise.all([
+    loadOutline(root, workId),
+    loadWork(root, workId),
+  ]);
   const nl = opts.newline === "crlf" ? "\r\n" : "\n";
   const fs2 = createFs(root);
 
@@ -101,6 +111,9 @@ export async function buildExportText(
   let lastVolume: string | null = null;
 
   const blocks: string[] = [];
+  if (opts.format === "md") {
+    blocks.push(formatTitle(work.title, opts.titleFormat, 1));
+  }
   for (const node of chapters) {
     const raw = await fs2
       .readText(joinRel("works", workId, "chapters", node.id + ".json"))
@@ -117,13 +130,21 @@ export async function buildExportText(
 
     const vol = volumeTitleFor(node);
     if (vol && vol.title.trim() !== lastVolume) {
-      blocks.push(vol.title.trim());
+      blocks.push(
+        opts.format === "md"
+          ? formatTitle(vol.title, opts.titleFormat, 2)
+          : vol.title.trim()
+      );
       const preface = vol.preface.trim();
       if (preface) blocks.push(formatBody(preface, opts));
       lastVolume = vol.title.trim();
     }
-    if (opts.includeChapterTitle) {
-      blocks.push(formatTitle(node.title, opts.titleFormat));
+    if (opts.includeChapterTitle || opts.format === "md") {
+      blocks.push(
+        opts.format === "md"
+          ? formatTitle(node.title, opts.titleFormat, 3)
+          : formatTitle(node.title, opts.titleFormat)
+      );
     }
     const body = formatBody(cardsToText(parsed.data.cards), opts);
     if (body) blocks.push(body);
@@ -145,10 +166,16 @@ export async function exportToFile(
   onlyChapterId?: string
 ): Promise<string | null> {
   const text = await buildExportText(root, workId, opts, onlyChapterId);
+  const extension = opts.format === "md" ? "md" : "txt";
   const target = await save({
     title: defaultName,
-    defaultPath: `${defaultName}.txt`,
-    filters: [{ name: "Text", extensions: ["txt"] }],
+    defaultPath: `${defaultName}.${extension}`,
+    filters: [
+      {
+        name: opts.format === "md" ? "Markdown" : "Text",
+        extensions: [extension],
+      },
+    ],
   });
   if (!target) return null;
   await invoke("fs_write_export", { path: target, content: text });

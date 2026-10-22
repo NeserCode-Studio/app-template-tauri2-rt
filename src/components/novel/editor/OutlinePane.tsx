@@ -61,6 +61,7 @@ import { computeIndexByPosition } from "@/lib/outline-move";
 
 import ChapterMetaDialog from "./ChapterMetaDialog";
 import CreateNodeDialog from "./CreateNodeDialog";
+import { useJumpHighlight } from "@/hooks/useJumpHighlight";
 
 const log = createLogger("OutlinePane");
 const VOLUME_COLLAPSE_KEY = "novels-yes:editor:volume-collapsed";
@@ -193,6 +194,7 @@ function SortableChapter({
   node,
   index,
   selected,
+  highlighted,
   dragging,
   sessionActive,
   onSelect,
@@ -207,6 +209,7 @@ function SortableChapter({
   node: OutlineNode;
   index: number;
   selected: boolean;
+  highlighted: boolean;
   dragging: boolean;
   /**
    * 拖拽会话是否进行中。
@@ -258,12 +261,14 @@ function SortableChapter({
       className="group relative px-1"
     >
       <div
+        data-outline-chapter={node.id}
         className={[
           "flex min-w-0 cursor-pointer flex-col gap-0.5 rounded-md border py-1.5 pr-6 pl-7 text-left transition-colors",
           "hover:bg-accent hover:text-accent-foreground",
           selected
             ? "chapter-row-selected bg-accent/60 text-accent-foreground"
             : "text-muted-foreground border-transparent",
+          highlighted ? "jump-highlight" : "",
           isDragging || dragging ? "opacity-40" : "",
         ].join(" ")}
         onClick={onSelect}
@@ -613,7 +618,13 @@ export default function OutlinePane({
    * 与编辑目标本来就会短暂分叉。高亮要回答的是"我在读哪一章"，
    * 用编辑目标会让用户觉得点错了地方。
    */
-  const { chapters, volumes, chapterMetas, readingChapterId } = useOutline();
+  const {
+    chapters,
+    volumes,
+    chapterMetas,
+    currentChapterId,
+    readingChapterId,
+  } = useOutline();
   const { currentWorkId } = useLibrary();
 
   /** 新建卷对话框。 */
@@ -624,6 +635,8 @@ export default function OutlinePane({
   const collapsed = currentWorkId
     ? (collapsedByWork?.[currentWorkId] ?? {})
     : {};
+  const collapsedRef = useRef(collapsed);
+  collapsedRef.current = collapsed;
   const setCollapsed = useCallback(
     (next: SetStateAction<Record<string, boolean>>) => {
       if (!currentWorkId) return;
@@ -685,6 +698,22 @@ export default function OutlinePane({
     volumes.every((volume) => Boolean(collapsed[volume.id]));
   /** 章节点 DOM：位置法算插入下标时要读实时矩形。 */
   const nodeEls = useRef(new Map<string, HTMLElement>());
+  const { highlightId, jumpTo } = useJumpHighlight("data-outline-chapter");
+
+  /* 外部跳章时，左栏选中项必须滚进视野；顺手展开所在卷。 */
+  useEffect(() => {
+    if (!currentChapterId) return;
+    const node = nodeById.get(currentChapterId);
+    if (node?.type !== "chapter") return;
+    const parentVolumeId = node.parentId;
+    if (parentVolumeId && collapsedRef.current[parentVolumeId]) {
+      setCollapsed((previous) => ({
+        ...previous,
+        [parentVolumeId]: false,
+      }));
+    }
+    jumpTo(currentChapterId);
+  }, [currentChapterId, jumpTo, nodeById, setCollapsed]);
   /**
    * 拖拽开始那一刻的布局快照（元素自身几何，不含 sortable 的 transform）。
    *
@@ -969,6 +998,7 @@ export default function OutlinePane({
               node={node}
               index={startIndex + i}
               selected={readingChapterId === node.id}
+              highlighted={highlightId === node.id}
               dragging={activeId === NODE_PREFIX + node.id}
               sessionActive={Boolean(activeId)}
               onSelect={() => onSelectChapter(node.id)}

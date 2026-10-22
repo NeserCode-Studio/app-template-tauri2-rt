@@ -23,6 +23,7 @@ import { useI18n, useToast } from "@/composables";
 import { useSettingsDialog } from "@/contexts/settings";
 import { useWorkspace } from "@/contexts/workspace";
 import { useLibrary } from "@/contexts/library";
+import { useCodex } from "@/contexts/codex";
 import { pageFromPath, useAppNavigation } from "@/lib/navigation";
 import { useMcpRuntime } from "@/mcp/runtime";
 import { inspectWorkspace } from "@/services/workspace";
@@ -153,6 +154,7 @@ export default function Home() {
   const { navigateDirect } = useAppNavigation();
   const { openSettings, openAbout } = useSettingsDialog();
   const library = useLibrary();
+  const { setCurrentEntryId } = useCodex();
   const mcpRuntime = useMcpRuntime();
   const { root, recent, recentOpenedAt, pickPath, open, removeRecent } =
     useWorkspace();
@@ -171,6 +173,10 @@ export default function Home() {
   const selectedRoot = pendingOpen?.path ?? root;
   const hasSelection = Boolean(selectedRoot);
   const otherRecent = recent.filter((path) => path !== selectedRoot);
+
+  useEffect(() => {
+    setCurrentEntryId(null);
+  }, [setCurrentEntryId]);
 
   function queueWorkspaceOpen(
     path: string,

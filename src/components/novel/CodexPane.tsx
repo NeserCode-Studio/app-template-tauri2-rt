@@ -36,8 +36,11 @@ interface CodexPaneProps {
 export default function CodexPane({ onAppendToText }: CodexPaneProps) {
   const { t } = useI18n();
   const { go } = useAppNavigation();
-  const { currentWorkId } = useLibrary();
+  const { currentWorkId, works } = useLibrary();
   const { currentChapterId } = useOutline();
+  const currentWorkTitle = currentWorkId
+    ? (works[currentWorkId]?.title ?? "")
+    : "";
   const {
     entries,
     mentions,
@@ -46,6 +49,7 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
     currentEntryId,
     colorOf,
     setCurrentEntryId,
+    requestSearch,
   } = useCodex();
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState<string | "all">("all");
@@ -146,7 +150,10 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
           className="size-8 shrink-0"
           aria-label={t("Codex.library.title")}
           title={t("Codex.library.title")}
-          onClick={() => go("codex")}
+          onClick={() => {
+            requestSearch(currentWorkTitle);
+            go("codex");
+          }}
         >
           <ExternalLink className="icon-sm" />
         </Button>
@@ -184,7 +191,9 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
           aria-pressed={typeFilter === "all"}
           title={t("Codex.all")}
           onClick={() => setTypeFilter("all")}
-          className={[chip(typeFilter === "all"), "col-span-2 px-1.5"].join(" ")}
+          className={[chip(typeFilter === "all"), "col-span-2 px-1.5"].join(
+            " "
+          )}
         >
           <span className="min-w-0 truncate">{t("Codex.all")}</span>
         </button>
@@ -195,10 +204,7 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
             aria-pressed={typeFilter === tp.id}
             title={typeLabel(tp, t)}
             onClick={() => setTypeFilter(tp.id)}
-            className={[
-              chip(typeFilter === tp.id),
-              "gap-0.5 px-1",
-            ].join(" ")}
+            className={[chip(typeFilter === tp.id), "gap-0.5 px-1"].join(" ")}
           >
             <span
               className="size-1 shrink-0 rounded-full"
@@ -262,9 +268,7 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
                   <button
                     type="button"
                     data-codex-entry={e.id}
-                    title={
-                      onAppendToText ? t("Codex.appendHint") : undefined
-                    }
+                    title={onAppendToText ? t("Codex.appendHint") : undefined}
                     onClick={() => setCurrentEntryId(e.id)}
                     onDoubleClick={(event) => {
                       if (!onAppendToText) return;
@@ -274,8 +278,8 @@ export default function CodexPane({ onAppendToText }: CodexPaneProps) {
                     className={[
                       "flex w-full items-center gap-1.5 rounded-md border px-2 py-1 text-left text-xs transition-colors",
                       e.id === currentEntryId
-                        ? "border-primary/30 bg-accent/60 font-medium text-accent-foreground"
-                        : "border-transparent text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                        ? "border-primary/30 bg-accent/60 text-accent-foreground font-medium"
+                        : "text-muted-foreground hover:bg-accent hover:text-accent-foreground border-transparent",
                       e.id === highlightId ? "jump-highlight" : "",
                     ].join(" ")}
                   >

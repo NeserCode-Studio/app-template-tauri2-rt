@@ -60,7 +60,8 @@ export default function ExportDialog({
   const [preview, setPreview] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const onlyChapterId = scope === "chapter" ? (chapter?.id ?? undefined) : undefined;
+  const onlyChapterId =
+    scope === "chapter" ? (chapter?.id ?? undefined) : undefined;
   const workTitle = works[workId]?.title ?? "";
 
   /* 打开即生成预览：选项改动后就地重算。 */
@@ -86,7 +87,13 @@ export default function ExportDialog({
     if (busy) return;
     setBusy(true);
     try {
-      const path = await exportToFile(root, workId, fileName, opts, onlyChapterId);
+      const path = await exportToFile(
+        root,
+        workId,
+        fileName,
+        opts,
+        onlyChapterId
+      );
       if (path) {
         toast.success("Export.done");
         onOpenChange(false);
@@ -99,7 +106,10 @@ export default function ExportDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => (o ? undefined : onOpenChange(false))}>
+    <Dialog
+      open={open}
+      onOpenChange={(o) => (o ? undefined : onOpenChange(false))}
+    >
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t("Export.action")}</DialogTitle>
@@ -109,9 +119,36 @@ export default function ExportDialog({
           {/* 左：选项 */}
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1.5">
+              <Label>{t("Export.format")}</Label>
+              <Select
+                value={opts.format}
+                onValueChange={(value) =>
+                  setOpts({ ...opts, format: value as ExportOptions["format"] })
+                }
+              >
+                <SelectTrigger
+                  className="h-8 text-sm"
+                  aria-label={t("Export.format")}
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="txt">{t("Export.format.txt")}</SelectItem>
+                  <SelectItem value="md">{t("Export.format.md")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
               <Label>{t("Export.scope")}</Label>
-              <Select value={scope} onValueChange={(v) => setScope(v as "chapter" | "work")}>
-                <SelectTrigger className="h-8 text-sm" aria-label={t("Export.scope")}>
+              <Select
+                value={scope}
+                onValueChange={(v) => setScope(v as "chapter" | "work")}
+              >
+                <SelectTrigger
+                  className="h-8 text-sm"
+                  aria-label={t("Export.scope")}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -124,24 +161,37 @@ export default function ExportDialog({
             </div>
 
             <div className="flex items-center justify-between gap-3">
-              <Label className="text-xs">{t("Export.includeChapterTitle")}</Label>
+              <Label className="text-xs">
+                {t("Export.includeChapterTitle")}
+              </Label>
               <Switch
                 checked={opts.includeChapterTitle}
-                onCheckedChange={(v) => setOpts({ ...opts, includeChapterTitle: v })}
+                disabled={opts.format === "md"}
+                onCheckedChange={(v) =>
+                  setOpts({ ...opts, includeChapterTitle: v })
+                }
               />
             </div>
             <div className="flex items-center justify-between gap-3">
-              <Label className="text-xs">{t("Export.includeVolumeTitle")}</Label>
+              <Label className="text-xs">
+                {t("Export.includeVolumeTitle")}
+              </Label>
               <Switch
                 checked={opts.includeVolumeTitle}
-                onCheckedChange={(v) => setOpts({ ...opts, includeVolumeTitle: v })}
+                disabled={opts.format === "md"}
+                onCheckedChange={(v) =>
+                  setOpts({ ...opts, includeVolumeTitle: v })
+                }
               />
             </div>
             <div className="flex items-center justify-between gap-3">
               <Label className="text-xs">{t("Export.indent")}</Label>
               <Switch
                 checked={opts.indentParagraph}
-                onCheckedChange={(v) => setOpts({ ...opts, indentParagraph: v })}
+                disabled={opts.format === "md"}
+                onCheckedChange={(v) =>
+                  setOpts({ ...opts, indentParagraph: v })
+                }
               />
             </div>
 
@@ -149,32 +199,58 @@ export default function ExportDialog({
               <Label className="text-xs">{t("Export.titleFormat")}</Label>
               <Select
                 value={opts.titleFormat}
+                disabled={opts.format === "md"}
                 onValueChange={(v) =>
-                  setOpts({ ...opts, titleFormat: v as ExportOptions["titleFormat"] })
+                  setOpts({
+                    ...opts,
+                    titleFormat: v as ExportOptions["titleFormat"],
+                  })
                 }
               >
-                <SelectTrigger className="h-8 text-sm" aria-label={t("Export.titleFormat")}>
+                <SelectTrigger
+                  className="h-8 text-sm"
+                  aria-label={t("Export.titleFormat")}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="plain">{t("Export.titleFormat.plain")}</SelectItem>
-                  <SelectItem value="bracket">{t("Export.titleFormat.bracket")}</SelectItem>
-                  <SelectItem value="hash">{t("Export.titleFormat.hash")}</SelectItem>
+                  <SelectItem value="plain">
+                    {t("Export.titleFormat.plain")}
+                  </SelectItem>
+                  <SelectItem value="bracket">
+                    {t("Export.titleFormat.bracket")}
+                  </SelectItem>
+                  <SelectItem value="hash">
+                    {t("Export.titleFormat.hash")}
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {opts.format === "md" ? (
+              <p className="text-muted-foreground text-xs leading-relaxed">
+                {t("Export.markdownFixed")}
+              </p>
+            ) : null}
 
             <div className="flex flex-col gap-1.5">
               <Label className="text-xs">{t("Export.newline")}</Label>
               <Select
                 value={opts.newline}
-                onValueChange={(v) => setOpts({ ...opts, newline: v as "lf" | "crlf" })}
+                onValueChange={(v) =>
+                  setOpts({ ...opts, newline: v as "lf" | "crlf" })
+                }
               >
-                <SelectTrigger className="h-8 text-sm" aria-label={t("Export.newline")}>
+                <SelectTrigger
+                  className="h-8 text-sm"
+                  aria-label={t("Export.newline")}
+                >
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="crlf">{t("Export.newline.crlf")}</SelectItem>
+                  <SelectItem value="crlf">
+                    {t("Export.newline.crlf")}
+                  </SelectItem>
                   <SelectItem value="lf">{t("Export.newline.lf")}</SelectItem>
                 </SelectContent>
               </Select>
@@ -184,7 +260,7 @@ export default function ExportDialog({
           {/* 右：预览 */}
           <div className="flex flex-col gap-1.5">
             <Label className="text-xs">{t("Export.preview")}</Label>
-            <pre className="prose-article max-h-80 min-h-40 flex-1 overflow-auto whitespace-pre-wrap rounded-md border bg-muted/20 p-2 text-xs">
+            <pre className="prose-article bg-muted/20 max-h-80 min-h-40 flex-1 overflow-auto rounded-md border p-2 text-xs whitespace-pre-wrap">
               {preview || "—"}
             </pre>
           </div>

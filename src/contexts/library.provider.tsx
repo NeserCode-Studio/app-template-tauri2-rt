@@ -243,7 +243,11 @@ export function LibraryProvider({ children }: { children: React.ReactNode }) {
         root,
         base,
         workId,
-        works[workId]?.title ?? workId
+        works[workId]?.title ?? workId,
+        {
+          preview: works[workId]?.synopsis ?? "",
+          modifiedAt: works[workId]?.updatedAt,
+        }
       );
       setWorkspace(nextWs);
       setWorks((prev) => {

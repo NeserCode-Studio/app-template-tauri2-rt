@@ -7,6 +7,7 @@ export type AppErrorCode =
   | "confirmation_required"
   | "revision_conflict"
   | "chapter_busy"
+  | "navigation_required"
   | "bridge_unavailable"
   | "cancelled"
   | "rate_limited"

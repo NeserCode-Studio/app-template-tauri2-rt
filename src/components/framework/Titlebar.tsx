@@ -11,7 +11,25 @@ import {
 import TitlebarOperations, {
   ThemeIcon,
 } from "@/components/framework/TitlebarOperations";
-import { ArrowLeft, BookOpen, Check, ChevronDown, Home } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  Check,
+  ClipboardPaste,
+  Copy,
+  Home,
+  Info,
+  LogOut,
+  Redo2,
+  Scissors,
+  Search,
+  Server,
+  Settings2,
+  TextSearch,
+  TextSelect,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 import { useContext } from "react";
 import { ThemeContext } from "@/contexts/theme";
 import { useLibrary } from "@/contexts/library";
@@ -64,6 +82,18 @@ export default function Titlebar() {
             icon: BookOpen,
             enabled: true,
           },
+          {
+            page: "mcp" as const,
+            labelKey: APP_PAGE_LABEL_KEYS.mcp,
+            icon: Server,
+            enabled: true,
+          },
+          {
+            page: "trash" as const,
+            labelKey: APP_PAGE_LABEL_KEYS.trash,
+            icon: Trash2,
+            enabled: true,
+          },
         ]
       : []),
   ];
@@ -84,9 +114,7 @@ export default function Titlebar() {
       <Menubar className="h-6 w-fit gap-1 rounded-none border-0 bg-transparent p-0 text-neutral-600 shadow-none transition-colors duration-100 ease-in-out dark:text-neutral-200">
         <MenubarMenu>
           <MenubarTrigger className="h-full w-fit gap-1.5 px-2 text-sm">
-            <ArrowLeft className="icon-sm" />
             {t("Titlebar.navigation.menu")}
-            <ChevronDown className="size-3 opacity-60" />
           </MenubarTrigger>
           <MenubarContent className="w-56">
             {backPage && canOpenPage(backPage) ? (
@@ -124,14 +152,18 @@ export default function Titlebar() {
                 openSettings();
               }}
             >
+              <Settings2 className="icon-sm" />
               {t("Titlebar.menu.turnto.settings")}
             </MenubarItem>
             <MenubarSeparator />
             <MenubarItem onSelect={toggleTheme}>
+              <ThemeIcon className="icon-sm" />
               {t("Titlebar.menu.turnto.theme")}
-              <ThemeIcon />
             </MenubarItem>
-            <MenubarItem>{t("Titlebar.menu.turnto.exit")}</MenubarItem>
+            <MenubarItem>
+              <LogOut className="icon-sm" />
+              {t("Titlebar.menu.turnto.exit")}
+            </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
 
@@ -141,10 +173,12 @@ export default function Titlebar() {
           </MenubarTrigger>
           <MenubarContent className="w-fit transition-all duration-100 ease-in-out">
             <MenubarItem onSelect={editorActions.undo}>
+              <Undo2 className="icon-sm" />
               {t("Titlebar.menu.edit.undo")}
               <MenubarShortcut>Ctrl+Z</MenubarShortcut>
             </MenubarItem>
             <MenubarItem onSelect={editorActions.redo}>
+              <Redo2 className="icon-sm" />
               {t("Titlebar.menu.edit.redo")}
               <MenubarShortcut>Ctrl+Shift+Z</MenubarShortcut>
             </MenubarItem>
@@ -152,14 +186,17 @@ export default function Titlebar() {
             <MenubarSeparator />
 
             <MenubarItem onSelect={editorActions.cut}>
+              <Scissors className="icon-sm" />
               {t("Titlebar.menu.edit.cut")}
               <MenubarShortcut>Ctrl+X</MenubarShortcut>
             </MenubarItem>
             <MenubarItem onSelect={editorActions.copy}>
+              <Copy className="icon-sm" />
               {t("Titlebar.menu.edit.copy")}
               <MenubarShortcut>Ctrl+C</MenubarShortcut>
             </MenubarItem>
             <MenubarItem onSelect={() => void editorActions.paste()}>
+              <ClipboardPaste className="icon-sm" />
               {t("Titlebar.menu.edit.paste")}
               <MenubarShortcut>Ctrl+V</MenubarShortcut>
             </MenubarItem>
@@ -167,10 +204,12 @@ export default function Titlebar() {
             <MenubarSeparator />
 
             <MenubarItem onSelect={editorActions.selectAll}>
+              <TextSelect className="icon-sm" />
               {t("Titlebar.menu.edit.selectAll")}
               <MenubarShortcut>Ctrl+A</MenubarShortcut>
             </MenubarItem>
             <MenubarItem onSelect={editorActions.find}>
+              <TextSearch className="icon-sm" />
               {t("Titlebar.menu.edit.find")}
               <MenubarShortcut>Ctrl+K</MenubarShortcut>
             </MenubarItem>
@@ -179,6 +218,7 @@ export default function Titlebar() {
                 window.dispatchEvent(new CustomEvent("app:open-search"))
               }
             >
+              <Search className="icon-sm" />
               {t("Search.title")}
               <MenubarShortcut>Ctrl+Shift+F</MenubarShortcut>
             </MenubarItem>
@@ -191,6 +231,7 @@ export default function Titlebar() {
           </MenubarTrigger>
           <MenubarContent className="w-fit transition-all duration-100 ease-in-out">
             <MenubarItem onSelect={openAbout}>
+              <Info className="icon-sm" />
               {t("Titlebar.menu.about")}
             </MenubarItem>
           </MenubarContent>

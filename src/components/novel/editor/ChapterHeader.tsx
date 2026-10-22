@@ -1,4 +1,12 @@
-import { Check, History, Loader2, Pencil, Save, Trash2, Undo2 } from "lucide-react";
+import {
+  Check,
+  History,
+  Loader2,
+  Pencil,
+  Save,
+  Trash2,
+  Undo2,
+} from "lucide-react";
 
 import { useI18n } from "@/composables";
 import { Button } from "@/components/ui/button";
@@ -20,6 +28,7 @@ export default function ChapterHeader({
   onSave,
   onOpenHistory,
   onUndoMerge,
+  locked = false,
 }: {
   title: string;
   words: number;
@@ -30,6 +39,7 @@ export default function ChapterHeader({
   onSave: () => void;
   onOpenHistory: () => void;
   onUndoMerge: () => void;
+  locked?: boolean;
 }) {
   const { t } = useI18n();
 
@@ -51,6 +61,7 @@ export default function ChapterHeader({
             className="size-7 shrink-0"
             aria-label={t("Editor.chapter.rename")}
             title={t("Editor.chapter.rename")}
+            disabled={locked}
             onClick={onRename}
           >
             <Pencil className="icon-sm" />
@@ -60,16 +71,17 @@ export default function ChapterHeader({
           <Button
             size="icon"
             variant="ghost"
-            className="size-7 shrink-0 text-destructive hover:text-destructive"
+            className="text-destructive hover:text-destructive size-7 shrink-0"
             aria-label={t("Editor.chapter.delete")}
             title={t("Editor.chapter.delete")}
+            disabled={locked}
             onClick={onDelete}
           >
             <Trash2 className="icon-sm" />
           </Button>
         ) : null}
       </div>
-      <div className="flex shrink-0 items-center gap-3 text-xs text-muted-foreground">
+      <div className="text-muted-foreground flex shrink-0 items-center gap-3 text-xs">
         <span className="tabular-nums">
           {words} {t("Editor.chapter.words")}
         </span>
@@ -92,7 +104,7 @@ export default function ChapterHeader({
           size="sm"
           variant="outline"
           className="h-7"
-          disabled={saveState === "saving"}
+          disabled={locked || saveState === "saving"}
           onClick={onSave}
         >
           <Save className="icon-sm" />
@@ -103,6 +115,7 @@ export default function ChapterHeader({
           size="sm"
           variant="outline"
           className="h-7"
+          disabled={locked}
           onClick={onOpenHistory}
         >
           <History className="icon-sm" />
@@ -117,6 +130,7 @@ export default function ChapterHeader({
             size="sm"
             variant="outline"
             className="h-7"
+            disabled={locked}
             onClick={onUndoMerge}
           >
             <Undo2 className="icon-sm" />

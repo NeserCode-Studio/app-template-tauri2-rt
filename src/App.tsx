@@ -68,6 +68,8 @@ const Home = lazy(() => import("@/views/Home"));
 const Library = lazy(() => import("@/views/Library"));
 const Editor = lazy(() => import("@/views/Editor"));
 const CodexLibrary = lazy(() => import("@/views/CodexLibrary"));
+const Mcp = lazy(() => import("@/views/Mcp"));
+const Trash = lazy(() => import("@/views/Trash"));
 const TrayMenu = lazy(() => import("@/views/TrayMenu"));
 
 /**
@@ -264,6 +266,22 @@ function App() {
                                                   element={
                                                     <div className="h-full w-full">
                                                       <CodexLibrary />
+                                                    </div>
+                                                  }
+                                                />
+                                                <Route
+                                                  path="/mcp"
+                                                  element={
+                                                    <div className="h-full w-full">
+                                                      <Mcp />
+                                                    </div>
+                                                  }
+                                                />
+                                                <Route
+                                                  path="/trash"
+                                                  element={
+                                                    <div className="h-full w-full">
+                                                      <Trash />
                                                     </div>
                                                   }
                                                 />

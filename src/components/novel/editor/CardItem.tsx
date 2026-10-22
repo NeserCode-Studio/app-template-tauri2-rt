@@ -123,6 +123,8 @@ export interface CardItemProps {
   dimmed: boolean;
   /** 当前正在编辑的已有段落。 */
   isActive: boolean;
+  /** 从素材提及跳转后短暂标记目标段落。 */
+  highlighted?: boolean;
   /** 载入输入框编辑。 */
   onEdit: (index: number) => void;
   onMoveUp: (index: number) => void;
@@ -146,6 +148,7 @@ export default function CardItem({
   total,
   dimmed,
   isActive,
+  highlighted = false,
   onEdit,
   onMoveUp,
   onMoveDown,
@@ -204,6 +207,7 @@ export default function CardItem({
       onDelete={onDelete}
     >
       <div
+        data-card-id={card.id}
         data-card-index={index}
         className={[
           /*
@@ -216,6 +220,7 @@ export default function CardItem({
           "group article-paragraph relative cursor-text rounded-sm py-0.5 pr-1 pl-7 transition-opacity",
           dimmed ? "opacity-35" : "opacity-100",
           isActive ? "is-editing" : "hover:bg-accent/20",
+          highlighted ? "jump-highlight" : "",
         ].join(" ")}
       >
         {/*

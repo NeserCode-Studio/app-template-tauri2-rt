@@ -8,7 +8,9 @@ import { loadOutline } from "@/services/outline";
 
 const writingPreferencesSchema = z
   .object({
-    indentSpaces: z.union([z.literal(0), z.literal(2), z.literal(4)]).optional(),
+    indentSpaces: z
+      .union([z.literal(0), z.literal(2), z.literal(4)])
+      .optional(),
     paragraphGap: z.boolean().optional(),
     lineWidth: z.number().int().min(12).max(120).optional(),
     lineHeight: z.number().min(1).max(3).optional(),
@@ -26,7 +28,10 @@ const writingPreferencesSchema = z
     chapterTurnThreshold: z.number().int().min(120).max(600).optional(),
   })
   .strict()
-  .refine((value) => Object.keys(value).length > 0, "No preference was provided.");
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "No preference was provided."
+  );
 
 const preferencesGet = defineAppCommand({
   id: "novels_preferences_get",
@@ -155,7 +160,15 @@ const navigate = defineAppCommand({
     "Navigate to a fixed application page. Arbitrary routes are rejected.",
   input: z
     .object({
-      target: z.enum(["home", "library", "codex", "editor", "settings"]),
+      target: z.enum([
+        "home",
+        "library",
+        "codex",
+        "editor",
+        "mcp",
+        "trash",
+        "settings",
+      ]),
     })
     .strict(),
   permission: "read",

@@ -10,6 +10,7 @@ export interface McpActivityDescriptor {
   interruptible: boolean;
   workId?: string | null;
   chapterId?: string | null;
+  targetLabel?: string | null;
   total?: number;
 }
 
@@ -27,6 +28,7 @@ export interface McpActivity extends McpActivityDescriptor {
   error?: string;
   cancelling?: boolean;
   refreshing?: boolean;
+  queued?: boolean;
 }
 
 export interface McpActivitySnapshot {
@@ -41,11 +43,72 @@ let recent: McpActivity[] = [];
 const listeners = new Set<ActivityListener>();
 const MAX_RECENT = 500;
 const RECENT_RETENTION_MS = 30 * 60 * 1_000;
+const ACTIVITY_STORAGE_PREFIX = "novels-yes:mcp-recent-activity:";
+const NOTIFY_THROTTLE_MS = 120;
+let activityScope = "global";
+let notifyTimer: ReturnType<typeof setTimeout> | null = null;
+let lastNotifiedAt = 0;
 
 function pruneRecent(now = Date.now()): void {
   recent = recent
     .filter((item) => now - (item.finishedAt ?? now) < RECENT_RETENTION_MS)
     .slice(0, MAX_RECENT);
+}
+
+function storedActivity(value: unknown): McpActivity | null {
+  if (!value || typeof value !== "object") return null;
+  const item = value as McpActivity;
+  if (
+    typeof item.id !== "string" ||
+    typeof item.toolName !== "string" ||
+    typeof item.operationKey !== "string" ||
+    typeof item.clientName !== "string" ||
+    typeof item.startedAt !== "number" ||
+    typeof item.updatedAt !== "number" ||
+    typeof item.finishedAt !== "number" ||
+    (item.status !== "completed" &&
+      item.status !== "failed" &&
+      item.status !== "cancelled")
+  ) {
+    return null;
+  }
+  return {
+    ...item,
+    interruptible: Boolean(item.interruptible),
+    page: item.page ?? null,
+    detail: item.detail?.slice(0, 240),
+    error: item.error?.slice(0, 240),
+    queued: false,
+    cancelling: false,
+    refreshing: false,
+  };
+}
+
+function loadRecentScope(scope: string): McpActivity[] {
+  try {
+    const raw = window.localStorage.getItem(ACTIVITY_STORAGE_PREFIX + scope);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .map(storedActivity)
+      .filter((item): item is McpActivity => item !== null);
+  } catch {
+    return [];
+  }
+}
+
+function persistRecent(): void {
+  try {
+    const key = ACTIVITY_STORAGE_PREFIX + activityScope;
+    if (!recent.length) {
+      window.localStorage.removeItem(key);
+      return;
+    }
+    window.localStorage.setItem(key, JSON.stringify(recent));
+  } catch {
+    /* Local storage may be unavailable; activity still works in memory. */
+  }
 }
 
 function snapshot(): McpActivitySnapshot {
@@ -58,9 +121,36 @@ function snapshot(): McpActivitySnapshot {
   };
 }
 
-function notify(): void {
+function emit(): void {
+  lastNotifiedAt = Date.now();
   const next = snapshot();
   for (const listener of listeners) listener(next);
+}
+
+function notify(): void {
+  if (!listeners.size) return;
+  const elapsed = Date.now() - lastNotifiedAt;
+  if (elapsed >= NOTIFY_THROTTLE_MS) {
+    if (notifyTimer) {
+      clearTimeout(notifyTimer);
+      notifyTimer = null;
+    }
+    emit();
+    return;
+  }
+  if (notifyTimer) return;
+  notifyTimer = setTimeout(() => {
+    notifyTimer = null;
+    emit();
+  }, NOTIFY_THROTTLE_MS - elapsed);
+}
+
+function notifyImmediately(): void {
+  if (notifyTimer) {
+    clearTimeout(notifyTimer);
+    notifyTimer = null;
+  }
+  emit();
 }
 
 export function subscribeActivity(listener: ActivityListener): () => void {
@@ -85,7 +175,14 @@ export function beginActivity(
     startedAt: now,
     updatedAt: now,
   });
-  notify();
+  if (
+    descriptor.toolName === "novels_navigate" ||
+    descriptor.toolName === "novels_open_chapter"
+  ) {
+    notifyImmediately();
+  } else {
+    notify();
+  }
 }
 
 export function updateActivity(
@@ -93,7 +190,13 @@ export function updateActivity(
   patch: Partial<
     Pick<
       McpActivity,
-      "progress" | "total" | "detail" | "cancelling" | "refreshing" | "error"
+      | "progress"
+      | "total"
+      | "detail"
+      | "cancelling"
+      | "refreshing"
+      | "error"
+      | "queued"
     >
   >
 ): void {
@@ -120,12 +223,14 @@ export function finishActivity(
     ...current,
     ...patch,
     status,
+    queued: false,
     finishedAt: now,
     updatedAt: now,
     cancelling: false,
     refreshing: false,
   });
   pruneRecent(now);
+  persistRecent();
   notify();
 }
 
@@ -136,5 +241,16 @@ export function currentActivitySnapshot(): McpActivitySnapshot {
 export function clearActivityHistory(): void {
   active.clear();
   recent = [];
-  notify();
+  persistRecent();
+  notifyImmediately();
+}
+
+export function setActivityScope(scope: string): void {
+  if (scope === activityScope) return;
+  activityScope = scope;
+  active.clear();
+  recent = loadRecentScope(scope);
+  pruneRecent();
+  persistRecent();
+  notifyImmediately();
 }

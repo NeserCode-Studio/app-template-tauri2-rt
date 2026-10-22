@@ -15,7 +15,6 @@ import {
 } from "@/services/import";
 import {
   buildExportText,
-  DEFAULT_EXPORT_OPTIONS,
   exportToFile,
   type ExportOptions,
 } from "@/services/export";
@@ -69,6 +68,7 @@ export function describeImportPreview(previewId: string) {
 
 const exportOptionsSchema = z
   .object({
+    format: z.enum(["txt", "md"]).default("txt"),
     include_chapter_title: z.boolean().default(true),
     include_volume_title: z.boolean().default(true),
     indent_paragraph: z.boolean().default(true),
@@ -77,10 +77,20 @@ const exportOptionsSchema = z
   })
   .strict();
 
+const DEFAULT_EXPORT_INPUT = {
+  format: "txt",
+  include_chapter_title: true,
+  include_volume_title: true,
+  indent_paragraph: true,
+  newline: "crlf",
+  title_format: "plain",
+} as const;
+
 function exportOptions(
   input: z.infer<typeof exportOptionsSchema>
 ): ExportOptions {
   return {
+    format: input.format,
     includeChapterTitle: input.include_chapter_title,
     includeVolumeTitle: input.include_volume_title,
     indentParagraph: input.indent_paragraph,
@@ -263,12 +273,12 @@ const exportText = defineAppCommand({
   id: "novels_export_text",
   title: "Export work as text",
   description:
-    "Build export text using validated formatting options. Large results are truncated by the MCP result layer.",
+    "Build txt or Markdown export text using validated formatting options. Large results are truncated by the MCP result layer.",
   input: z
     .object({
       work_id: z.string().uuid().optional(),
       chapter_id: z.string().uuid().optional(),
-      options: exportOptionsSchema.default(DEFAULT_EXPORT_OPTIONS),
+      options: exportOptionsSchema.default(DEFAULT_EXPORT_INPUT),
     })
     .strict(),
   permission: "read",
@@ -301,13 +311,13 @@ const exportFile = defineAppCommand({
   id: "novels_export_file",
   title: "Export work to file",
   description:
-    "Open the application save dialog and write the selected work or chapter to a text file.",
+    "Open the application save dialog and write the selected work or chapter as txt or Markdown.",
   input: z
     .object({
       work_id: z.string().uuid().optional(),
       chapter_id: z.string().uuid().optional(),
       default_name: z.string().trim().min(1).max(200).default("novel"),
-      options: exportOptionsSchema.default(DEFAULT_EXPORT_OPTIONS),
+      options: exportOptionsSchema.default(DEFAULT_EXPORT_INPUT),
     })
     .strict(),
   permission: "write",
@@ -329,7 +339,12 @@ const exportFile = defineAppCommand({
       input.chapter_id
     );
     return path
-      ? { exported: true, file_name: path.split(/[\\/]/).pop() ?? "export.txt" }
+      ? {
+          exported: true,
+          file_name:
+            path.split(/[\\/]/).pop() ??
+            `export.${input.options.format === "md" ? "md" : "txt"}`,
+        }
       : { exported: false, cancelled: true };
   },
 });

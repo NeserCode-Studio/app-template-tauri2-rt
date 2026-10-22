@@ -921,7 +921,9 @@ export function CodexDetail({
               )}
             </Section>
 
-            <Section title={t("Codex.mentions.chapters")}>
+            <Section
+              title={`${t("Codex.mentions.chapters")} · ${mentionRecords.length} ${t("Codex.mentions.short")}`}
+            >
               {mentionRecords.length ? (
                 <div className="flex flex-col gap-1">
                   {mentionRecords.map((record) => {

@@ -18,8 +18,10 @@ import {
   usePreferences,
 } from "@/contexts/preferences";
 import { useViewMode } from "@/contexts/viewmode";
+import { useJumpHighlight } from "@/hooks/useJumpHighlight";
 import { createLogger } from "@/lib/logger";
 import { orderedChapterNodes } from "@/lib/outline-sequence";
+import { useMcpEditorOperation } from "@/mcp/editor-operation";
 import type { Card, Chapter, OutlineNode } from "@/shared/schema";
 import ChapterBody from "./ChapterBody";
 import ChapterHeader from "./ChapterHeader";
@@ -88,6 +90,8 @@ export interface ChapterStreamProps {
   chapter: Chapter;
   /** 切到另一章，并声明新章应落在章首还是章尾。 */
   onSelectChapter: (id: string, landing: ChapterLanding) => void;
+  /** 从素材提及进入时，滚动并高亮首个命中的正文段落。 */
+  focusCardId?: string | null;
   /**
    * 切章后的落点。
    *
@@ -167,6 +171,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
       chapter,
       landing: landingProp = "remember",
       onSelectChapter,
+      focusCardId = null,
       onWordsChange,
       onSaved,
       onWordsCommitted,
@@ -188,10 +193,13 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
           Math.min(CHAPTER_TURN_THRESHOLD_MAX, prefs.chapterTurnThreshold)
         )
       : DEFAULT_CHAPTER_TURN_THRESHOLD;
+    const operationLock = useMcpEditorOperation(workId, chapter.id);
+    const editorLocked = Boolean(operationLock);
     const c = useChapterController({
       chapter,
       root,
       workId,
+      locked: editorLocked,
       onWordsChange,
       onSaved,
       onWordsCommitted,
@@ -223,6 +231,8 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
     }
 
     const scrollRef = useRef<HTMLDivElement | null>(null);
+    const { highlightId: highlightedCardId, jumpTo: jumpToCard } =
+      useJumpHighlight("data-card-id");
     const [turnProgress, setTurnProgress] = useState<{
       side: "start" | "end";
       progress: number;
@@ -322,6 +332,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
      */
     const initialLanding = useRef(landingProp);
     useEffect(() => {
+      if (focusCardId) return;
       const el = scrollRef.current;
       if (!el) return;
       const target = initialLanding.current;
@@ -433,7 +444,22 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
         if (secondFrame !== 0) cancelAnimationFrame(secondFrame);
         if (applyFrame !== 0) cancelAnimationFrame(applyFrame);
       };
-    }, [activeId, scrollStorageKey]);
+    }, [activeId, focusCardId, scrollStorageKey]);
+
+    useEffect(() => {
+      if (!focusCardId) return;
+      scrollReadyRef.current = true;
+      let secondFrame = 0;
+      const firstFrame = window.requestAnimationFrame(() => {
+        secondFrame = window.requestAnimationFrame(() => {
+          jumpToCard(focusCardId);
+        });
+      });
+      return () => {
+        window.cancelAnimationFrame(firstFrame);
+        window.cancelAnimationFrame(secondFrame);
+      };
+    }, [focusCardId, jumpToCard]);
 
     /*
      * 普通阅读位置的记忆与被动的翻章提示相互独立：
@@ -638,13 +664,14 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
 
     const appendText = useCallback(
       (text: string) => {
+        if (editorLocked) return false;
         const composer = c.composerRef.current;
         const value = text.trim();
         if (!composer || !value) return false;
         composer.load(`${composer.read()}${value}`, "end");
         return true;
       },
-      [c.composerRef]
+      [c.composerRef, editorLocked]
     );
 
     const appendCards = useCallback(
@@ -696,6 +723,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
           onSave={c.saveNow}
           onOpenHistory={() => c.setHistoryOpen(true)}
           onUndoMerge={c.undoMerge}
+          locked={editorLocked}
         />
 
         {/*
@@ -728,6 +756,8 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
               onDelete={c.deleteCard}
               onOpenCodexEntry={onOpenCodexEntry}
               listRef={c.listRef}
+              highlightedCardId={highlightedCardId}
+              locked={editorLocked}
             />
           </div>
 
@@ -762,6 +792,7 @@ const ChapterStream = forwardRef<ChapterStreamHandle, ChapterStreamProps>(
             onRestoreDraft={c.restoreDraft}
             onDiscardDraft={c.discardDraft}
             onTextChange={c.handleComposerTextChange}
+            operationLock={operationLock}
           />
         </div>
       </div>

@@ -67,6 +67,7 @@ export function CodexProvider({ children }: { children: ReactNode }) {
 
   const entriesRef = useRef(entries);
   const typesRef = useRef(typeConfigs);
+  const pendingSearchRef = useRef<string | null>(null);
 
   useEffect(() => {
     entriesRef.current = entries;
@@ -353,6 +354,16 @@ export function CodexProvider({ children }: { children: ReactNode }) {
     [root]
   );
 
+  const requestSearch = useCallback((query: string) => {
+    pendingSearchRef.current = query.trim() || null;
+  }, []);
+
+  const takeSearchRequest = useCallback(() => {
+    const query = pendingSearchRef.current;
+    pendingSearchRef.current = null;
+    return query;
+  }, []);
+
   const byType = useCallback(
     (typeId: string) => entries.filter((entry) => entry.typeId === typeId),
     [entries]
@@ -392,6 +403,8 @@ export function CodexProvider({ children }: { children: ReactNode }) {
       labelOf,
       colorOf,
       setCurrentEntryId,
+      requestSearch,
+      takeSearchRequest,
       reload,
       create,
       save,
@@ -414,6 +427,8 @@ export function CodexProvider({ children }: { children: ReactNode }) {
       typeOf,
       labelOf,
       colorOf,
+      requestSearch,
+      takeSearchRequest,
       reload,
       create,
       save,

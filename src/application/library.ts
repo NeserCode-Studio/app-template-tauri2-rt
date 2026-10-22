@@ -91,7 +91,8 @@ const workGet = defineAppCommand({
       work,
       counts: {
         volumes: outline.nodes.filter((node) => node.type === "volume").length,
-        chapters: outline.nodes.filter((node) => node.type === "chapter").length,
+        chapters: outline.nodes.filter((node) => node.type === "chapter")
+          .length,
         scenes: outline.nodes.filter((node) => node.type === "scene").length,
         words: stats.workWords[workId] ?? 0,
       },
@@ -271,7 +272,10 @@ const workDelete = defineAppCommand({
       loadWorkspace(root),
       loadWork(root, workId),
     ]);
-    const next = await deleteWork(root, workspace, workId, work.title);
+    const next = await deleteWork(root, workspace, workId, work.title, {
+      preview: work.synopsis,
+      modifiedAt: work.updatedAt,
+    });
     return { deleted_work_id: workId, workspace: next };
   },
 });

@@ -5,7 +5,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use axum::{extract::DefaultBodyLimit, middleware, routing::get, Json, Router};
+use axum::{middleware, routing::get, Json, Router};
 use rmcp::{
     model::ResourceUpdatedNotificationParam,
     service::Peer,
@@ -32,7 +32,6 @@ use super::{
 
 const DEFAULT_PORT: u16 = 38471;
 const MAX_PORT: u16 = 38480;
-const MAX_BODY_BYTES: usize = 2 * 1024 * 1024;
 const MAX_CONCURRENT_CALLS: usize = 8;
 const CLIENT_RETENTION_MS: u128 = 30 * 60 * 1_000;
 
@@ -187,9 +186,7 @@ impl RuntimeShared {
             );
         }
         drop(clients);
-        let _ = self
-            .app
-            .emit("mcp:clients-changed", serde_json::json!({}));
+        let _ = self.app.emit("mcp:clients-changed", serde_json::json!({}));
     }
 
     pub fn client_statuses(&self) -> Vec<McpClientStatus> {
@@ -328,13 +325,13 @@ pub async fn mcp_start(
             config,
         );
     let auth_shared = shared.clone();
-    let mcp_router = Router::new()
-        .nest_service("/mcp", service)
-        .layer(middleware::from_fn_with_state(
-            auth_shared,
-            super::auth::authorize_request,
-        ))
-        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES));
+    let mcp_router =
+        Router::new()
+            .nest_service("/mcp", service)
+            .layer(middleware::from_fn_with_state(
+                auth_shared,
+                super::auth::authorize_request,
+            ));
     let router = Router::new()
         .route("/healthz", get(healthz))
         .merge(mcp_router);

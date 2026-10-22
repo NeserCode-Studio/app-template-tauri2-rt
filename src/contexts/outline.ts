@@ -17,6 +17,9 @@ export interface OutlineContextValue {
    * 两者一致时结构树只显示一份高亮，看不出差别。
    */
   readingChapterId: string | null;
+  /** 一次性正文段落定位目标；编辑器消费后清空。 */
+  pendingParagraphId: string | null;
+  setPendingParagraphId: (id: string | null) => void;
   /** 上报阅读位置。只影响高亮，不改编辑目标。 */
   setReadingChapterId: (id: string | null) => void;
   /** 按 order 升序排列的章节节点（不分卷，章节跳转器用）。 */
@@ -32,8 +35,12 @@ export interface OutlineContextValue {
   chapterMetas: Record<string, ChapterMeta>;
   setOutline: (outline: Outline) => void;
   setCurrentChapterId: (id: string | null) => void;
-  /** 跨作品或跨章跳转：先切作品，等结构树装载后落到指定章。 */
-  openChapter: (workId: string, chapterId: string) => void;
+  /** 跨作品或跨章跳转：先切作品，等结构树装载后落到指定章与段落。 */
+  openChapter: (
+    workId: string,
+    chapterId: string,
+    paragraphId?: string | null
+  ) => void;
   reload: () => Promise<void>;
   /** 重新读取章元信息（保存、切章后调用）。 */
   reloadChapterMetas: () => Promise<void>;
@@ -45,6 +52,8 @@ export const OutlineContext = createContext<OutlineContextValue>({
   outline: { nodes: [] },
   currentChapterId: null,
   readingChapterId: null,
+  pendingParagraphId: null,
+  setPendingParagraphId: () => {},
   setReadingChapterId: () => {},
   chapters: [],
   volumes: [],

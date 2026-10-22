@@ -39,6 +39,9 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
   const [currentChapterId, setCurrentChapterId] = useState<string | null>(null);
   /** 阅读位置：滚动正文时更新，只驱动结构树高亮。 */
   const [readingChapterId, setReadingChapterId] = useState<string | null>(null);
+  const [pendingParagraphId, setPendingParagraphId] = useState<string | null>(
+    null
+  );
   const [chapterMetas, setChapterMetas] = useState<Record<string, ChapterMeta>>(
     {}
   );
@@ -55,6 +58,7 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
       setOutline({ nodes: [] });
       setCurrentChapterId(null);
       setReadingChapterId(null);
+      setPendingParagraphId(null);
       return;
     }
     let alive = true;
@@ -139,7 +143,8 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
   }, [root, currentWorkId]);
 
   const openChapter = useCallback(
-    (workId: string, chapterId: string) => {
+    (workId: string, chapterId: string, paragraphId: string | null = null) => {
+      setPendingParagraphId(paragraphId);
       pendingJumpRef.current = { workId, chapterId };
       if (workId === currentWorkId) {
         if (outline.nodes.some((node) => node.id === chapterId)) {
@@ -240,6 +245,8 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
       outline,
       currentChapterId,
       readingChapterId,
+      pendingParagraphId,
+      setPendingParagraphId,
       setReadingChapterId,
       chapters,
       volumes,
@@ -255,6 +262,7 @@ export function OutlineProvider({ children }: { children: ReactNode }) {
       outline,
       currentChapterId,
       readingChapterId,
+      pendingParagraphId,
       chapters,
       volumes,
       chapterMetas,

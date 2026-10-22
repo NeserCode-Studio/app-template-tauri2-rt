@@ -34,9 +34,14 @@ export interface ApplicationHost {
   };
   settings: {
     get: () => AppSettingsSnapshot;
-    update: (patch: Partial<AppSettingsSnapshot>) => Promise<AppSettingsSnapshot>;
+    update: (
+      patch: Partial<AppSettingsSnapshot>
+    ) => Promise<AppSettingsSnapshot>;
   };
-  navigate: (target: "home" | "library" | "codex" | "editor" | "settings") => Promise<void>;
+  navigate: (
+    target:
+      "home" | "library" | "codex" | "editor" | "mcp" | "trash" | "settings"
+  ) => Promise<void>;
   openUi: (target: "settings" | "about") => Promise<void>;
   openChapter: (workId: string, chapterId: string) => Promise<void>;
 }

@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
+  ArrowUpRight,
   Ban,
   CheckCircle2,
   CircleX,
@@ -10,72 +11,65 @@ import {
   X,
 } from "lucide-react";
 
+import { Progress } from "@/components/ui/progress";
 import { useI18n } from "@/composables";
 import { createLogger } from "@/lib/logger";
+import { APP_PAGE_PATHS, useAppNavigation } from "@/lib/navigation";
 import {
-  updateActivity,
-  type McpActivity,
-  type McpActivityStatus,
-} from "@/mcp/activity";
+  displayedActivityBatch,
+  type McpActivityBatch,
+} from "@/mcp/activity-batch";
+import { updateActivity } from "@/mcp/activity";
 import { subscribeApprovals } from "@/mcp/approval";
 import { useMcpRuntime } from "@/mcp/runtime";
+import { mcpToolLabel } from "@/mcp/tool-labels";
 import { useMcpActivity } from "@/mcp/use-activity";
-import McpStatusDialog from "./McpStatusDialog";
 
 const log = createLogger("McpActivity");
-const COMPLETED_VISIBLE_MS = 3_500;
 
-function statusIcon(status: McpActivityStatus) {
-  switch (status) {
+function statusIcon(batch: McpActivityBatch) {
+  switch (batch.status) {
     case "completed":
-      return <CheckCircle2 className="icon-sm text-emerald-600" />;
+      return <CheckCircle2 className="size-4 text-emerald-600" />;
     case "failed":
-      return <CircleX className="icon-sm text-destructive" />;
+      return <CircleX className="text-destructive size-4" />;
     case "cancelled":
-      return <Ban className="icon-sm text-muted-foreground" />;
+      return <Ban className="text-muted-foreground size-4" />;
     default:
-      return <LoaderCircle className="icon-sm animate-spin" />;
+      return <LoaderCircle className="size-4 animate-spin" />;
   }
 }
 
 export default function McpActivityIndicator() {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const runtime = useMcpRuntime();
   const activity = useMcpActivity();
+  const { navigateDirect } = useAppNavigation();
   const [approvalCount, setApprovalCount] = useState(0);
-  const [open, setOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
 
   useEffect(
     () => subscribeApprovals((requests) => setApprovalCount(requests.length)),
     []
   );
+
+  const batch = useMemo(
+    () => displayedActivityBatch(activity, now),
+    [activity, now]
+  );
+
   useEffect(() => {
-    const nextExpiry = activity.recent
-      .filter((item) => item.interruptible)
-      .map((item) => (item.finishedAt ?? 0) + COMPLETED_VISIBLE_MS)
-      .filter((expiresAt) => expiresAt > now)
-      .sort((left, right) => left - right)[0];
-    if (!nextExpiry) return;
+    if (!batch?.expiresAt || batch.activeCount) return;
     const timer = window.setTimeout(
       () => setNow(Date.now()),
-      Math.max(50, nextExpiry - Date.now() + 20)
+      Math.max(50, batch.expiresAt - Date.now() + 20)
     );
     return () => window.clearTimeout(timer);
-  }, [activity.recent, now]);
+  }, [batch?.activeCount, batch?.expiresAt, batch?.id]);
 
-  const activeTasks = activity.active.filter((item) => item.interruptible);
-  const completedTasks = activity.recent
-    .filter(
-      (item) =>
-        item.interruptible &&
-        (item.finishedAt ?? 0) > now - COMPLETED_VISIBLE_MS
-    )
-    .slice(0, 3);
-  const tasks = [...activeTasks, ...completedTasks].slice(0, 3);
-  const hiddenCount = activeTasks.length + completedTasks.length - tasks.length;
-
-  const cancelTask = async (task: McpActivity) => {
+  const cancelTask = async () => {
+    const task = batch?.currentTask;
+    if (!task || task.status !== "running") return;
     updateActivity(task.id, { cancelling: true });
     try {
       await invoke("mcp_bridge_cancel", { requestId: task.id });
@@ -88,110 +82,161 @@ export default function McpActivityIndicator() {
     }
   };
 
-  if (!tasks.length && !approvalCount && runtime.phase !== "degraded") {
+  const title =
+    batch?.status === "running"
+      ? t("Mcp.batch.title")
+      : batch?.status === "failed"
+        ? t("Mcp.batch.titleFailed")
+        : batch?.status === "cancelled"
+          ? t("Mcp.batch.titleCancelled")
+          : t("Mcp.batch.titleCompleted");
+  const currentTask = batch?.currentTask;
+  const currentProgress =
+    currentTask?.total !== undefined
+      ? t("Mcp.batch.currentProgress")
+          .replace("{done}", String(currentTask.progress ?? 0))
+          .replace("{total}", String(currentTask.total))
+      : null;
+  const currentLabel = currentTask
+    ? [
+        mcpToolLabel(currentTask.toolName, lang),
+        currentTask.targetLabel,
+        currentTask.queued
+          ? t("Mcp.task.queued")
+          : currentTask.refreshing
+            ? t("Mcp.task.refreshing")
+            : currentTask.error,
+        currentProgress,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+  const clientLabel = batch
+    ? batch.clientNames.length === 1
+      ? batch.clientNames[0]
+      : t("Mcp.batch.clients").replace(
+          "{count}",
+          String(batch.clientNames.length)
+        )
+    : null;
+  const summary = batch
+    ? [
+        t("Mcp.batch.total").replace("{count}", String(batch.total)),
+        batch.runningCount
+          ? t("Mcp.batch.running").replace(
+              "{count}",
+              String(batch.runningCount)
+            )
+          : null,
+        batch.queuedCount
+          ? t("Mcp.batch.queued").replace("{count}", String(batch.queuedCount))
+          : null,
+        batch.failedCount
+          ? t("Mcp.batch.failed").replace("{count}", String(batch.failedCount))
+          : null,
+        batch.cancelledCount
+          ? t("Mcp.batch.cancelled").replace(
+              "{count}",
+              String(batch.cancelledCount)
+            )
+          : null,
+        clientLabel,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : null;
+  const canCancel =
+    currentTask?.status === "running" &&
+    currentTask.interruptible &&
+    !currentTask.cancelling;
+
+  if (!batch && !approvalCount && runtime.phase !== "degraded") {
     return null;
   }
 
   return (
-    <>
-      <div className="fixed bottom-4 left-4 z-[105] flex w-[21rem] max-w-[calc(100vw-2rem)] flex-col gap-2">
-        {tasks.map((task) => {
-          const total = task.total ?? task.resultCount ?? 1;
-          const done =
-            task.progress ??
-            (task.status === "running" ? 0 : (task.resultCount ?? total));
-          const countLabel = `${Math.min(done, total)}/${total}`;
-          const canCancel =
-            task.status === "running" && task.interruptible && !task.cancelling;
-
-          return (
-            <div
-              key={task.id}
-              className="bg-background/95 flex min-w-0 items-start gap-2 rounded-md border px-3 py-2.5 text-xs shadow-lg backdrop-blur"
+    <div
+      className="fixed bottom-4 left-4 z-[105] flex w-[23rem] max-w-[calc(100vw-2rem)] flex-col gap-2"
+      role="status"
+      aria-live="polite"
+    >
+      {batch ? (
+        <div
+          key={batch.id}
+          data-mcp-batch-toast
+          className="bg-background/95 animate-in fade-in slide-in-from-bottom-2 rounded-md border shadow-lg backdrop-blur duration-200"
+        >
+          <div className="flex min-w-0 items-start gap-2 px-3 py-2.5">
+            <span className="mt-0.5 shrink-0">{statusIcon(batch)}</span>
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-left"
+              title={t("Mcp.batch.view")}
+              onClick={() => navigateDirect(APP_PAGE_PATHS.mcp)}
             >
-              <span className="mt-0.5 shrink-0">{statusIcon(task.status)}</span>
+              <span className="flex min-w-0 items-center gap-2">
+                <span className="min-w-0 flex-1 truncate text-xs font-medium">
+                  {title}
+                </span>
+                <span className="text-muted-foreground shrink-0 text-[11px] tabular-nums">
+                  {t("Mcp.batch.progress")
+                    .replace("{done}", String(batch.finishedCount))
+                    .replace("{total}", String(batch.total))}
+                </span>
+                <ArrowUpRight className="text-muted-foreground size-3.5 shrink-0" />
+              </span>
+              <span className="text-muted-foreground mt-1 block truncate text-[11px]">
+                {currentLabel}
+              </span>
+              <Progress
+                value={batch.percent}
+                className="mt-2 h-1 [&_[data-slot=progress-indicator]]:duration-200"
+              />
+              <span className="text-muted-foreground mt-1.5 block truncate text-[11px]">
+                {summary}
+              </span>
+            </button>
+            {canCancel ? (
               <button
                 type="button"
-                className="min-w-0 flex-1 text-left"
-                onClick={() => setOpen(true)}
+                className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm"
+                aria-label={t("Mcp.task.cancel")}
+                title={t("Mcp.task.cancel")}
+                onClick={() => void cancelTask()}
               >
-                <span className="flex min-w-0 items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate font-medium">
-                    {t(task.operationKey)}
-                  </span>
-                  <span className="text-muted-foreground shrink-0 tabular-nums">
-                    {countLabel}
-                  </span>
-                </span>
-                <span className="text-muted-foreground mt-0.5 block truncate text-[11px]">
-                  {task.refreshing
-                    ? t("Mcp.task.refreshing")
-                    : (task.error ??
-                      task.detail ??
-                      t(
-                        task.status === "running"
-                          ? "Mcp.task.running"
-                          : task.status === "completed"
-                            ? "Mcp.task.completed"
-                            : task.status === "failed"
-                              ? "Mcp.task.failed"
-                              : "Mcp.task.cancelled"
-                      ))}
-                </span>
+                <X className="size-3.5" />
               </button>
-              {canCancel ? (
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:bg-accent hover:text-foreground flex size-6 shrink-0 items-center justify-center rounded-sm"
-                  aria-label={t("Mcp.task.cancel")}
-                  title={t("Mcp.task.cancel")}
-                  onClick={() => void cancelTask(task)}
-                >
-                  <X className="size-3.5" />
-                </button>
-              ) : null}
-            </div>
-          );
-        })}
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
-        {hiddenCount > 0 ? (
-          <button
-            type="button"
-            className="text-muted-foreground bg-background/90 hover:bg-accent self-start rounded-md border px-2.5 py-1 text-[11px] shadow-sm"
-            onClick={() => setOpen(true)}
-          >
-            {t("Mcp.task.more").replace("{count}", String(hiddenCount))}
-          </button>
-        ) : null}
+      {approvalCount ? (
+        <button
+          type="button"
+          className="bg-background/95 hover:bg-accent flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs shadow-lg backdrop-blur"
+          onClick={() => navigateDirect(APP_PAGE_PATHS.mcp)}
+        >
+          <ShieldAlert className="size-4 text-amber-600" />
+          <span>
+            {t("Mcp.activity.approval").replace(
+              "{count}",
+              String(approvalCount)
+            )}
+          </span>
+        </button>
+      ) : null}
 
-        {approvalCount ? (
-          <button
-            type="button"
-            className="bg-background/95 hover:bg-accent flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs shadow-lg backdrop-blur"
-            onClick={() => setOpen(true)}
-          >
-            <ShieldAlert className="icon-sm text-amber-600" />
-            <span>
-              {t("Mcp.activity.approval").replace(
-                "{count}",
-                String(approvalCount)
-              )}
-            </span>
-          </button>
-        ) : null}
-
-        {!tasks.length && !approvalCount && runtime.phase === "degraded" ? (
-          <button
-            type="button"
-            className="bg-background/95 hover:bg-accent flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs shadow-lg backdrop-blur"
-            onClick={() => setOpen(true)}
-          >
-            <RadioTower className="icon-sm text-amber-600" />
-            <span>{t("Mcp.status.degraded")}</span>
-          </button>
-        ) : null}
-      </div>
-      <McpStatusDialog open={open} onOpenChange={setOpen} />
-    </>
+      {!batch && !approvalCount && runtime.phase === "degraded" ? (
+        <button
+          type="button"
+          className="bg-background/95 hover:bg-accent flex items-center gap-2 rounded-md border px-3 py-2 text-left text-xs shadow-lg backdrop-blur"
+          onClick={() => navigateDirect(APP_PAGE_PATHS.mcp)}
+        >
+          <RadioTower className="size-4 text-amber-600" />
+          <span>{t("Mcp.status.degraded")}</span>
+        </button>
+      ) : null}
+    </div>
   );
 }

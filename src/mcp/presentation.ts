@@ -7,6 +7,7 @@ export interface McpOperationPresentation {
   interruptible: boolean;
   workId?: string | null;
   chapterId?: string | null;
+  targetLabel?: string | null;
 }
 
 const LONG_OPERATION_PATTERNS = [
@@ -30,6 +31,47 @@ function argumentString(
   return typeof value === "string" && value ? value : null;
 }
 
+const WORK_SCOPED_PREFIXES = [
+  "novels_outline_",
+  "novels_volume_",
+  "novels_chapter_",
+  "novels_scene_",
+  "novels_node_",
+  "novels_draft_",
+  "novels_stats_",
+  "novels_export_",
+];
+
+function usesCurrentWork(toolName: string): boolean {
+  if (WORK_SCOPED_PREFIXES.some((prefix) => toolName.startsWith(prefix))) {
+    return true;
+  }
+  return /^novels_work_(get|update|archive|unarchive|delete|reparagraph)$/.test(
+    toolName
+  );
+}
+
+function targetLabelForTool(
+  toolName: string,
+  argumentsValue: Record<string, unknown>
+): string | null {
+  if (toolName === "novels_navigate") return null;
+  for (const key of [
+    "chapter_title",
+    "title",
+    "name",
+    "entry_name",
+    "type_name",
+    "alias",
+    "query",
+    "goal",
+  ]) {
+    const value = argumentString(argumentsValue, key)?.trim();
+    if (value) return value.length > 120 ? `${value.slice(0, 120)}...` : value;
+  }
+  return null;
+}
+
 function pageForTool(toolName: string): AppPage | null {
   if (toolName === "novels_open_chapter") return "editor";
   if (toolName.startsWith("novels_codex_")) return "codex";
@@ -47,12 +89,12 @@ function pageForTool(toolName: string): AppPage | null {
     toolName.startsWith("novels_work_") ||
     toolName.startsWith("novels_import_") ||
     toolName.startsWith("novels_export_") ||
-    toolName.startsWith("novels_trash_") ||
     toolName.startsWith("novels_stats_") ||
     toolName.startsWith("novels_workspace_")
   ) {
     return "library";
   }
+  if (toolName.startsWith("novels_trash_")) return "trash";
   return null;
 }
 
@@ -109,17 +151,22 @@ function operationKeyForTool(toolName: string): string {
 
 export function describeMcpTool(
   toolName: string,
-  argumentsValue: Record<string, unknown>
+  argumentsValue: Record<string, unknown>,
+  fallbackWorkId?: string | null
 ): McpOperationPresentation {
   const interruptible = !LONG_OPERATION_PATTERNS.some((pattern) =>
     pattern.test(toolName)
   );
   const workId =
     argumentString(argumentsValue, "work_id") ??
-    argumentString(argumentsValue, "workId");
+    argumentString(argumentsValue, "workId") ??
+    (usesCurrentWork(toolName) ? fallbackWorkId : null);
   const chapterId =
     argumentString(argumentsValue, "chapter_id") ??
-    argumentString(argumentsValue, "chapterId");
+    argumentString(argumentsValue, "chapterId") ??
+    argumentString(argumentsValue, "node_id") ??
+    argumentString(argumentsValue, "nodeId");
+  const targetLabel = targetLabelForTool(toolName, argumentsValue);
 
   if (toolName === "novels_navigate") {
     const target = argumentString(argumentsValue, "target");
@@ -127,7 +174,9 @@ export function describeMcpTool(
       target === "home" ||
       target === "library" ||
       target === "editor" ||
-      target === "codex"
+      target === "codex" ||
+      target === "mcp" ||
+      target === "trash"
         ? target
         : null;
     return {
@@ -137,6 +186,7 @@ export function describeMcpTool(
       interruptible,
       workId,
       chapterId,
+      targetLabel,
     };
   }
 
@@ -147,6 +197,7 @@ export function describeMcpTool(
     interruptible,
     workId,
     chapterId,
+    targetLabel,
   };
 }
 
@@ -156,6 +207,7 @@ export function describeMcpResource(uri: string): McpOperationPresentation {
   const chapterId = match?.[2] ? decodeURIComponent(match[2]) : null;
   let page: AppPage | null = null;
   if (uri.startsWith("novels://codex")) page = "codex";
+  else if (uri.startsWith("novels://trash")) page = "trash";
   else if (uri.includes("/outline") || uri.includes("/chapters/")) {
     page = "editor";
   } else if (uri.startsWith("novels://works")) page = "library";

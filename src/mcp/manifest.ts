@@ -11,6 +11,7 @@ import {
   type McpToolDefinition,
 } from "./contracts";
 import { canUsePermission } from "./permissions";
+import { streamSchemaForField, STREAMABLE_FIELDS } from "./stream-input";
 
 const RESOURCE_DEFINITIONS: McpResourceDefinition[] = [
   {
@@ -249,15 +250,28 @@ function inputSchemaFor(
   command: (typeof APP_COMMANDS)[number]
 ): Record<string, unknown> {
   const schema = schemaFor(command.input);
-  if (!command.annotations?.readOnlyHint) return schema;
   const properties =
     schema.properties && typeof schema.properties === "object"
       ? (schema.properties as Record<string, unknown>)
       : {};
+  const streamField = [...STREAMABLE_FIELDS].find(
+    (field) => field in properties
+  );
+  const streamSchema = streamField ? streamSchemaForField(streamField) : null;
+  if (!command.annotations?.readOnlyHint) {
+    return {
+      ...schema,
+      properties: {
+        ...properties,
+        ...(streamSchema ? { input_stream: streamSchema } : {}),
+      },
+    };
+  }
   return {
     ...schema,
     properties: {
       ...properties,
+      ...(streamSchema ? { input_stream: streamSchema } : {}),
       response_format: {
         type: "string",
         enum: ["json", "markdown"],

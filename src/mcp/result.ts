@@ -17,6 +17,8 @@ const RECOVERY: Record<string, string> = {
     "Read the latest resource, merge deliberately and retry with its revision.",
   chapter_busy:
     "Ask the user to save or close the chapter in the editor before retrying.",
+  navigation_required:
+    "Open the target work and chapter with novels_open_chapter, wait for the editor to finish loading, then retry.",
   bridge_unavailable:
     "Reload the application WebView, wait for MCP readiness and retry.",
   cancelled: "Retry only if the operation is still needed.",
@@ -121,7 +123,8 @@ export function errorResponse(
   requestId: string,
   error: Omit<McpBridgeError, "recovery"> & { recovery?: string }
 ): McpBridgeResponse {
-  const recovery = error.recovery ?? RECOVERY[error.code] ?? RECOVERY.operation_failed;
+  const recovery =
+    error.recovery ?? RECOVERY[error.code] ?? RECOVERY.operation_failed;
   const structured = {
     ok: false,
     error: {

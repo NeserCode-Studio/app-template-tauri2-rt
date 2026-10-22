@@ -4,20 +4,34 @@ import { LoaderCircle, LockKeyhole } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { useI18n } from "@/composables";
 import { subscribeApprovals } from "@/mcp/approval";
+import { mcpToolLabel } from "@/mcp/tool-labels";
 import { useMcpActivity } from "@/mcp/use-activity";
 
 export default function McpTaskOverlay() {
-  const { t } = useI18n();
+  const { lang, t } = useI18n();
   const activity = useMcpActivity();
   const [approvalCount, setApprovalCount] = useState(0);
+  const [visibleTaskId, setVisibleTaskId] = useState<string | null>(null);
   useEffect(
     () => subscribeApprovals((requests) => setApprovalCount(requests.length)),
     []
   );
-  const blockingTasks = activity.active.filter((item) => !item.interruptible);
+  const blockingTasks = activity.active.filter(
+    (item) => !item.interruptible && !item.queued
+  );
   const task = blockingTasks[0];
+  const taskId = task?.id;
 
-  if (!task || approvalCount > 0) return null;
+  useEffect(() => {
+    if (!taskId || approvalCount > 0) {
+      setVisibleTaskId(null);
+      return;
+    }
+    const timer = window.setTimeout(() => setVisibleTaskId(taskId), 400);
+    return () => window.clearTimeout(timer);
+  }, [approvalCount, taskId]);
+
+  if (!task || approvalCount > 0 || visibleTaskId !== taskId) return null;
 
   const total = task.total ?? 0;
   const done = Math.max(0, task.progress ?? 0);
@@ -28,7 +42,7 @@ export default function McpTaskOverlay() {
 
   return (
     <div
-      className="bg-background/78 fixed inset-x-0 top-8 bottom-0 z-[100] flex items-center justify-center p-6 backdrop-blur-[2px]"
+      className="bg-background/78 animate-in fade-in fixed inset-x-0 top-8 bottom-0 z-[100] flex items-center justify-center p-6 backdrop-blur-[2px] duration-200"
       role="status"
       aria-live="polite"
       aria-busy="true"
@@ -40,8 +54,11 @@ export default function McpTaskOverlay() {
             <LoaderCircle className="size-4 animate-spin" />
           </span>
           <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold">{t(task.operationKey)}</p>
+            <p className="text-sm font-semibold">
+              {mcpToolLabel(task.toolName, lang)}
+            </p>
             <p className="text-muted-foreground mt-1 truncate text-xs">
+              {task.targetLabel ? `${task.targetLabel} · ` : ""}
               {task.clientName}
               {task.clientVersion ? ` · v${task.clientVersion}` : ""}
             </p>
@@ -55,9 +72,11 @@ export default function McpTaskOverlay() {
         <div className="px-5 py-4">
           <div className="mb-2 flex min-w-0 items-center justify-between gap-4 text-xs">
             <span className="text-muted-foreground min-w-0 truncate">
-              {task.refreshing
-                ? t("Mcp.task.refreshing")
-                : (task.detail ?? t(task.operationKey))}
+              {task.queued
+                ? t("Mcp.task.queued")
+                : task.refreshing
+                  ? t("Mcp.task.refreshing")
+                  : (task.detail ?? task.targetLabel ?? t(task.operationKey))}
             </span>
             <span className="text-foreground shrink-0 tabular-nums">
               {determinate ? `${done}/${total} · ${percent}%` : "1"}

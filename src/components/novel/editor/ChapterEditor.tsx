@@ -1,4 +1,5 @@
 import { useViewMode } from "@/contexts/viewmode";
+import { useMcpEditorOperation } from "@/mcp/editor-operation";
 import type { Chapter } from "@/shared/schema";
 import ChapterBody from "./ChapterBody";
 import ChapterHeader from "./ChapterHeader";
@@ -58,10 +59,13 @@ export default function ChapterEditor({
   onOpenCodexEntry,
 }: ChapterEditorProps) {
   const { mode } = useViewMode();
+  const operationLock = useMcpEditorOperation(workId, chapter.id);
+  const editorLocked = Boolean(operationLock);
   const c = useChapterController({
     chapter,
     root,
     workId,
+    locked: editorLocked,
     onWordsChange,
     onSaved,
     onWordsCommitted,
@@ -98,6 +102,7 @@ export default function ChapterEditor({
         onSave={c.saveNow}
         onOpenHistory={() => c.setHistoryOpen(true)}
         onUndoMerge={c.undoMerge}
+        locked={editorLocked}
       />
 
       <ChapterBody
@@ -112,6 +117,7 @@ export default function ChapterEditor({
         onDelete={c.deleteCard}
         onOpenCodexEntry={onOpenCodexEntry}
         listRef={c.listRef}
+        locked={editorLocked}
       />
 
       <div className="shrink-0">
@@ -123,6 +129,7 @@ export default function ChapterEditor({
           pendingDraft={c.draft}
           onRestoreDraft={c.restoreDraft}
           onDiscardDraft={c.discardDraft}
+          operationLock={operationLock}
         />
       </div>
     </div>

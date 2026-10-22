@@ -86,13 +86,20 @@ export async function deleteWork(
   root: string,
   ws: Workspace,
   workId: string,
-  title: string
+  title: string,
+  metadata?: {
+    preview?: string;
+    modifiedAt?: number;
+  }
 ): Promise<Workspace> {
   await moveToTrash(root, {
     kind: "work",
     originId: workId,
     paths: [workDir(workId)],
     title,
+    sourceTitle: "",
+    preview: metadata?.preview ?? "",
+    modifiedAt: metadata?.modifiedAt ?? null,
     /*
      * 记下它在清单里的位置，恢复时才回得去原位。
      *
