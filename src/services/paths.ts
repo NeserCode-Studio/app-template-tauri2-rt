@@ -60,6 +60,11 @@ export function chapterTextFile(workId: string, chapterId: string): string {
   return joinRel(WORKS_DIR, workId, "texts", chapterId + ".txt");
 }
 
+/** 章最近一次朱雀 AI 检测结果。 */
+export function zhuqueDetectionFile(workId: string, chapterId: string): string {
+  return joinRel(WORKS_DIR, workId, "zhuque", chapterId + ".json");
+}
+
 /** 素材条目目录（按类型分目录）。 */
 export function codexDir(workId: string, type: string): string {
   return joinRel(WORKS_DIR, workId, "codex", type);

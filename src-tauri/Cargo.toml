@@ -29,6 +29,12 @@ base64 = "0.22"
 dashmap = "6"
 thiserror = "2"
 sha2 = "0.10"
+keyring = { version = "3.6.3", default-features = false, features = [
+  "apple-native",
+  "crypto-rust",
+  "sync-secret-service",
+  "windows-native",
+] }
 log = "0.4"
 axum = "0.8"
 tower = "0.5"

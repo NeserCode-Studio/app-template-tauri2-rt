@@ -6,7 +6,12 @@
  */
 
 import { createFs, joinRel } from "./fs";
-import { chapterFile, chapterIndexFile, chapterTextFile } from "./paths";
+import {
+  chapterFile,
+  chapterIndexFile,
+  chapterTextFile,
+  zhuqueDetectionFile,
+} from "./paths";
 import {
   cardSchema,
   chapterIndexSchema,
@@ -565,6 +570,7 @@ export async function deleteChapter(
   const fs2 = createFs(root);
   await fs2.remove(chapterFile(workId, chapterId));
   await fs2.remove(chapterTextFile(workId, chapterId));
+  await fs2.remove(zhuqueDetectionFile(workId, chapterId));
   await removeChapterIndexEntries(root, workId, [chapterId]);
   log.debug("chapter deleted", { id: chapterId });
 }

@@ -108,6 +108,78 @@ export const chapterSchema = z.object({
 
 export type Chapter = z.infer<typeof chapterSchema>;
 
+/** 朱雀 AI 检测用量。 */
+export const zhuqueAiUsageSchema = z.object({
+  totalTokens: z.number().int().nonnegative(),
+});
+
+function normalizeZhuqueLabelsRatio(value: unknown): unknown {
+  if (!value || typeof value !== "object") return value;
+  const ratio = value as Record<string, unknown>;
+  if ("human" in ratio || "ai" in ratio || "suspectedAi" in ratio) {
+    return ratio;
+  }
+  return {
+    human: ratio["0"],
+    ai: ratio["1"],
+    suspectedAi: ratio["2"],
+  };
+}
+
+/** 兼容早期序列化为数字键的检测结果。 */
+export const zhuqueLabelsRatioSchema = z.preprocess(
+  normalizeZhuqueLabelsRatio,
+  z.object({
+    human: z.number(),
+    ai: z.number(),
+    suspectedAi: z.number(),
+  })
+);
+
+/** 朱雀 AI 分段检测结果。 */
+export const zhuqueSegmentLabelSchema = z.object({
+  text: z.string(),
+  label: z.union([z.literal(0), z.literal(1), z.literal(2)]),
+  conf: z.number(),
+  order: z.number().int(),
+  position: z.array(z.number().int()),
+});
+
+/** 朱雀 AI 检测接口的持久化结果。 */
+export const zhuqueAiDetectionSchema = z.object({
+  status: z.string(),
+  softmaxConfidence: z.number(),
+  ratioConfidence: z.number(),
+  labelsRatio: zhuqueLabelsRatioSchema,
+  segmentLabels: z.array(zhuqueSegmentLabelSchema),
+  usage: zhuqueAiUsageSchema.nullable(),
+  msg: z.string(),
+  makersModelsUsage: zhuqueAiUsageSchema.nullable(),
+});
+
+export type ZhuqueAiDetection = z.infer<typeof zhuqueAiDetectionSchema>;
+export type ZhuqueSegmentLabel = z.infer<typeof zhuqueSegmentLabelSchema>;
+export type ZhuqueAiUsage = z.infer<typeof zhuqueAiUsageSchema>;
+
+/**
+ * 章节最近一次付费检测结果。
+ *
+ * 正文指纹只用于判断结果是否仍对应当前内容，不复制正文本身。
+ */
+export const zhuqueDetectionRecordSchema = z.object({
+  version: z.literal(1).default(1),
+  workId: idSchema,
+  chapterId: idSchema,
+  chapterTitle: z.string(),
+  checkedAt: z.number().int().nonnegative(),
+  isMerge: z.boolean(),
+  characterCount: z.number().int().nonnegative(),
+  textFingerprint: z.string().min(1),
+  result: zhuqueAiDetectionSchema,
+});
+
+export type ZhuqueDetectionRecord = z.infer<typeof zhuqueDetectionRecordSchema>;
+
 /**
  * 章节索引项。
  *

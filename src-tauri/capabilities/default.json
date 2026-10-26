@@ -48,6 +48,17 @@
     "dialog:default",
     "dialog:allow-open",
     "opener:allow-reveal-item-in-dir",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        {
+          "url": "https://console.cloud.tencent.com/edgeone/makers?tab=models&subTab=apikey"
+        },
+        {
+          "url": "https://tauri.app/"
+        }
+      ]
+    },
     "fs:default",
     "fs:allow-read-text-file",
     "fs:allow-write-text-file",

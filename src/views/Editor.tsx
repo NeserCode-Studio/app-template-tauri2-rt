@@ -12,6 +12,7 @@ import {
   PanelRightClose,
   PanelRightOpen,
   Plus,
+  ScanSearch,
   Trash2,
 } from "lucide-react";
 
@@ -62,6 +63,7 @@ import CodexPane from "@/components/novel/CodexPane";
 import DraftBox, { DraftFlashOverlay } from "@/components/novel/DraftBox";
 import ProgressPane from "@/components/novel/ProgressPane";
 import ExportDialog from "@/components/novel/ExportDialog";
+import ZhuqueAiDialog from "@/components/novel/ZhuqueAiDialog";
 import ImportDialog, {
   type ImportPreview,
 } from "@/components/novel/ImportDialog";
@@ -87,7 +89,11 @@ import {
   removeChapterIndexEntries,
   renameChapter as renameChapterFile,
 } from "@/services/chapter";
-import { chapterFile, chapterTextFile } from "@/services/paths";
+import {
+  chapterFile,
+  chapterTextFile,
+  zhuqueDetectionFile,
+} from "@/services/paths";
 import { moveToTrash } from "@/services/trash";
 import { useCodex } from "@/contexts/codex";
 import { adjustWorkWords, recordWorkWords } from "@/services/stats";
@@ -176,6 +182,7 @@ export default function Editor() {
       ? storedSideTab
       : "chapter";
   const [exportOpen, setExportOpen] = useState(false);
+  const [zhuqueOpen, setZhuqueOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   /** 视图模式（普通 / 专注 / 打字机 / 禅）。 */
   const { mode: viewMode, setMode: setViewMode } = useViewMode();
@@ -575,6 +582,7 @@ export default function Editor() {
       paths: [
         chapterFile(currentWorkId, chapter.id),
         chapterTextFile(currentWorkId, chapter.id),
+        zhuqueDetectionFile(currentWorkId, chapter.id),
       ],
       title: chapter.title,
       sourceTitle: [work?.title, parentVolume?.title]
@@ -641,6 +649,7 @@ export default function Editor() {
       const paths = kids.flatMap((c) => [
         chapterFile(currentWorkId, c.id),
         chapterTextFile(currentWorkId, c.id),
+        zhuqueDetectionFile(currentWorkId, c.id),
       ]);
       await moveToTrash(root, {
         kind: "volume",
@@ -822,6 +831,15 @@ export default function Editor() {
           <Button size="sm" variant="ghost" onClick={() => setExportOpen(true)}>
             <Download className="icon-md" />
             {t("Export.action")}
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={!chapter}
+            onClick={() => setZhuqueOpen(true)}
+          >
+            <ScanSearch className="icon-md" />
+            {t("Zhuque.action")}
           </Button>
           <Button
             size="sm"
@@ -1279,6 +1297,14 @@ export default function Editor() {
         workId={currentWorkId}
         chapter={chapter}
         onOpenChange={setExportOpen}
+      />
+
+      <ZhuqueAiDialog
+        open={zhuqueOpen}
+        root={root}
+        workId={currentWorkId}
+        chapter={chapter}
+        onOpenChange={setZhuqueOpen}
       />
 
       <ImportDialog

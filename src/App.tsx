@@ -38,7 +38,7 @@ import AboutDialog from "@/components/framework/AboutDialog";
 import McpActivityIndicator from "@/components/framework/McpActivityIndicator";
 import McpApprovalDialog from "@/components/framework/McpApprovalDialog";
 import McpTaskCoordinator from "@/components/framework/McpTaskCoordinator";
-import { SettingsDialogContext } from "@/contexts/settings";
+import { SettingsDialogContext, type SettingsTab } from "@/contexts/settings";
 import { createLogger } from "@/lib/logger";
 import { WorkspaceProvider } from "@/contexts/workspace.provider";
 import { LibraryProvider } from "@/contexts/library.provider";
@@ -125,8 +125,10 @@ function App() {
 
   /* 弹窗状态 */
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const openSettings = useCallback(() => {
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("search");
+  const openSettings = useCallback((tab: SettingsTab = "search") => {
     if (interceptWorkspaceDialog("settings")) return;
+    setSettingsTab(tab);
     setSettingsOpen(true);
   }, []);
   const [aboutOpen, setAboutOpen] = useState(false);
@@ -310,6 +312,7 @@ function App() {
                                     </main>
                                     <SettingsDialog
                                       open={settingsOpen}
+                                      initialTab={settingsTab}
                                       onOpenChange={setSettingsOpen}
                                     />
                                     <AboutDialog

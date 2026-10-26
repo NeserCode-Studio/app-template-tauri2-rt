@@ -1,6 +1,6 @@
 import { TitleContext } from "@/contexts/title";
 import { useLocalStorageState } from "ahooks";
-import { useContext, useMemo, useState } from "react";
+import { useContext, useEffect, useMemo, useState } from "react";
 import { useI18n, useToast } from "@/composables";
 import {
   SettingInputItem,
@@ -9,6 +9,7 @@ import {
 } from "@/components/SettingItems";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import WritingPrefs from "@/views/WritingPrefs";
+import AiSettingsPanel from "@/components/settings/AiSettingsPanel";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,15 +20,17 @@ import {
   History,
   Search,
   Settings2,
+  Sparkles,
   Trash2,
 } from "lucide-react";
 
 import type { SettingSelectItemItem } from "@/shared";
+import type { SettingsTab } from "@/contexts/settings";
 
 /** 设置项索引：供搜索与「最近修改」跳转使用 */
 interface SettingIndexItem {
   id: string;
-  group: string;
+  group: SettingsTab;
   labelKey: string;
   keywords: string[];
 }
@@ -50,6 +53,12 @@ const SETTING_INDEX: SettingIndexItem[] = [
     group: "general",
     labelKey: "Settings.items.auto-complete.title",
     keywords: ["auto", "complete", "自动补全", "补全"],
+  },
+  {
+    id: "zhuque-api-key",
+    group: "ai",
+    labelKey: "Settings.ai.apiKey.title",
+    keywords: ["ai", "zhuque", "api", "key", "朱雀", "检测", "密钥"],
   },
   {
     id: "article-font",
@@ -144,13 +153,17 @@ const SETTING_INDEX: SettingIndexItem[] = [
 interface ChangedRecord {
   id: string;
   label: string;
-  group: string;
+  group: SettingsTab;
   at: number;
 }
 
 const MAX_HISTORY = 8;
 
-export default function Settings() {
+export default function Settings({
+  initialTab = "search",
+}: {
+  initialTab?: SettingsTab;
+}) {
   const { t, setLang, lang } = useI18n();
   const { title, setTitle } = useContext(TitleContext);
   const [autoComplete, setAutoComplete] = useLocalStorageState(
@@ -177,7 +190,11 @@ export default function Settings() {
 
   /* 搜索状态 */
   const [query, setQuery] = useState("");
-  const [activeTab, setActiveTab] = useState("search");
+  const [activeTab, setActiveTab] = useState<SettingsTab>(initialTab);
+
+  useEffect(() => {
+    setActiveTab(initialTab);
+  }, [initialTab]);
 
   const recordChange = (id: string, labelKey: string) => {
     const meta = SETTING_INDEX.find((item) => item.id === id);
@@ -219,7 +236,7 @@ export default function Settings() {
     });
   }, [query, t]);
 
-  const jumpTo = (group: string) => {
+  const jumpTo = (group: SettingsTab) => {
     setActiveTab(group);
     setQuery("");
   };
@@ -262,8 +279,12 @@ export default function Settings() {
 
   return (
     <div className="view-settings">
-      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="w-full justify-start gap-1 rounded-xl bg-muted/50 p-1">
+      <Tabs
+        value={activeTab}
+        onValueChange={(value) => setActiveTab(value as SettingsTab)}
+        className="w-full"
+      >
+        <TabsList className="bg-muted/50 w-full justify-start gap-1 rounded-xl p-1">
           <TabsTrigger value="search" className="flex-none gap-1.5 rounded-lg">
             <Search className="icon-md" />
             {t("Settings.tabs.search")}
@@ -276,19 +297,29 @@ export default function Settings() {
             <BookText className="icon-md" />
             {t("Prefs.tab.writing")}
           </TabsTrigger>
+          <TabsTrigger value="ai" className="flex-none gap-1.5 rounded-lg">
+            <Sparkles className="icon-md" />
+            {t("Settings.tabs.ai")}
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="writing" className="mt-5">
           <WritingPrefs />
         </TabsContent>
 
+        <TabsContent value="ai" className="mt-5">
+          <AiSettingsPanel
+            onChanged={() =>
+              recordChange("zhuque-api-key", "Settings.ai.apiKey.title")
+            }
+          />
+        </TabsContent>
+
         <TabsContent value="search" className="mt-5">
           <div className="stack-5">
-            <p className="text-muted-sm">
-              {t("Settings.search.description")}
-            </p>
+            <p className="text-muted-sm">{t("Settings.search.description")}</p>
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 icon-md -translate-y-1/2 text-muted-foreground" />
+              <Search className="icon-md text-muted-foreground pointer-events-none absolute top-1/2 left-3 -translate-y-1/2" />
               <Input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
@@ -296,7 +327,7 @@ export default function Settings() {
                   if (e.key === "Enter") recordSearch(query);
                 }}
                 placeholder={t("Settings.search.placeholder")}
-                className="h-10 rounded-lg bg-muted/40 pl-9"
+                className="bg-muted/40 h-10 rounded-lg pl-9"
               />
             </div>
 
@@ -311,15 +342,15 @@ export default function Settings() {
                         recordSearch(query);
                         jumpTo(r.group);
                       }}
-                      className="group flex items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-left text-sm transition-colors hover:border-border hover:bg-accent/50 hover:text-accent-foreground"
+                      className="group hover:border-border hover:bg-accent/50 hover:text-accent-foreground flex items-center gap-2 rounded-lg border border-transparent px-3 py-2 text-left text-sm transition-colors"
                     >
                       <Search className="icon-action" />
                       <span className="truncate">{t(r.labelKey)}</span>
-                      <ChevronRight className="ml-auto icon-sm shrink-0 text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
+                      <ChevronRight className="icon-sm text-muted-foreground/50 ml-auto shrink-0 transition-transform group-hover:translate-x-0.5" />
                     </button>
                   ))
                 ) : (
-                  <div className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-muted-sm">
+                  <div className="border-border text-muted-sm rounded-lg border border-dashed px-3 py-6 text-center">
                     {t("Settings.search.empty")}
                   </div>
                 )}
@@ -340,7 +371,7 @@ export default function Settings() {
                               key={s}
                               type="button"
                               onClick={() => setQuery(s)}
-                              className="rounded-full border border-border/60 bg-muted/60 px-2.5 py-1 text-xs transition-colors hover:border-primary/40 hover:bg-accent hover:text-accent-foreground"
+                              className="border-border/60 bg-muted/60 hover:border-primary/40 hover:bg-accent hover:text-accent-foreground rounded-full border px-2.5 py-1 text-xs transition-colors"
                             >
                               {s}
                             </button>
@@ -361,7 +392,7 @@ export default function Settings() {
                               key={r.id}
                               type="button"
                               onClick={() => jumpTo(r.group)}
-                              className="group flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors hover:bg-accent/50 hover:text-accent-foreground"
+                              className="group hover:bg-accent/50 hover:text-accent-foreground flex items-center gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors"
                             >
                               <CheckCircle2 className="icon-action" />
                               <span className="truncate">{r.label}</span>
@@ -376,15 +407,15 @@ export default function Settings() {
                       variant="ghost"
                       size="sm"
                       onClick={clearHistory}
-                      className="self-start text-muted-foreground"
+                      className="text-muted-foreground self-start"
                     >
                       <Trash2 className="icon-md" />
                       {t("Settings.search.clear")}
                     </Button>
                   </>
                 ) : (
-                  <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-3 py-10 text-center">
-                    <Search className="h-5 w-5 text-muted-foreground/60" />
+                  <div className="border-border flex flex-col items-center gap-2 rounded-lg border border-dashed px-3 py-10 text-center">
+                    <Search className="text-muted-foreground/60 h-5 w-5" />
                     <p className="text-muted-sm">
                       {t("Settings.search.noHistory")}
                     </p>
@@ -397,9 +428,7 @@ export default function Settings() {
 
         <TabsContent value="general" className="mt-5">
           <div className="flex flex-col gap-4">
-            <p className="text-muted-sm">
-              {t("Settings.general.description")}
-            </p>
+            <p className="text-muted-sm">{t("Settings.general.description")}</p>
             <SettingInputItem
               type="text"
               value={title ?? ""}

@@ -1,6 +1,7 @@
 mod export_bridge;
 mod fs_bridge;
 mod mcp;
+mod zhuque_ai;
 
 use tauri::{
     image::Image,
@@ -124,6 +125,10 @@ pub fn run() {
             mcp::runtime::mcp_bridge_progress,
             mcp::runtime::mcp_bridge_cancel,
             mcp::runtime::mcp_notify_resources_changed,
+            zhuque_ai::zhuque_ai_config_get,
+            zhuque_ai::zhuque_ai_config_set,
+            zhuque_ai::zhuque_ai_config_clear,
+            zhuque_ai::zhuque_ai_detect,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

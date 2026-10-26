@@ -11,3 +11,5 @@ export * from "./outline";
 export * from "./chapter";
 export * from "./stats";
 export * from "./codex";
+export * from "./zhuque-ai";
+export * from "./zhuque-history";

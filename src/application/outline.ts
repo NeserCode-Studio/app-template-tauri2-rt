@@ -16,7 +16,11 @@ import {
   deleteChapter,
   removeChapterIndexEntries,
 } from "@/services/chapter";
-import { chapterFile, chapterTextFile } from "@/services/paths";
+import {
+  chapterFile,
+  chapterTextFile,
+  zhuqueDetectionFile,
+} from "@/services/paths";
 import { moveToTrash } from "@/services/trash";
 import { loadWork } from "@/services/workspace";
 import type { OutlineNode } from "@/shared/schema";
@@ -371,6 +375,7 @@ const nodeDelete = defineAppCommand({
       paths: chapterIds.flatMap((id) => [
         chapterFile(workId, id),
         chapterTextFile(workId, id),
+        zhuqueDetectionFile(workId, id),
       ]),
       title: node.title,
       sourceTitle: [work.title, parent?.type === "volume" ? parent.title : ""]
