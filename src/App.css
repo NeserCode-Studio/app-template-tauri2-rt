@@ -5,45 +5,24 @@
 
 :root {
   --radius: 0.625rem;
-  /* 排版偏好：由 PreferencesProvider 写入，这里给出默认值兜底 */
-  --app-font-ui:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei",
-    "PingFang SC", sans-serif;
-  --app-font-ui-size: 14px;
-  --app-font-article:
-    "Source Han Serif SC", "Noto Serif CJK SC", "Songti SC", SimSun, serif;
-  --app-font-article-size: 18px;
-  --app-line-height: 1.8;
-  --app-line-width: 40em;
-  --app-indent: 2em;
-  --app-paragraph-gap: 0;
-  /*
-   * 亮色主题走"纸感"配色：底色带一点暖黄，着重色（primary / accent）带绿。
-   *
-   * 原先全部色度为 0（纯黑白），控件只能靠明度差区分，shadow、button
-   * 与背景的对比明显弱于暗色主题——因为暗色有透明度层次可借。给底色与
-   * 着重色各自一点色度后，明度差之外多了冷暖对比，控件轮廓才立得住。
-   * 幅度刻意压得很低，避免变成"有色主题"，仍以中性纸面为主。
-   */
-  --background: oklch(0.988 0.008 95);
-  --foreground: oklch(0.168 0.012 105);
-  --card: oklch(0.995 0.005 95);
-  --card-foreground: oklch(0.168 0.012 105);
-  --popover: oklch(0.995 0.005 95);
-  --popover-foreground: oklch(0.168 0.012 105);
-  --primary: oklch(0.435 0.062 152);
-  --primary-foreground: oklch(0.985 0.006 95);
-  --secondary: oklch(0.962 0.014 95);
-  --secondary-foreground: oklch(0.28 0.02 105);
-  --muted: oklch(0.962 0.014 95);
-  --muted-foreground: oklch(0.545 0.016 100);
-  --accent: oklch(0.945 0.028 152);
-  --accent-foreground: oklch(0.3 0.04 152);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.895 0.012 100);
-  --input: oklch(0.895 0.012 100);
-  --ring: oklch(0.6 0.05 152);
-  --editor-selection-border: oklch(0.74 0.085 152);
+  --border: oklch(0.922 0 0);
+  --input: oklch(0.922 0 0);
+  --ring: oklch(0.708 0 0);
 
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
@@ -51,40 +30,35 @@
   --chart-4: oklch(0.828 0.189 84.429);
   --chart-5: oklch(0.769 0.188 70.08);
 
-  --sidebar: oklch(0.98 0.01 95);
-  --sidebar-foreground: oklch(0.168 0.012 105);
-  --sidebar-primary: oklch(0.435 0.062 152);
-  --sidebar-primary-foreground: oklch(0.985 0.006 95);
-  --sidebar-accent: oklch(0.945 0.028 152);
-  --sidebar-accent-foreground: oklch(0.3 0.04 152);
-  --sidebar-border: oklch(0.895 0.012 100);
-  --sidebar-ring: oklch(0.6 0.05 152);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: oklch(0.205 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 }
 
 .dark {
-  /*
-   * 暗色底与首页保持一致：中性灰而不是近黑。
-   * 其余表面令牌也抬到同一明度区间，避免弹层、菜单和侧栏重新落回黑块。
-   */
-  --background: oklch(0.371 0 0);
+  --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
-  --card: oklch(0.405 0.004 95);
+  --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.405 0.004 95);
+  --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
   --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.31 0 0);
-  --secondary: oklch(0.435 0.004 95);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.43 0.004 95);
-  --muted-foreground: oklch(0.76 0.004 95);
-  --accent: oklch(0.455 0.016 152);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 14%);
-  --input: oklch(1 0 0 / 19%);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.556 0 0);
-  --editor-selection-border: oklch(0.46 0.095 152);
 
   --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
@@ -92,13 +66,13 @@
   --chart-4: oklch(0.627 0.265 303.9);
   --chart-5: oklch(0.645 0.246 16.439);
 
-  --sidebar: oklch(0.39 0.004 95);
+  --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
   --sidebar-primary: oklch(0.488 0.243 264.376);
   --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.455 0.016 152);
+  --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 14%);
+  --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
 }
 
@@ -151,128 +125,6 @@
   button {
     @apply cursor-pointer;
   }
-  /*
-   * 选中文本取绿：与亮色主题的着重色同族，深浅两档分别给两个主题。
-   * 用 color-mix 从 primary 派生，保证改 primary 时选区色自动跟随，
-   * 不必再单独维护一组变量。
-   */
-  ::selection {
-    background-color: color-mix(in oklab, var(--primary) 26%, transparent);
-    color: var(--foreground);
-  }
-  .dark ::selection {
-    background-color: color-mix(in oklab, #34d399 34%, transparent);
-    color: var(--foreground);
-  }
-}
-
-@keyframes long-task-progress-indeterminate {
-  0% {
-    transform: translateX(-110%);
-  }
-  100% {
-    transform: translateX(310%);
-  }
-}
-
-.long-task-progress-indeterminate {
-  width: 34%;
-  animation: long-task-progress-indeterminate 1.2s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .long-task-progress-indeterminate {
-    width: 100%;
-    animation: none;
-    opacity: 0.65;
-  }
-}
-
-/*
- * 滚动条统一样式。
- *
- * 不做的话，各控件回落到系统默认滚动条，宽度、圆角、颜色都随系统走，
- * 在自绘的界面里尤其突兀（Windows 默认那种宽扁灰条）。这里统一成细窄、
- * 无箭头的窄条，轨道透明，滑块取边框色，与全局"底色低对比"的调子一致。
- *
- * 提供两套写法：
- * - `scrollbar-app`：挂在任意可滚动元素上，显式给滚动条着色（Firefox 与
- *   支持 scrollbar-color 的 Chromium 生效）。
- * - `scrollbar-app-none`：原生滚动条完全隐藏（用于自绘了滚动条的容器，
- *   比如 ScrollArea，避免系统条与自绘条同时出现）。
- * 另外 WebView2 走旧渲染时只有 `::-webkit-scrollbar` 认，全局兜底一份。
- */
-@utility scrollbar-app {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border) transparent;
-
-  &::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  &::-webkit-scrollbar-thumb {
-    background-color: var(--border);
-    border: 3px solid transparent;
-    background-clip: content-box;
-    border-radius: 9999px;
-  }
-  &::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(
-      in oklab,
-      var(--muted-foreground) 55%,
-      transparent
-    );
-  }
-  &::-webkit-scrollbar-corner {
-    background: transparent;
-  }
-}
-
-@utility scrollbar-app-none {
-  scrollbar-width: none;
-
-  &::-webkit-scrollbar {
-    width: 0;
-    height: 0;
-  }
-}
-
-@layer base {
-  /*
-   * WebView2 走旧渲染路径时，`@utility` 里挂在元素上的规则同样生效，
-   * 但为了保证任何漏挂类的可滚动元素也有一致外观，这里给全部元素兜底。
-   */
-  * {
-    scrollbar-width: thin;
-    scrollbar-color: var(--border) transparent;
-  }
-
-  ::-webkit-scrollbar {
-    width: 10px;
-    height: 10px;
-  }
-  ::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  ::-webkit-scrollbar-thumb {
-    background-color: var(--border);
-    border: 3px solid transparent;
-    background-clip: content-box;
-    border-radius: 9999px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background-color: color-mix(
-      in oklab,
-      var(--muted-foreground) 55%,
-      transparent
-    );
-  }
-  ::-webkit-scrollbar-corner {
-    background: transparent;
-  }
 }
 
 /**
@@ -305,15 +157,15 @@
     @apply flex flex-row items-center gap-1;
   }
   .row-label {
-    @apply text-muted-foreground flex items-center gap-1.5 text-xs font-medium;
+    @apply flex items-center gap-1.5 text-xs font-medium text-muted-foreground;
   }
 
   /* ===== 文本 ===== */
   .text-muted-sm {
-    @apply text-muted-foreground text-sm;
+    @apply text-sm text-muted-foreground;
   }
   .text-muted-xs {
-    @apply text-muted-foreground text-xs;
+    @apply text-xs text-muted-foreground;
   }
 
   /* ===== 图标 ===== */
@@ -324,7 +176,8 @@
     @apply h-3.5 w-3.5;
   }
   .icon-action {
-    @apply text-muted-foreground group-hover:text-accent-foreground h-3.5 w-3.5 shrink-0 transition-colors;
+    @apply h-3.5 w-3.5 shrink-0 text-muted-foreground transition-colors
+      group-hover:text-accent-foreground;
   }
 
   /* ===== 应用骨架 ===== */
@@ -332,30 +185,17 @@
     @apply flex h-screen w-screen flex-row items-center justify-center;
   }
   .app-body {
-    @apply fixed bottom-0 flex h-[calc(100vh-2rem)] w-screen flex-col items-center justify-center bg-neutral-50 transition-colors duration-100 ease-in-out dark:bg-neutral-700;
-  }
-
-  .page-transition[data-direction="forward"] {
-    animation: page-enter-forward 180ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-  .page-transition[data-direction="back"] {
-    animation: page-enter-back 180ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  /* ===== 作品库 ===== */
-  .view-library {
-    @apply relative z-0 h-full w-full transition-colors duration-100 ease-in-out;
-  }
-  .library-empty {
-    @apply text-muted-foreground flex h-full min-h-[60vh] w-full flex-col items-center justify-center gap-4;
-  }
-  .library-empty .icon-lg {
-    @apply h-10 w-10 opacity-50;
+    @apply fixed bottom-0 flex h-[calc(100vh-2rem)] w-screen flex-col
+      items-center justify-center bg-neutral-50 select-none
+      transition-colors duration-100 ease-in-out dark:bg-neutral-700;
   }
 
   /* ===== 视图容器 ===== */
   .view {
     @apply relative z-0 h-full w-full transition-colors duration-100 ease-in-out;
+  }
+  .view-home {
+    @apply flex h-full min-h-screen w-full flex-col items-center justify-center;
   }
   .view-title {
     @apply h-full w-fit text-2xl font-semibold;
@@ -363,49 +203,8 @@
   .view-settings {
     @apply flex h-auto w-full flex-col gap-6;
   }
-
-  /* Article typography tokens (plan 3.1 / 7.3).
-     Kept separate from app UI tokens: serif body, larger line height,
-     constrained measure. Values are injected by PreferencesProvider. */
-  .prose-article {
-    font-family: var(--app-font-article);
-    font-size: var(--app-font-article-size);
-    line-height: var(--app-line-height);
-  }
-  .article-body {
-    max-width: var(--app-line-width);
-  }
-  .article-paragraph {
-    text-indent: var(--app-indent);
-    margin-bottom: var(--app-paragraph-gap);
-    text-align: justify;
-  }
-  .article-paragraph.is-empty {
-    text-indent: 0;
-  }
-
-  /*
-   * 卡片序号：正文衬线字体里塞两位阿拉伯数字会随字号一起变大，
-   * 在行首比正文还显眼，抢掉段落的视觉起点。这里单独用界面无衬线
-   * 字体并固定为较大号，让它像"编辑器的行号槽"而不是正文的标点。
-   */
-  .card-index {
-    @apply text-muted-foreground/50 font-[family-name:var(--app-font-ui)] text-xs font-medium tabular-nums;
-  }
-
-  /*
-   * ScrollArea 内容撑满视口。
-   *
-   * Radix 的 viewport 把 children 包进一个 `display: table; min-width: 100%`
-   * 的容器里，table 会收缩到内容宽度——于是子树里的 `w-full` 是相对一个
-   * 随内容变化的宽度解析的，展开/收起时整行会跟着伸缩，右侧元素左右跳。
-   * 单靠 `width: 100%` 不够：table 仍是 auto 布局，内容宽度仍参与计算。
-   * 必须同时固定 table-layout，宽度才彻底由视口决定、与内容无关。
-   */
-  [data-radix-scroll-area-viewport] > div {
-    width: 100%;
-    min-width: 100%;
-    table-layout: fixed;
+  .view-framework {
+    @apply mx-auto w-full max-w-4xl px-6 pt-6 pb-8;
   }
 
   /* ===== 标题栏操作按钮 =====
@@ -413,7 +212,10 @@
      注意：标题栏里的 <Separator> 是 shadcn 组件，其样式在调用处平铺。
   */
   .titlebar-op {
-    @apply inline-flex h-full w-fit cursor-pointer items-center justify-center px-2.5 py-0.5 transition-colors delay-0 duration-100 ease-in-out hover:bg-neutral-200 last:hover:bg-red-400 dark:hover:bg-neutral-600 dark:last:hover:bg-red-600;
+    @apply inline-flex h-full w-fit cursor-pointer items-center justify-center
+      px-2.5 py-0.5 transition-colors delay-0 duration-100 ease-in-out
+      hover:bg-neutral-200 dark:hover:bg-neutral-600
+      last:hover:bg-red-400 dark:last:hover:bg-red-600;
   }
   .titlebar-op-icon {
     @apply h-4 w-4 transition-all duration-100 ease-in-out;
@@ -423,189 +225,9 @@
   }
 }
 
-@keyframes page-enter-forward {
-  from {
-    opacity: 0;
-    transform: translateX(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
-@keyframes page-enter-back {
-  from {
-    opacity: 0;
-    transform: translateX(-12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(0);
-  }
-}
-
 html {
   color-scheme: light;
 }
 html.dark {
   color-scheme: dark;
-}
-
-/*
- * 章节树持续选中项。亮色主题使用浅绿，暗色主题使用深绿；
- * 与编辑中段落共用同一套选中边框令牌。
- */
-.chapter-row-selected {
-  border-color: var(--editor-selection-border);
-}
-
-/*
- * 正在编辑的旧段落：2px 虚线沿边框顺时针行进。
- *
- * 四条背景分别绘制上下左右边，并用不同的位移方向形成环形流动。
- * 用伪元素而不是直接加 border，避免进入/退出编辑时挤动正文宽度。
- */
-@keyframes editing-paragraph-dashes {
-  from {
-    background-position:
-      0 0,
-      100% 0,
-      0 100%,
-      0 0;
-  }
-  to {
-    background-position:
-      14px 0,
-      100% 14px,
-      -14px 100%,
-      0 -14px;
-  }
-}
-
-.article-paragraph.is-editing::after {
-  --editing-border-color: var(--editor-selection-border);
-
-  position: absolute;
-  inset: -2px;
-  z-index: 1;
-  border-radius: 4px;
-  pointer-events: none;
-  content: "";
-  background-image:
-    linear-gradient(
-      90deg,
-      var(--editing-border-color) 0 7px,
-      transparent 7px 14px
-    ),
-    linear-gradient(
-      0deg,
-      var(--editing-border-color) 0 7px,
-      transparent 7px 14px
-    ),
-    linear-gradient(
-      90deg,
-      var(--editing-border-color) 0 7px,
-      transparent 7px 14px
-    ),
-    linear-gradient(
-      0deg,
-      var(--editing-border-color) 0 7px,
-      transparent 7px 14px
-    );
-  background-repeat: repeat-x, repeat-y, repeat-x, repeat-y;
-  background-size:
-    14px 2px,
-    2px 14px,
-    14px 2px,
-    2px 14px;
-  background-position:
-    0 0,
-    100% 0,
-    0 100%,
-    0 0;
-  animation: editing-paragraph-dashes 1.8s linear infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .page-transition {
-    animation: none;
-  }
-  .article-paragraph.is-editing::after {
-    animation: none;
-  }
-}
-
-/*
- * 暂存段落"归位"动画。
- *
- * 携带草稿去改旧段落、回车提交后，草稿会落回输入框。这一下不能让
- * 用户自己猜文字去了哪，用一次很轻的高亮淡出表示"它回来了"。
- * 只有 600ms 左右，且不做位移，避免在打字时分散注意力。
- */
-@keyframes draft-return {
-  0% {
-    background-color: color-mix(in oklab, var(--primary) 14%, transparent);
-  }
-  100% {
-    background-color: transparent;
-  }
-}
-
-.animate-draft-return {
-  animation: draft-return 600ms ease-out;
-}
-
-/*
- * 草稿箱内容变化反馈。
- * 只闪背景、不做位移；短促淡出，避免持续编辑时抢走正文注意力。
- */
-@keyframes draft-box-flash {
-  0% {
-    background-color: transparent;
-  }
-  24% {
-    background-color: color-mix(in oklab, var(--primary) 12%, transparent);
-  }
-  100% {
-    background-color: transparent;
-  }
-}
-
-.draft-box-flash {
-  animation: draft-box-flash 480ms ease-out;
-}
-
-@keyframes jump-highlight {
-  0% {
-    background-color: transparent;
-    box-shadow: inset 0 0 0 1px transparent;
-  }
-  20%,
-  58% {
-    background-color: color-mix(in oklab, var(--primary) 20%, transparent);
-    box-shadow: inset 0 0 0 1px
-      color-mix(in oklab, var(--primary) 32%, transparent);
-  }
-  100% {
-    background-color: transparent;
-    box-shadow: inset 0 0 0 1px transparent;
-  }
-}
-
-.jump-highlight {
-  animation: jump-highlight 1400ms ease-out;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .draft-box-flash {
-    animation: none;
-  }
-
-  .jump-highlight {
-    animation: none;
-    background-color: color-mix(in oklab, var(--primary) 20%, transparent);
-    box-shadow: inset 0 0 0 1px
-      color-mix(in oklab, var(--primary) 32%, transparent);
-  }
 }

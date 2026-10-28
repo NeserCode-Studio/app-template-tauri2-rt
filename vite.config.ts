@@ -31,8 +31,8 @@ export default defineConfig(async () => ({
         }
       : undefined,
     watch: {
-      // 3. ignore Rust output and agent-only fixtures/temporary files
-      ignored: ["**/src-tauri/**", "**/.agent/**"],
+      // 3. tell vite to ignore watching `src-tauri`
+      ignored: ["**/src-tauri/**"],
     },
   },
 }));

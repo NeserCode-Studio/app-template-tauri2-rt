@@ -1,173 +1,227 @@
 <div align="center">
 
-<img src="src-tauri/icons/icon.png" width="96" alt="novels-yes 图标" />
+# app-template
 
-# novels-yes
+**Tauri 2 + React 19 桌面应用开发模板**
 
-**为中文长篇小说写作准备的本地桌面写作台**
-
-novels-yes 把作品、卷、章、段落、素材、统计和回收站放进同一个本地工作区。
-你选择一个文件夹来保存所有内容；应用不需要账号，也不会把书稿存到云服务。
+开箱即用的桌面应用骨架 —— 窗口管理、系统托盘、命令面板、设置中心、多语言、主题切换，一次配好，直接写业务。
 
 [![Tauri](https://img.shields.io/badge/Tauri-2-blue?style=flat-round&logo=tauri&logoColor=white)](https://tauri.app)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green?style=flat-round)](https://tauri.app/start/prerequisites/)
+[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-round&logo=react&logoColor=black)](https://react.dev)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?style=flat-round&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-round&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-round)](LICENSE)
 
 </div>
 
 ---
 
-## 主要功能
+## 特性
 
-| 功能       | 你可以做什么                                                           |
-| ---------- | ---------------------------------------------------------------------- |
-| 长篇结构   | 管理作品、卷、章节和段落，适合多卷、多章和长篇连载                     |
-| 段落编辑   | 每段一张卡片，可拆分、合并、返回最新段落；输入未提交的内容暂存在草稿箱 |
-| 版本历史   | 每章自动保留最近 20 次保存快照，可以预览和回滚，回滚后仍可撤销         |
-| 素材库     | 集中管理人物、地点、物品、关系等设定；正文提及会按类型高亮             |
-| 全文搜索   | 一次搜索章节、正文和素材，按作品分组显示上下文                         |
-| 进度统计   | 查看每日目标、连续写作天数和近 14 天趋势                               |
-| 专注模式   | 在普通、专注、打字机和 Zen 模式之间切换，界面会记住选择                |
-| 导入整理   | 导入 TXT / Markdown，自动识别 UTF-8 或 GBK，并支持自动分段和整书重排   |
-| 导出发布   | 导出为 TXT 或 Markdown，支持单章、整卷或全书，并提供实时预览           |
-| 回收站     | 删除的章节和卷保留在工作区，可搜索、预览、恢复或深度扫描修复           |
-| AI 检测    | 使用朱雀 AI 检测章节文本；结果保存在当前章节，重启后仍可查看           |
-| 本地 Agent | 通过本机 MCP 让受控的 AI Agent 读取或修改当前工作区                    |
+| | |
+| --- | --- |
+| **双窗口架构** | 主窗口 + 托盘弹窗，同一 bundle 按窗口标签分流 |
+| **无边框标题栏** | Windows 风格原生菜单（转到 / 编辑 / 帮助），标题栏可拖拽 |
+| **系统托盘** | 托盘图标 + 自绘弹出菜单，左键显隐主窗口、右键唤出菜单 |
+| **命令面板** | `⌘K` / `Ctrl+K` 唤起，支持模糊搜索与快捷键提示 |
+| **设置中心** | 通用设置项组件（输入框 / 下拉 / 开关），内置搜索与修改记录 |
+| **主题切换** | 亮色 / 暗色，跟随系统，用户手动选择后不再自动跟随 |
+| **国际化** | 中英双语，语言可运行时切换 |
+| **生命周期钩子** | 阶段化的启动 / 挂载 / 就绪钩子，业务初始化有明确落点 |
+| **跨窗口通信** | Rust ↔ 前端双向事件通道，托盘可直接唤起主窗口功能 |
 
-界面支持中文、英文、亮色和暗色主题，可在应用内直接切换。
+技术底座：**Tauri 2** · **React 19** · **TypeScript** · **Tailwind CSS 4** · **shadcn/ui** · **Radix UI** · **Rust**
 
 ---
 
 ## 快速开始
 
-当前项目通过源码构建桌面应用。首次准备需要安装：
+### 环境要求
 
-- Node.js 18 或更新版本
-- pnpm 9 或更新版本
-- Rust stable
-- [Tauri 平台依赖](https://tauri.app/start/prerequisites/)
+- Node.js ≥ 18
+- pnpm ≥ 9
+- Rust（stable）
+- Tauri 平台依赖（Linux 需 `webkit2gtk` 等，详见[官方文档](https://tauri.app/start/prerequisites/)）
 
-克隆并启动开发版：
+### 安装与启动
 
 ```bash
-git clone https://github.com/NeserCode-Studio/novels-yes.git
-cd novels-yes
+# 安装前端依赖
 pnpm install
+
+# 启动开发环境（自动编译 Rust，首次较慢）
 pnpm tauri dev
 ```
 
-首次运行会编译 Rust 依赖，需要等待一段时间。
-生成安装包时运行：
+### 构建
 
 ```bash
-pnpm tauri build
+pnpm tauri build     # 生成安装包
+pnpm build           # 仅构建前端
 ```
 
-构建完成后，安装包位于 `src-tauri/target/release/bundle/`。
+### 其他命令
 
-> [!NOTE]
-> 在浏览器里打开开发服务器只能预览界面；托盘、原生文件读写、AI 凭据库和 MCP 需要 Tauri 桌面环境。
+| 命令 | 说明 |
+| --- | --- |
+| `pnpm dev` | 启动前端开发服务器（端口 8888） |
+| `pnpm preview` | 预览前端构建产物 |
+| `pnpm lint` | ESLint 检查 |
+| `pnpm format` | Prettier 格式化 |
 
----
-
-## 开始写作
-
-1. 启动应用后创建一个工作区，或打开已有的 novels-yes 工作区文件夹。
-2. 在作品库创建作品、卷和章节；也可以导入 TXT / Markdown 文稿。
-3. 在编辑器底部输入段落，按回车结束当前段。
-4. 需要修改设定时打开素材库，需要查看进展时打开进度面板。
-5. 完成后使用导出功能生成 TXT 或 Markdown。
-
-novels-yes 会自动保存章节。顶栏的保存按钮可以在自动保存前立即写入，或保存失败后重试。
-
-### 导入旧稿
-
-支持把 TXT 或 Markdown 文件导入到当前章节，也可以按标题结构导入为新作品。
-导入预览会显示编码、段落数和结构；你可以在导入前调整标题和自动分段。
-
-Word、RTF 等专有格式请先另存为纯文本或 Markdown。
+> 浏览器环境下界面可渲染，但托盘、跨窗口、原生能力不可用 —— 这些需 `pnpm tauri dev` 验证。
 
 ---
 
-## 数据保存在哪里
+## 项目结构
 
-所有小说数据都保存在你选择的工作区文件夹中。常见位置如下：
+```
+src/
+├── main.tsx              # 入口
+├── App.tsx               # 根组件：路由装配、Context、跨窗口事件、生命周期触发
+├── App.css               # 设计令牌 + 组件类
+│
+├── components/
+│   ├── framework/        # 框架组件
+│   │   ├── Titlebar*         # 无边框标题栏
+│   │   ├── CommandDialog     # 命令面板
+│   │   ├── SettingsDialog    # 设置弹窗
+│   │   ├── AboutDialog       # 关于弹窗
+│   │   └── Tooltip
+│   └── ui/               # shadcn/ui 组件库
+│
+├── views/                # 页面
+│   ├── Home / Software / Framework
+│   └── TrayMenu          # 托盘菜单
+│
+├── composables/          # 业务 Hook
+│   ├── useTheme          # 主题
+│   ├── useI18n           # 国际化
+│   ├── useToast          # 轻提示
+│   └── useSuperCommand   # 命令注册表
+│
+├── contexts/             # 全局 Context
+├── lifecycle/            # 生命周期总线（阶段：mount / ready）
+├── lib/                  # 工具与资源
+│   ├── i18n.resource.ts  # 中英文案表
+│   ├── window.utils.ts   # 窗口工具
+│   ├── editor.actions.ts # 编辑命令
+│   ├── logger.ts         # 日志模块
+│   └── utils.ts          # cn()
+└── shared/               # 共享类型
 
-| 内容        | 位置                        |
-| ----------- | --------------------------- |
-| 作品与结构  | `works/<作品ID>/`           |
-| 章节正文    | `works/<作品ID>/chapters/`  |
-| 纯文本视图  | `works/<作品ID>/texts/`     |
-| 共享素材库  | `codex/`                    |
-| 统计缓存    | `works/<作品ID>/stats.json` |
-| AI 检测结果 | `works/<作品ID>/zhuque/`    |
-| 回收站      | `.trash/`                   |
-
-> [!IMPORTANT]
-> 备份时请备份整个工作区文件夹。`chapters/<章节ID>.json` 是章节内容的唯一事实来源，`texts/` 下的文本是导出视图；只备份 TXT 可能会漏掉段落卡片和版本历史。
-
-你可以把工作区文件夹复制到移动硬盘、本地网络盘或纳入自己的 Git 备份。
-迁移工作区时，请使用应用内的“迁移工作区”功能。
-
----
-
-## AI 文本检测
-
-novels-yes 集成了朱雀 AI 文本检测，用于检查当前章节的 AI 生成占比。
-
-使用方式：
-
-1. 打开 **设置 > AI**，保存腾讯云 EdgeOne Makers API Key。
-2. 在编辑页选择 **朱雀AI检测**。
-3. 确认合并段落设置后，再次确认是否开始检测。
-4. 查看人工、AI、疑似 AI 占比和分段结果。
-
-> [!WARNING]
-> 每次新的检测都会调用付费接口，费用由你的腾讯云账号结算。取消确认弹窗不会发送请求。
-
-检测结果会保存在当前章节的工作区文件中。正文或合并段落设置变化后，旧结果会标记为“内容已变化”；重新检测仍需要你手动确认。
-
-API Key 保存在操作系统凭据库中，不写入工作区。支持 Windows Credential Manager、macOS Keychain 和 Linux Secret Service。
-
----
-
-## 连接本地 AI Agent
-
-打开工作区后，novels-yes 可以启动一个仅监听本机的 MCP 服务，让受控 AI Agent 连接当前工作区。
-
-- 权限分为只读、可写和管理员。
-- 高风险操作仍会在应用内弹出审批。
-- 工作区关闭、切换或迁移时，MCP 连接会结束。
-- MCP 服务只处理当前打开的工作区。
-
-连接方式、客户端配置和故障排查见 [docs/mcp.md](docs/mcp.md)。
+src-tauri/
+├── tauri.conf.json       # 窗口与打包配置
+├── capabilities/         # 权限白名单
+└── src/lib.rs            # 托盘与 Rust 命令
+```
 
 ---
 
-## 常见问题
+## 架构说明
 
-**需要联网吗？**
+### 双窗口模型
 
-日常写作、保存、搜索和导出不需要联网。只有使用朱雀 AI 检测，或让外部 AI Agent 访问在线服务时才需要网络；本机 MCP 连接本身不需要互联网。
+配置了两个窗口，**同一份前端代码按窗口标签分流**：
 
-**会把我上传到云端吗？**
+| 窗口 | 用途 |
+| --- | --- |
+| `main` | 主界面：无边框、可拖拽标题栏、路由内容 |
+| `tray` | 托盘弹出菜单：独立小窗、失焦自动隐藏 |
 
-应用本身不提供云存储。只有你主动使用 AI 检测时，当前章节文本才会发送到检测服务；外部 Agent 是否会继续发送内容，取决于你选择的客户端、模型和提示词。
+托盘右键 → Rust 侧发出定位事件 → 主窗口计算坐标后弹出托盘菜单；托盘菜单中的操作通过事件反向通知主窗口。
 
-**误删章节怎么办？**
+### 生命周期系统
 
-删除的内容会先进入工作区回收站。你可以在回收站页面搜索、预览和恢复。
+提供阶段化钩子，让初始化逻辑有明确落点：
 
-**能直接编辑工作区里的 TXT 文件吗？**
+```
+mount（React 挂载完成） → ready（应用就绪）
+```
 
-TXT 文件适合阅读和外部交接。请优先在应用内编辑正文；章节事实来源是 JSON 段落卡片。
+钩子支持优先级排序、一次性执行、卸载函数。同阶段按优先级顺序 `await` 执行，行为可预测。
 
-**重启后结果和草稿还在吗？**
+内置两个阶段对应两个真实触发点（均在 `App.tsx` 的挂载 effect 内按序触发）：
 
-付费检测结果保存在工作区中，重启后仍可查看。未提交草稿保存在应用本地草稿箱中。
+| 阶段 | 时机 | 典型用途 |
+| --- | --- | --- |
+| `mount` | React 挂载完成 | 注册全局事件监听、启动定时任务 |
+| `ready` | 挂载完成后 | 需要窗口就绪才能执行的动作（聚焦、置前） |
+
+需要扩展时，在 `src/lifecycle/types.ts` 的 `LifecycleStage` 联合类型里加阶段，并在合适位置补上 `lifecycle.fire(...)`，`register` / `fire` 的实现无需改动。
+
+### 状态与持久化
+
+- 全局状态用 React Context，value 统一经 `useMemo` 固定引用，避免无关状态引发全量重渲染
+- 用户偏好（主题、语言、标题、置顶状态等）持久化到 `localStorage`
+- 弹窗开关状态集中在根组件，通过 Context 下发
+
+### 主题机制
+
+- CSS 变量驱动，所有颜色集中在 `App.css` 定义，亮/暗两套令牌
+- 首次启动跟随系统；用户手动切换后不再自动跟随
+- 切换无闪烁，状态与 DOM 始终一致
+
+### 国际化
+
+- 文案集中在 `src/lib/i18n.resource.ts`，新增文案改一处即可
+- 运行时可切换语言，无需重启
+- 未命中的 key 会回退为 key 本身，不会崩溃
+
+### 命令系统
+
+命令面板提供两种模式：
+
+- **普通模式** —— 页面跳转、设置打开、重载等常用操作
+- **高级模式** —— 输入 `@super` 前缀后执行扩展命令，支持前端动作与 Rust 命令两种执行方式
+
+命令以注册表形式管理，新增命令即插即用。
+
+### 日志
+
+`src/lib/logger.ts` 提供带级别过滤的日志模块：
+
+```ts
+import { createLogger } from "@/lib/logger";
+
+const log = createLogger("MyModule");
+log.debug("detail", { some: "data" });
+log.info("something happened");
+log.warn("recoverable problem");
+log.error("failed", error);
+```
+
+- 输出格式统一为 `[模块:级别]`，带颜色高亮，可按模块检索
+- **开发环境**输出全部级别；**生产构建**默认只保留 `warn` / `error`
+- 支持子 logger：`log.child("Sub")` → `[MyModule/Sub:info]`
+
+运行时切换级别（无需重新构建），在控制台执行：
+
+```js
+localStorage.setItem("app-log-level", "debug"); // 打开全部
+localStorage.removeItem("app-log-level");        // 恢复默认
+```
 
 ---
 
-## 技术栈
+## 开发约定
 
-Tauri 2 · Rust · React 19 · TypeScript · Tailwind CSS 4 · shadcn/ui · Radix UI · Zod · MCP
+### 样式
+
+- **shadcn 组件的样式覆盖请平铺写进 `className`**，由组件内的 `cn()`（`twMerge`）自动合并
+- `@layer components` 只用于纯自有元素；该层优先级低于 Tailwind 工具类，覆盖 shadcn 组件会静默失效
+- 重复出现 3 次以上的样式组合可收纳为组件类，统一维护在 `App.css`
+
+### shadcn 组件
+
+`src/components/ui/` 由 shadcn CLI 生成，请勿手动修改 —— 会被 `shadcn add/update` 覆盖。全局定制请改 `App.css` 中的设计令牌。
+
+### 权限
+
+Tauri 采用权限白名单机制。新增原生能力时，在 `src-tauri/capabilities/default.json` 中显式声明后前端才能调用。
+
+---
+
+## 许可
+
+[MIT](LICENSE)
