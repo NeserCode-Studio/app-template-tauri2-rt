@@ -44,33 +44,6 @@
     "core:tray:default",
     "core:tray:allow-new",
     "core:resources:default",
-    "core:resources:allow-close",
-    "dialog:default",
-    "dialog:allow-open",
-    "opener:allow-reveal-item-in-dir",
-    {
-      "identifier": "opener:allow-open-url",
-      "allow": [
-        {
-          "url": "https://console.cloud.tencent.com/edgeone/makers?tab=models&subTab=apikey"
-        },
-        {
-          "url": "https://tauri.app/"
-        }
-      ]
-    },
-    "fs:default",
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file",
-    "fs:allow-read-file",
-    "fs:allow-write-file",
-    "fs:allow-read-dir",
-    "fs:allow-mkdir",
-    "fs:allow-remove",
-    "fs:allow-rename",
-    "fs:allow-exists",
-    "fs:allow-stat",
-    "fs:allow-appdata-read",
-    "fs:allow-appdata-write"
+    "core:resources:allow-close"
   ]
 }

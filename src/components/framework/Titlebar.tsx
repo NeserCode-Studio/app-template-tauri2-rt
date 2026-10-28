@@ -11,92 +11,22 @@ import {
 import TitlebarOperations, {
   ThemeIcon,
 } from "@/components/framework/TitlebarOperations";
-import {
-  ArrowLeft,
-  BookOpen,
-  Check,
-  ClipboardPaste,
-  Copy,
-  Home,
-  Info,
-  LogOut,
-  Redo2,
-  Scissors,
-  Search,
-  Server,
-  Settings2,
-  TextSearch,
-  TextSelect,
-  Trash2,
-  Undo2,
-} from "lucide-react";
 import { useContext } from "react";
 import { ThemeContext } from "@/contexts/theme";
-import { useLibrary } from "@/contexts/library";
-import { useWorkspace } from "@/contexts/workspace";
+import { NavigatorContext } from "@/contexts/navigator";
 import TitlebarTitle from "./TitlebarTitle";
 import { useI18n } from "@/composables";
 import { useSettingsDialog } from "@/contexts/settings";
 import * as editorActions from "@/lib/editor.actions";
-import McpConnectionMenu from "./McpConnectionMenu";
-import {
-  APP_PAGE_LABEL_KEYS,
-  useAppNavigation,
-  type AppPage,
-} from "@/lib/navigation";
 
 export default function Titlebar() {
   /* I18n */
   const { t } = useI18n();
   /* Theme */
   const { theme, setThemeMode } = useContext(ThemeContext);
-  /* Navigation */
-  const { currentPage, backPage, back, go } = useAppNavigation();
-  const { currentWorkId } = useLibrary();
-  const { root } = useWorkspace();
+  /* Navigator */
+  const { navigator } = useContext(NavigatorContext);
   const { openSettings, openAbout } = useSettingsDialog();
-
-  const canOpenPage = (page: AppPage) => {
-    if (page === "home") return true;
-    if (page === "editor") return Boolean(root && currentWorkId);
-    return Boolean(root);
-  };
-
-  const destinations: Array<{
-    page: AppPage;
-    labelKey: string;
-    icon: typeof Home;
-    enabled: boolean;
-  }> = [
-    {
-      page: "home",
-      labelKey: APP_PAGE_LABEL_KEYS.home,
-      icon: Home,
-      enabled: true,
-    },
-    ...(root
-      ? [
-          {
-            page: "library" as const,
-            labelKey: APP_PAGE_LABEL_KEYS.library,
-            icon: BookOpen,
-            enabled: true,
-          },
-          {
-            page: "mcp" as const,
-            labelKey: APP_PAGE_LABEL_KEYS.mcp,
-            icon: Server,
-            enabled: true,
-          },
-          {
-            page: "trash" as const,
-            labelKey: APP_PAGE_LABEL_KEYS.trash,
-            icon: Trash2,
-            enabled: true,
-          },
-        ]
-      : []),
-  ];
 
   function toggleTheme() {
     if (theme === "dark") {
@@ -108,62 +38,35 @@ export default function Titlebar() {
 
   return (
     <div
-      className="bg-background fixed top-0 z-50 flex h-8 w-screen flex-row items-center justify-between border-b border-neutral-400 pl-2 shadow-sm transition-colors duration-100 ease-in-out dark:border-neutral-600"
+      className="fixed top-0 z-50 flex h-8 w-screen flex-row items-center justify-between border-b border-neutral-400 bg-white pl-2 shadow-sm transition-colors duration-100 ease-in-out dark:border-neutral-600 dark:bg-black"
       data-tauri-drag-region
     >
       <Menubar className="h-6 w-fit gap-1 rounded-none border-0 bg-transparent p-0 text-neutral-600 shadow-none transition-colors duration-100 ease-in-out dark:text-neutral-200">
         <MenubarMenu>
-          <MenubarTrigger className="h-full w-fit gap-1.5 px-2 text-sm">
-            {t("Titlebar.navigation.menu")}
+          <MenubarTrigger className="h-full w-fit px-2 text-sm">
+            {t("Titlebar.menu.turnto")}
           </MenubarTrigger>
-          <MenubarContent className="w-56">
-            {backPage && canOpenPage(backPage) ? (
-              <>
-                <MenubarItem onSelect={back}>
-                  <ArrowLeft className="icon-sm" />
-                  <span>{t("Titlebar.navigation.back")}</span>
-                  <span className="text-muted-foreground ml-auto truncate text-xs">
-                    {t(APP_PAGE_LABEL_KEYS[backPage])}
-                  </span>
-                </MenubarItem>
-                <MenubarSeparator />
-              </>
-            ) : null}
-            {destinations.map((item) => {
-              const current = item.page === currentPage;
-              const Icon = item.icon;
-              return (
-                <MenubarItem
-                  key={item.page}
-                  disabled={current || !item.enabled}
-                  onSelect={() => go(item.page)}
-                >
-                  <Icon className="icon-sm" />
-                  <span>{t(item.labelKey)}</span>
-                  {current ? (
-                    <Check className="ml-auto size-3.5 opacity-60" />
-                  ) : null}
-                </MenubarItem>
-              );
-            })}
-            <MenubarSeparator />
+          <MenubarContent className="w-fit transition-all duration-100 ease-in-out">
+            <MenubarItem
+              onSelect={() => {
+                navigator("/");
+              }}
+            >
+              {t("Titlebar.menu.turnto.home")}
+            </MenubarItem>
             <MenubarItem
               onSelect={() => {
                 openSettings();
               }}
             >
-              <Settings2 className="icon-sm" />
               {t("Titlebar.menu.turnto.settings")}
             </MenubarItem>
             <MenubarSeparator />
             <MenubarItem onSelect={toggleTheme}>
-              <ThemeIcon className="icon-sm" />
               {t("Titlebar.menu.turnto.theme")}
+              <ThemeIcon />
             </MenubarItem>
-            <MenubarItem>
-              <LogOut className="icon-sm" />
-              {t("Titlebar.menu.turnto.exit")}
-            </MenubarItem>
+            <MenubarItem>{t("Titlebar.menu.turnto.exit")}</MenubarItem>
           </MenubarContent>
         </MenubarMenu>
 
@@ -173,12 +76,10 @@ export default function Titlebar() {
           </MenubarTrigger>
           <MenubarContent className="w-fit transition-all duration-100 ease-in-out">
             <MenubarItem onSelect={editorActions.undo}>
-              <Undo2 className="icon-sm" />
               {t("Titlebar.menu.edit.undo")}
               <MenubarShortcut>Ctrl+Z</MenubarShortcut>
             </MenubarItem>
             <MenubarItem onSelect={editorActions.redo}>
-              <Redo2 className="icon-sm" />
               {t("Titlebar.menu.edit.redo")}
               <MenubarShortcut>Ctrl+Shift+Z</MenubarShortcut>
             </MenubarItem>
@@ -186,17 +87,14 @@ export default function Titlebar() {
             <MenubarSeparator />
 
             <MenubarItem onSelect={editorActions.cut}>
-              <Scissors className="icon-sm" />
               {t("Titlebar.menu.edit.cut")}
               <MenubarShortcut>Ctrl+X</MenubarShortcut>
             </MenubarItem>
             <MenubarItem onSelect={editorActions.copy}>
-              <Copy className="icon-sm" />
               {t("Titlebar.menu.edit.copy")}
               <MenubarShortcut>Ctrl+C</MenubarShortcut>
             </MenubarItem>
             <MenubarItem onSelect={() => void editorActions.paste()}>
-              <ClipboardPaste className="icon-sm" />
               {t("Titlebar.menu.edit.paste")}
               <MenubarShortcut>Ctrl+V</MenubarShortcut>
             </MenubarItem>
@@ -204,23 +102,12 @@ export default function Titlebar() {
             <MenubarSeparator />
 
             <MenubarItem onSelect={editorActions.selectAll}>
-              <TextSelect className="icon-sm" />
               {t("Titlebar.menu.edit.selectAll")}
               <MenubarShortcut>Ctrl+A</MenubarShortcut>
             </MenubarItem>
             <MenubarItem onSelect={editorActions.find}>
-              <TextSearch className="icon-sm" />
               {t("Titlebar.menu.edit.find")}
               <MenubarShortcut>Ctrl+K</MenubarShortcut>
-            </MenubarItem>
-            <MenubarItem
-              onSelect={() =>
-                window.dispatchEvent(new CustomEvent("app:open-search"))
-              }
-            >
-              <Search className="icon-sm" />
-              {t("Search.title")}
-              <MenubarShortcut>Ctrl+Shift+F</MenubarShortcut>
             </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
@@ -230,14 +117,19 @@ export default function Titlebar() {
             {t("Titlebar.menu.help")}
           </MenubarTrigger>
           <MenubarContent className="w-fit transition-all duration-100 ease-in-out">
+            <MenubarItem
+              onSelect={() => {
+                navigator("/framework");
+              }}
+            >
+              {t("Titlebar.menu.about.framework")}
+            </MenubarItem>
+            <MenubarSeparator />
             <MenubarItem onSelect={openAbout}>
-              <Info className="icon-sm" />
               {t("Titlebar.menu.about")}
             </MenubarItem>
           </MenubarContent>
         </MenubarMenu>
-
-        <McpConnectionMenu />
       </Menubar>
 
       <TitlebarTitle data-tauri-drag-region />

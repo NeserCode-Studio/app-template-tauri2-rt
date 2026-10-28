@@ -57,19 +57,19 @@ export function createBuiltinCommands(ctx: {
       },
     },
     {
-      id: "navigate.library",
-      keywords: ["作品库", "library", "作品", "书架"],
+      id: "navigate.software",
+      keywords: ["软件", "software"],
       action: () => {
-        navigate("/library");
-        return { success: true, message: "Navigated to library" };
+        navigate("/software");
+        return { success: true, message: "Navigated to software" };
       },
     },
     {
-      id: "navigate.editor",
-      keywords: ["编辑器", "editor", "写作", "write"],
+      id: "navigate.framework",
+      keywords: ["框架", "framework"],
       action: () => {
-        navigate("/editor");
-        return { success: true, message: "Navigated to editor" };
+        navigate("/framework");
+        return { success: true, message: "Navigated to framework" };
       },
     },
     {

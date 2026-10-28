@@ -1,12 +1,8 @@
-mod export_bridge;
-mod fs_bridge;
-mod mcp;
-mod zhuque_ai;
-
 use tauri::{
+    Manager,
     image::Image,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    Emitter, Manager, Position, Size,
+    Emitter, Position, Size,
 };
 
 #[tauri::command]
@@ -52,7 +48,6 @@ fn toggle_main_window(app: &tauri::AppHandle) {
 pub fn run() {
     tauri::Builder::default()
         .setup(|app| {
-            app.manage(mcp::McpManager::default());
             let icon = Image::from_bytes(include_bytes!("../icons/32x32.png"))
                 .expect("Failed to load tray icon");
 
@@ -82,13 +77,10 @@ pub fn run() {
 
                     if is_right {
                         if let Some(window) = tray.app_handle().get_webview_window("main") {
-                            let _ = window.emit(
-                                "tray-popup",
-                                serde_json::json!({
-                                    "x": (rx + rw / 2.0) as i32,
-                                    "y": ry as i32,
-                                }),
-                            );
+                            let _ = window.emit("tray-popup", serde_json::json!({
+                                "x": (rx + rw / 2.0) as i32,
+                                "y": ry as i32,
+                            }));
                         }
                     } else {
                         toggle_main_window(tray.app_handle());
@@ -100,36 +92,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
-        .invoke_handler(tauri::generate_handler![
-            greet,
-            open_devtools,
-            fs_bridge::fs_read_text,
-            fs_bridge::fs_write_text,
-            fs_bridge::fs_read_dir,
-            fs_bridge::fs_create_dir,
-            fs_bridge::fs_remove,
-            fs_bridge::fs_rename,
-            fs_bridge::fs_exists,
-            fs_bridge::fs_stat,
-            fs_bridge::workspace_delete,
-            fs_bridge::workspace_migrate,
-            export_bridge::fs_write_export,
-            export_bridge::fs_read_text_auto,
-            mcp::runtime::mcp_start,
-            mcp::runtime::mcp_stop,
-            mcp::runtime::mcp_status,
-            mcp::runtime::mcp_configure,
-            mcp::runtime::mcp_bridge_respond,
-            mcp::runtime::mcp_bridge_progress,
-            mcp::runtime::mcp_bridge_cancel,
-            mcp::runtime::mcp_notify_resources_changed,
-            zhuque_ai::zhuque_ai_config_get,
-            zhuque_ai::zhuque_ai_config_set,
-            zhuque_ai::zhuque_ai_config_clear,
-            zhuque_ai::zhuque_ai_detect,
-        ])
+        .invoke_handler(tauri::generate_handler![greet, open_devtools])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

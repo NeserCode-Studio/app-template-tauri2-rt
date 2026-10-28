@@ -1,6 +1,14 @@
 import { Tooltip } from "./Tooltip";
 
-import { Minus, X, Sun, Moon, Paperclip, Square, Copy } from "lucide-react";
+import {
+  Minus,
+  X,
+  Sun,
+  Moon,
+  Paperclip,
+  Square,
+  Copy,
+} from "lucide-react";
 import { ThemeContext } from "@/contexts/theme";
 import { Separator } from "../ui/separator";
 import { useContext, useEffect, useState } from "react";
@@ -15,13 +23,13 @@ const log = createLogger("Titlebar");
 
 const currentWindow = getCurrentWindow();
 
-export function ThemeIcon({ className }: { className?: string }) {
+export function ThemeIcon() {
   const { theme } = useContext(ThemeContext);
 
   if (theme === "dark") {
-    return <Sun className={className ?? "titlebar-op-icon"} />;
+    return <Sun className="titlebar-op-icon" />;
   } else {
-    return <Moon className={className ?? "titlebar-op-icon"} />;
+    return <Moon className="titlebar-op-icon" />;
   }
 }
 
