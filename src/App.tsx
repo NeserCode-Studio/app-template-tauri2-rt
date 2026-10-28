@@ -2,12 +2,26 @@ import "./App.css";
 
 import Titlebar from "@/components/framework/Titlebar";
 import CommandDialog from "@/components/framework/CommandDialog";
+import PageTransition from "@/components/framework/PageTransition";
 import { Toaster } from "@/components/ui/sonner";
-import { Routes, Route, useNavigate } from "react-router";
+import {
+  Navigate,
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+} from "react-router";
 
 import { useTheme, useI18nLogic } from "@/composables";
-import { lazy, Suspense, useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  useCallback,
+  useRef,
+} from "react";
 import { useLocalStorageState } from "ahooks";
 import { getCurrentWindow, PhysicalPosition } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
@@ -19,15 +33,43 @@ import { TitleContext } from "@/contexts/title";
 import { I18nContext } from "@/contexts/i18n";
 import { lifecycle } from "@/lifecycle";
 import SettingsDialog from "@/components/framework/SettingsDialog";
+import { AppNavigationContextMenu } from "@/components/framework/AppNavigationContextMenu";
 import AboutDialog from "@/components/framework/AboutDialog";
-import { SettingsDialogContext } from "@/contexts/settings";
+import McpActivityIndicator from "@/components/framework/McpActivityIndicator";
+import McpApprovalDialog from "@/components/framework/McpApprovalDialog";
+import McpTaskCoordinator from "@/components/framework/McpTaskCoordinator";
+import { SettingsDialogContext, type SettingsTab } from "@/contexts/settings";
 import { createLogger } from "@/lib/logger";
+import { WorkspaceProvider } from "@/contexts/workspace.provider";
+import { LibraryProvider } from "@/contexts/library.provider";
+import { PreferencesProvider } from "@/contexts/preferences.provider";
+import { OutlineProvider } from "@/contexts/outline.provider";
+import { CodexProvider } from "@/contexts/codex.provider";
+import { SearchProvider } from "@/contexts/search.provider";
+import { ViewModeProvider } from "@/contexts/viewmode.provider";
+import { LongTaskProvider } from "@/contexts/long-task.provider";
+import { ApplicationHostProvider } from "@/application/host.provider";
+import { McpBridgeProvider } from "@/mcp/bridge.provider";
+import { McpRuntimeProvider } from "@/mcp/runtime.provider";
+import {
+  defaultPageTransition,
+  pageFromPath,
+  type NavigationLocationState,
+} from "@/lib/navigation";
+import {
+  interceptWorkspaceDialog,
+  interceptWorkspaceNavigation,
+  requestWorkspaceEntry,
+} from "@/lib/workspace-open";
 
 const log = createLogger("App");
 
 const Home = lazy(() => import("@/views/Home"));
-const Software = lazy(() => import("@/views/Software"));
-const Framework = lazy(() => import("@/views/Framework"));
+const Library = lazy(() => import("@/views/Library"));
+const Editor = lazy(() => import("@/views/Editor"));
+const CodexLibrary = lazy(() => import("@/views/CodexLibrary"));
+const Mcp = lazy(() => import("@/views/Mcp"));
+const Trash = lazy(() => import("@/views/Trash"));
 const TrayMenu = lazy(() => import("@/views/TrayMenu"));
 
 /**
@@ -53,6 +95,22 @@ function App() {
   const { lang, t, setLanguage } = useI18nLogic();
   /* Navigator */
   const navigate = useNavigate();
+  const location = useLocation();
+  const navigator = useCallback(
+    (path: string) => {
+      if (interceptWorkspaceNavigation(path)) return;
+      if (requestWorkspaceEntry(path)) return;
+      const from = pageFromPath(location.pathname);
+      const to = pageFromPath(path);
+      navigate(path, {
+        state: {
+          from,
+          transition: defaultPageTransition(from, to),
+        } satisfies NavigationLocationState,
+      });
+    },
+    [location.pathname, navigate]
+  );
   /* Theme */
   const [theme, setThemeMode] = useTheme({
     localStorageKey: "theme-mode",
@@ -67,9 +125,17 @@ function App() {
 
   /* 弹窗状态 */
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const openSettings = useCallback(() => setSettingsOpen(true), []);
+  const [settingsTab, setSettingsTab] = useState<SettingsTab>("search");
+  const openSettings = useCallback((tab: SettingsTab = "search") => {
+    if (interceptWorkspaceDialog("settings")) return;
+    setSettingsTab(tab);
+    setSettingsOpen(true);
+  }, []);
   const [aboutOpen, setAboutOpen] = useState(false);
-  const openAbout = useCallback(() => setAboutOpen(true), []);
+  const openAbout = useCallback(() => {
+    if (interceptWorkspaceDialog("about")) return;
+    setAboutOpen(true);
+  }, []);
 
   /* 生命周期阶段只触发一次（StrictMode 下 effect 会 double-invoke）
      注册在模块作用域，此处只负责按序触发。 */
@@ -114,7 +180,7 @@ function App() {
       } else if (target === "/about") {
         openAbout();
       } else {
-        navigate(target);
+        navigator(target);
       }
     });
 
@@ -122,7 +188,7 @@ function App() {
       void unlistenPopup.then((fn) => fn());
       void unlistenNavigate.then((fn) => fn());
     };
-  }, [navigate, currentLabel, openSettings, openAbout]);
+  }, [navigator, currentLabel, openSettings, openAbout]);
 
   /* 固定 Context value 引用，避免任意状态变化导致所有消费者全量重渲染 */
   const i18nValue = useMemo(
@@ -134,7 +200,7 @@ function App() {
     [theme, setThemeMode]
   );
   const titleValue = useMemo(() => ({ title, setTitle }), [title, setTitle]);
-  const navigatorValue = useMemo(() => ({ navigator: navigate }), [navigate]);
+  const navigatorValue = useMemo(() => ({ navigator }), [navigator]);
   const settingsValue = useMemo(
     () => ({ openSettings, openAbout }),
     [openSettings, openAbout]
@@ -153,40 +219,130 @@ function App() {
   }
 
   return (
-    <>
-      <SettingsDialogContext.Provider value={settingsValue}>
-        <I18nContext.Provider value={i18nValue}>
-          <ThemeContext.Provider value={themeValue}>
-            <TitleContext.Provider value={titleValue}>
-              <NavigatorContext.Provider value={navigatorValue}>
-                <main id="app-main" className="app-shell">
-                  <Titlebar />
-                  <CommandDialog />
+    <I18nContext.Provider value={i18nValue}>
+      <LongTaskProvider>
+        <PreferencesProvider>
+          <ViewModeProvider>
+            <WorkspaceProvider>
+              <LibraryProvider>
+                <OutlineProvider>
+                  <ThemeContext.Provider value={themeValue}>
+                    <CodexProvider>
+                      <SearchProvider>
+                        <SettingsDialogContext.Provider value={settingsValue}>
+                          <TitleContext.Provider value={titleValue}>
+                            <NavigatorContext.Provider value={navigatorValue}>
+                              <McpRuntimeProvider>
+                                <ApplicationHostProvider
+                                  theme={theme}
+                                  setTheme={setThemeMode}
+                                  language={lang}
+                                  setLanguage={setLanguage}
+                                  title={title}
+                                  setTitle={setTitle}
+                                >
+                                  <McpBridgeProvider>
+                                    <main id="app-main" className="app-shell">
+                                      <Titlebar />
+                                      <CommandDialog />
 
-                  <div id="container" className="app-body">
-                    <ScrollArea className="h-[calc(100vh-2rem)] w-full">
-                      <Suspense fallback={null}>
-                        <Routes>
-                          <Route path="/" index element={<Home />} />
-                          <Route path="/software" element={<Software />} />
-                          <Route path="/framework" element={<Framework />} />
-                        </Routes>
-                      </Suspense>
-                    </ScrollArea>
-                  </div>
-                </main>
-                <SettingsDialog
-                  open={settingsOpen}
-                  onOpenChange={setSettingsOpen}
-                />
-                <AboutDialog open={aboutOpen} onOpenChange={setAboutOpen} />
-                <Toaster richColors theme={theme} position="bottom-right" />
-              </NavigatorContext.Provider>
-            </TitleContext.Provider>
-          </ThemeContext.Provider>
-        </I18nContext.Provider>
-      </SettingsDialogContext.Provider>
-    </>
+                                      <AppNavigationContextMenu>
+                                        <div
+                                          id="container"
+                                          className="app-body"
+                                        >
+                                          <Suspense fallback={null}>
+                                            <PageTransition>
+                                              <Routes>
+                                                <Route
+                                                  path="/"
+                                                  index
+                                                  element={<Home />}
+                                                />
+                                                <Route
+                                                  path="/library"
+                                                  element={<Library />}
+                                                />
+                                                <Route
+                                                  path="/codex"
+                                                  element={
+                                                    <div className="h-full w-full">
+                                                      <CodexLibrary />
+                                                    </div>
+                                                  }
+                                                />
+                                                <Route
+                                                  path="/mcp"
+                                                  element={
+                                                    <div className="h-full w-full">
+                                                      <Mcp />
+                                                    </div>
+                                                  }
+                                                />
+                                                <Route
+                                                  path="/trash"
+                                                  element={
+                                                    <div className="h-full w-full">
+                                                      <Trash />
+                                                    </div>
+                                                  }
+                                                />
+                                                <Route
+                                                  path="/editor"
+                                                  element={
+                                                    // 编辑器自带三栏可拖拽布局，需要确定高度，
+                                                    // 不能套在 ScrollArea 里（radix 滚动视口会让
+                                                    // react-resizable-panels 读到 0 高度而崩溃）。
+                                                    <div className="h-full w-full">
+                                                      <Editor />
+                                                    </div>
+                                                  }
+                                                />
+                                                <Route
+                                                  path="*"
+                                                  element={
+                                                    <Navigate to="/" replace />
+                                                  }
+                                                />
+                                              </Routes>
+                                            </PageTransition>
+                                          </Suspense>
+                                        </div>
+                                      </AppNavigationContextMenu>
+                                    </main>
+                                    <SettingsDialog
+                                      open={settingsOpen}
+                                      initialTab={settingsTab}
+                                      onOpenChange={setSettingsOpen}
+                                    />
+                                    <AboutDialog
+                                      open={aboutOpen}
+                                      onOpenChange={setAboutOpen}
+                                    />
+                                    <McpApprovalDialog />
+                                    <McpTaskCoordinator />
+                                    <McpActivityIndicator />
+                                    <Toaster
+                                      richColors
+                                      theme={theme}
+                                      position="bottom-right"
+                                    />
+                                  </McpBridgeProvider>
+                                </ApplicationHostProvider>
+                              </McpRuntimeProvider>
+                            </NavigatorContext.Provider>
+                          </TitleContext.Provider>
+                        </SettingsDialogContext.Provider>
+                      </SearchProvider>
+                    </CodexProvider>
+                  </ThemeContext.Provider>
+                </OutlineProvider>
+              </LibraryProvider>
+            </WorkspaceProvider>
+          </ViewModeProvider>
+        </PreferencesProvider>
+      </LongTaskProvider>
+    </I18nContext.Provider>
   );
 }
 

@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "domains": {
+    "workspace": "mcp_tool",
+    "work": "mcp_tool",
+    "outline": "mcp_tool",
+    "chapter": "mcp_tool",
+    "codex": "mcp_tool",
+    "search": "mcp_tool",
+    "stats": "mcp_tool",
+    "draft": "mcp_tool",
+    "trash": "mcp_tool",
+    "import": "mcp_tool",
+    "export": "mcp_tool",
+    "preferences": "mcp_tool",
+    "app": "mcp_tool",
+    "ui": "mcp_tool",
+    "navigate": "mcp_tool",
+    "open": "mcp_tool"
+  },
+  "ui_only": [
+    {
+      "action": "window controls and tray placement",
+      "reason": "Operating-system window chrome is not novel-domain data."
+    },
+    {
+      "action": "drag and drop ordering preview",
+      "reason": "The durable move is exposed through novels_node_move; pointer state is UI-only."
+    },
+    {
+      "action": "hover cards, tooltips, focus rings and animations",
+      "reason": "Transient presentation state has no durable domain effect."
+    },
+    {
+      "action": "toast timing and transition curves",
+      "reason": "Visual feedback does not change workspace data."
+    },
+    {
+      "action": "editor paragraph snap inertia",
+      "reason": "Scroll behavior is presentation-only; text changes still use the chapter command."
+    }
+  ],
+  "unsupported": [
+    {
+      "action": "arbitrary filesystem read or write",
+      "reason": "All file access is constrained to approved workspace or dialog-selected paths."
+    },
+    {
+      "action": "arbitrary URL or route navigation",
+      "reason": "Navigation accepts only a fixed page and dialog enum."
+    },
+    {
+      "action": "scene deletion",
+      "reason": "Scenes do not yet have a trash lifecycle."
+    }
+  ],
+  "session_boundary": [
+    "novels_workspace_create",
+    "novels_workspace_open",
+    "novels_workspace_close",
+    "novels_workspace_migrate",
+    "novels_workspace_delete"
+  ]
+}

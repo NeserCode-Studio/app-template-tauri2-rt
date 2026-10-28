@@ -69,7 +69,9 @@ export default function TrayMenu() {
     <div
       ref={menuRef}
       className={`w-full select-none ${
-        theme === "dark" ? "bg-[#1e1e1e] text-[#cccccc]" : "bg-white text-[#333333]"
+        theme === "dark"
+          ? "bg-neutral-700 text-neutral-200"
+          : "bg-white text-neutral-800"
       }`}
       style={{ fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" }}
     >

@@ -1,7 +1,9 @@
 import { createContext, useContext } from "react";
 
+export type SettingsTab = "search" | "general" | "writing" | "ai";
+
 export interface SettingsDialogContextValue {
-  openSettings: () => void;
+  openSettings: (tab?: SettingsTab) => void;
   openAbout: () => void;
 }
 
