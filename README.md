@@ -1,278 +1,173 @@
 <div align="center">
 
+<img src="src-tauri/icons/icon.png" width="96" alt="novels-yes 图标" />
+
 # novels-yes
 
-**Tauri 2 + React 19 本地优先纯文本小说写作工具**
+**为中文长篇小说写作准备的本地桌面写作台**
 
-面向中文长篇创作者的写作应用：把小说的结构（作品 / 卷 / 章 / 场景）做成一等公民，正文以纯文本落盘，不绑架用户数据。基于 app-template（Tauri 2 桌面框架）扩展，复用其窗口管理、系统托盘、命令面板、设置中心与多语言能力，并在其上构建小说专属的编辑器、结构树、素材库与进度统计。
+novels-yes 把作品、卷、章、段落、素材、统计和回收站放进同一个本地工作区。
+你选择一个文件夹来保存所有内容；应用不需要账号，也不会把书稿存到云服务。
 
 [![Tauri](https://img.shields.io/badge/Tauri-2-blue?style=flat-round&logo=tauri&logoColor=white)](https://tauri.app)
-[![React](https://img.shields.io/badge/React-19-61DAFB?style=flat-round&logo=react&logoColor=black)](https://react.dev)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.6-3178C6?style=flat-round&logo=typescript&logoColor=white)](https://www.typescriptlang.org)
-[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-round&logo=tailwindcss&logoColor=white)](https://tailwindcss.com)
+[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-green?style=flat-round)](https://tauri.app/start/prerequisites/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow?style=flat-round)](LICENSE)
 
 </div>
 
 ---
 
-## 特性
+## 主要功能
 
-|                         |                                                                                                                                                                                |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **本地优先**            | 正文明文落盘（UTF-8），随时可被 Git 或任意编辑器接管，应用不绑定用户数据                                                                                                       |
-| **结构驱动**            | 作品 / 卷 / 章 / 场景是可导航实体，统计与检索建立在这层结构之上                                                                                                                |
-| **自研卡片式编辑器**    | 章内容为卡片列表，底部常驻唯一输入框，回车结束本段；右下角常驻提交按钮                                                                                                         |
-| **不丢稿的暂存段落**    | 写新段落时点开旧卡片，草稿自动暂存并可随时取回；编辑旧段落后自动归位（集中存入 localStorage，右栏「草稿箱」可列出全部半成品）                                                  |
-| **章节历史版本**        | 每次保存自动留一份快照，保留最近 20 版，可回滚到任一时间点；回滚本身也可再撤销                                                                                                 |
-| **拼合有依据**          | 段末无句读时拒绝拼合，避免把两段硬接成一句；拼合可一键撤回                                                                                                                     |
-| **章即页**              | 默认单章视野，上滑上一章、下滑下一章，右栏提供翻章按钮                                                                                                                         |
-| **素材库**              | 工作区级共享的人物 / 地点 / 物品等条目，带类型化字段与双向关联；正文中提及按类型配色自动高亮（可关）                                                                           |
-| **全站搜索**            | 一次搜索覆盖章标题、正文与素材条目，按作品分组并给上下文片段                                                                                                                   |
-| **进度统计**            | 每日目标可自定义（未设目标则不显示进度条）、连续写作天数与近 14 天曲线（可切净增 / 累计口径）；作品字数以章文件全量重算                                                        |
-| **专注 / 打字机 / Zen** | 三种视图模式，互斥切换并记忆选择                                                                                                                                               |
-| **导出**                | 单章或全书导出为 txt 或 Markdown；Markdown 固定作品 / 卷 / 章层级，txt 保留标题、缩进与换行选项，均带实时预览                                                                  |
-| **回收站**              | 独立页面提供搜索、类型筛选、卷章预览、恢复与深度扫描；删除内容先落到工作区 `.trash/`，整卷恢复会连同其下所有章完整补回                                                         |
-| **AI 检测**             | 朱雀 AI 文本检测入口在编辑页导出旁；API Key 存入系统凭据库，最近一次付费结果随工作区保存，正文变化后明确标为过期                                                               |
-| **本地 MCP**            | 工作区级 MCP 服务，支持权限分级、长文本分块输入、章节写入先开章流程、编辑器打字预览与输入锁、串行队列与 1.2 秒启动节流、应用内审批，以及标题栏、独立操作页和状态层中的任务反馈 |
+| 功能       | 你可以做什么                                                           |
+| ---------- | ---------------------------------------------------------------------- |
+| 长篇结构   | 管理作品、卷、章节和段落，适合多卷、多章和长篇连载                     |
+| 段落编辑   | 每段一张卡片，可拆分、合并、返回最新段落；输入未提交的内容暂存在草稿箱 |
+| 版本历史   | 每章自动保留最近 20 次保存快照，可以预览和回滚，回滚后仍可撤销         |
+| 素材库     | 集中管理人物、地点、物品、关系等设定；正文提及会按类型高亮             |
+| 全文搜索   | 一次搜索章节、正文和素材，按作品分组显示上下文                         |
+| 进度统计   | 查看每日目标、连续写作天数和近 14 天趋势                               |
+| 专注模式   | 在普通、专注、打字机和 Zen 模式之间切换，界面会记住选择                |
+| 导入整理   | 导入 TXT / Markdown，自动识别 UTF-8 或 GBK，并支持自动分段和整书重排   |
+| 导出发布   | 导出为 TXT 或 Markdown，支持单章、整卷或全书，并提供实时预览           |
+| 回收站     | 删除的章节和卷保留在工作区，可搜索、预览、恢复或深度扫描修复           |
+| AI 检测    | 使用朱雀 AI 检测章节文本；结果保存在当前章节，重启后仍可查看           |
+| 本地 Agent | 通过本机 MCP 让受控的 AI Agent 读取或修改当前工作区                    |
 
-技术底座：**Tauri 2** · **React 19** · **TypeScript** · **Tailwind CSS 4** · **shadcn/ui** · **Radix UI** · **Rust** · **MCP**
-
-MCP 连接方式、权限模型与客户端配置见 [docs/mcp.md](docs/mcp.md)。
+界面支持中文、英文、亮色和暗色主题，可在应用内直接切换。
 
 ---
 
 ## 快速开始
 
-### 环境要求
+当前项目通过源码构建桌面应用。首次准备需要安装：
 
-- Node.js ≥ 18
-- pnpm ≥ 9
-- Rust（stable）
-- Tauri 平台依赖（Linux 需 `webkit2gtk` 等，详见[官方文档](https://tauri.app/start/prerequisites/)）
+- Node.js 18 或更新版本
+- pnpm 9 或更新版本
+- Rust stable
+- [Tauri 平台依赖](https://tauri.app/start/prerequisites/)
 
-### 安装与启动
+克隆并启动开发版：
 
 ```bash
-# 安装前端依赖
+git clone https://github.com/NeserCode-Studio/novels-yes.git
+cd novels-yes
 pnpm install
-
-# 启动开发环境（自动编译 Rust，首次较慢）
 pnpm tauri dev
 ```
 
-### 构建
+首次运行会编译 Rust 依赖，需要等待一段时间。
+生成安装包时运行：
 
 ```bash
-pnpm tauri build     # 生成安装包
-pnpm build           # 仅构建前端
+pnpm tauri build
 ```
 
-### 其他命令
+构建完成后，安装包位于 `src-tauri/target/release/bundle/`。
 
-| 命令                  | 说明                            |
-| --------------------- | ------------------------------- |
-| `pnpm dev`            | 启动前端开发服务器（端口 8888） |
-| `pnpm preview`        | 预览前端构建产物                |
-| `pnpm lint`           | ESLint 检查                     |
-| `pnpm format`         | Prettier 格式化                 |
-| `pnpm test:mcp`       | MCP 双协议只读回归              |
-| `pnpm test:mcp:trash` | 回收站删除、折叠与恢复回归      |
-| `pnpm test:mcp:perf`  | 千章工作区文件性能基准          |
-
-> 浏览器环境下界面可渲染，但托盘、跨窗口、原生能力不可用 —— 这些需 `pnpm tauri dev` 验证。
+> [!NOTE]
+> 在浏览器里打开开发服务器只能预览界面；托盘、原生文件读写、AI 凭据库和 MCP 需要 Tauri 桌面环境。
 
 ---
 
-## 项目结构
+## 开始写作
 
-```
-src/
-├── main.tsx              # 入口
-├── App.tsx               # 根组件：路由装配、Context、跨窗口事件、生命周期触发
-├── App.css               # 设计令牌 + 组件类
-│
-├── components/
-│   ├── framework/        # 框架组件（标题栏、命令面板、设置、关于、托盘菜单）
-│   └── ui/               # shadcn/ui 组件库
-│
-├── views/                # 页面
-│   ├── Library           # 作品库（M1）
-│   ├── Editor            # 编辑器（三栏：结构树 / 卡片区 / 章节操作）
-│   ├── CodexLibrary      # 工作区级素材库
-│   ├── Mcp               # MCP 操作记录与服务概览
-│   ├── Trash             # 回收站与工作区深度扫描
-│   └── TrayMenu          # 托盘菜单
-│
-├── composables/          # 业务 Hook（useTheme / useI18n / useToast / useSuperCommand）
-├── contexts/             # 全局 Context（workspace / library / outline / codex / viewmode / preferences）
-├── lifecycle/            # 生命周期总线（阶段：mount / ready）
-├── lib/                  # 工具与资源
-│   ├── i18n.resource.ts  # 中英文案表
-│   ├── window.utils.ts   # 窗口工具
-│   ├── editor.actions.ts # 编辑命令
-│   ├── logger.ts         # 日志模块
-│   └── utils.ts          # cn()
-├── services/             # 业务服务（fs 桥 / 作品 / 结构树 / 章 / 素材 / 统计 / 回收站 / 导入 / 导出）
-└── shared/               # 共享 schema（zod，前端与磁盘契约）
+1. 启动应用后创建一个工作区，或打开已有的 novels-yes 工作区文件夹。
+2. 在作品库创建作品、卷和章节；也可以导入 TXT / Markdown 文稿。
+3. 在编辑器底部输入段落，按回车结束当前段。
+4. 需要修改设定时打开素材库，需要查看进展时打开进度面板。
+5. 完成后使用导出功能生成 TXT 或 Markdown。
 
-src-tauri/
-├── tauri.conf.json       # 窗口与打包配置（productName: novels-yes）
-├── capabilities/         # 权限白名单（dialog / fs）
-└── src/
-    ├── lib.rs            # 托盘与 Rust 命令注册
-    ├── fs_bridge.rs      # 工作区内读写（拒绝 .. 逃逸与软链）
-    └── export_bridge.rs  # 导出写工作区外 / 导入编码探测
-```
+novels-yes 会自动保存章节。顶栏的保存按钮可以在自动保存前立即写入，或保存失败后重试。
+
+### 导入旧稿
+
+支持把 TXT 或 Markdown 文件导入到当前章节，也可以按标题结构导入为新作品。
+导入预览会显示编码、段落数和结构；你可以在导入前调整标题和自动分段。
+
+Word、RTF 等专有格式请先另存为纯文本或 Markdown。
 
 ---
 
-## 架构说明
+## 数据保存在哪里
 
-### 双窗口模型
+所有小说数据都保存在你选择的工作区文件夹中。常见位置如下：
 
-配置了两个窗口，**同一份前端代码按窗口标签分流**：
+| 内容        | 位置                        |
+| ----------- | --------------------------- |
+| 作品与结构  | `works/<作品ID>/`           |
+| 章节正文    | `works/<作品ID>/chapters/`  |
+| 纯文本视图  | `works/<作品ID>/texts/`     |
+| 共享素材库  | `codex/`                    |
+| 统计缓存    | `works/<作品ID>/stats.json` |
+| AI 检测结果 | `works/<作品ID>/zhuque/`    |
+| 回收站      | `.trash/`                   |
 
-| 窗口   | 用途                                   |
-| ------ | -------------------------------------- |
-| `main` | 主界面：无边框、可拖拽标题栏、路由内容 |
-| `tray` | 托盘弹出菜单：独立小窗、失焦自动隐藏   |
+> [!IMPORTANT]
+> 备份时请备份整个工作区文件夹。`chapters/<章节ID>.json` 是章节内容的唯一事实来源，`texts/` 下的文本是导出视图；只备份 TXT 可能会漏掉段落卡片和版本历史。
 
-托盘右键 → Rust 侧发出定位事件 → 主窗口计算坐标后弹出托盘菜单；托盘菜单中的操作通过事件反向通知主窗口。
-
-### 生命周期系统
-
-提供阶段化钩子，让初始化逻辑有明确落点：
-
-```
-mount（React 挂载完成） → ready（应用就绪）
-```
-
-钩子支持优先级排序、一次性执行、卸载函数。同阶段按优先级顺序 `await` 执行，行为可预测。
-
-内置两个阶段对应两个真实触发点（均在 `App.tsx` 的挂载 effect 内按序触发）：
-
-| 阶段    | 时机           | 典型用途                                 |
-| ------- | -------------- | ---------------------------------------- |
-| `mount` | React 挂载完成 | 注册全局事件监听、启动定时任务           |
-| `ready` | 挂载完成后     | 需要窗口就绪才能执行的动作（聚焦、置前） |
-
-需要扩展时，在 `src/lifecycle/types.ts` 的 `LifecycleStage` 联合类型里加阶段，并在合适位置补上 `lifecycle.fire(...)`，`register` / `fire` 的实现无需改动。
-
-### 状态与持久化
-
-- 全局状态用 React Context，value 统一经 `useMemo` 固定引用，避免无关状态引发全量重渲染
-- 用户偏好（主题、语言、标题、置顶状态等）持久化到 `localStorage`
-- 弹窗开关状态集中在根组件，通过 Context 下发
-
-#### 正文与磁盘的分工
-
-| 数据              | 位置                              | 说明                                   |
-| ----------------- | --------------------------------- | -------------------------------------- |
-| 作品清单 / 元数据 | `works/<id>/work.json`            | 标题、类型、归档状态                   |
-| 结构树            | `works/<id>/outline.json`         | 卷 / 章节点，扁平数组 + `parentId`     |
-| 章正文            | `works/<id>/chapters/<id>.json`   | **唯一事实来源**，`cards` 数组         |
-| 章纯文本视图      | `works/<id>/texts/<id>.txt`       | 由 `cards` 生成，供导出 / 外部编辑     |
-| 素材条目          | `codex/entries/<id>.json`         | **工作区级共享**，与 `works/` 同级     |
-| 素材类型配置      | `codex/types.json`                | 显示名、字段、每种类型的高亮颜色       |
-| 统计              | `works/<id>/stats.json`           | 作品字数以章文件全量重算，缓存只作加速 |
-| 朱雀检测结果      | `works/<id>/zhuque/<id>.json`     | 最近一次付费结果、检测设置与正文指纹   |
-| 回收站            | `.trash/<itemId>.json` + 数据文件 | 只在工作区内，拷走工作区即跟着走       |
-
-两条容易踩的约束，改动相关代码前务必留意：
-
-1. **结构树里的章 id 必须等于章文件名的 id。** 打开哪一章由结构树 id 决定，正文按 `chapters/<id>.json` 读取。两者若各自生成随机 id，打开章节就会读到一个不存在的文件，表现为「保存成功但重进是空章」。`addNode` 因此支持传入 `id`，建章时复用章文件自身的 id。
-2. **章正文是 `cards` 数组，不是整段字符串。** 一张卡片承载一段文本；拆分在标点处切开、拼合把两张并成一张，都只改动 `cards`。
-3. **素材库属于工作区，不属于作品。** 同一个人物、地点会横跨多部作品复用，按作品各存一套必然分裂成互不相识的两份设定。旧版 `works/<id>/codex/` 在首次装载时会自动复制进 `codex/`，只复制不删除；同名条目只报告不自动合并。
-
-#### 保存时机
-
-输入框回车固化卡片后，防抖 800ms 落盘（`AUTOSAVE_DELAY`）。除此之外：
-
-- 顶栏「保存」按钮常驻可点，用于在防抖窗口内强制落盘，或在失败后重试
-- 组件卸载时冲刷待写内容——切换章节 / 返回作品库都会卸载编辑器，只清定时器会丢数据
-- 切换章节后焦点直接落在底部输入框，无需先点卡片
-- 落盘失败会弹 `Editor.save.failed`，此时不要依赖自动保存
-
-暂存的新段落只进 `localStorage`（键 `novels-yes:draft:<workId>:<chapterId>`），**不进工作区目录**：它是没写完的半成品，混进 `works/<id>/` 会污染用户导出的文本。按章隔离，切回来能接着写。
-
-#### 两条边界：工作区内 vs 工作区外
-
-Rust 侧刻意分成两个桥，作用域相反：
-
-| 桥              | 作用域               | 用途                                                           |
-| --------------- | -------------------- | -------------------------------------------------------------- |
-| `fs_bridge`     | **仅工作区内**       | 应用读写自身数据。拒绝 `..` 逃逸与符号链接。                   |
-| `export_bridge` | 工作区外任意绝对路径 | 导出成品、导入既有文稿。目标由系统对话框给出，不做工作区校验。 |
-
-两者混用会造成实质漏洞——若导出复用 `fs_bridge`，用户就能借导出把文件写到工作区之外。
-
-### 主题机制
-
-- CSS 变量驱动，所有颜色集中在 `App.css` 定义，亮/暗两套令牌
-- 首次启动跟随系统；用户手动切换后不再自动跟随
-- 切换无闪烁，状态与 DOM 始终一致
-
-### 国际化
-
-- 文案集中在 `src/lib/i18n.resource.ts`，新增文案改一处即可
-- 运行时可切换语言，无需重启
-- 未命中的 key 会回退为 key 本身，不会崩溃
-
-### 命令系统
-
-命令面板提供两种模式：
-
-- **普通模式** —— 页面跳转、设置打开、重载等常用操作
-- **高级模式** —— 输入 `@super` 前缀后执行扩展命令，支持前端动作与 Rust 命令两种执行方式
-
-命令以注册表形式管理，新增命令即插即用。
-
-### 日志
-
-`src/lib/logger.ts` 提供带级别过滤的日志模块：
-
-```ts
-import { createLogger } from "@/lib/logger";
-
-const log = createLogger("MyModule");
-log.debug("detail", { some: "data" });
-log.info("something happened");
-log.warn("recoverable problem");
-log.error("failed", error);
-```
-
-- 输出格式统一为 `[模块:级别]`，带颜色高亮，可按模块检索
-- **开发环境**输出全部级别；**生产构建**默认只保留 `warn` / `error`
-- 支持子 logger：`log.child("Sub")` → `[MyModule/Sub:info]`
-
-运行时切换级别（无需重新构建），在控制台执行：
-
-```js
-localStorage.setItem("app-log-level", "debug"); // 打开全部
-localStorage.removeItem("app-log-level"); // 恢复默认
-```
+你可以把工作区文件夹复制到移动硬盘、本地网络盘或纳入自己的 Git 备份。
+迁移工作区时，请使用应用内的“迁移工作区”功能。
 
 ---
 
-## 开发约定
+## AI 文本检测
 
-### 样式
+novels-yes 集成了朱雀 AI 文本检测，用于检查当前章节的 AI 生成占比。
 
-- **shadcn 组件的样式覆盖请平铺写进 `className`**，由组件内的 `cn()`（`twMerge`）自动合并
-- `@layer components` 只用于纯自有元素；该层优先级低于 Tailwind 工具类，覆盖 shadcn 组件会静默失效
-- 重复出现 3 次以上的样式组合可收纳为组件类，统一维护在 `App.css`
+使用方式：
 
-### shadcn 组件
+1. 打开 **设置 > AI**，保存腾讯云 EdgeOne Makers API Key。
+2. 在编辑页选择 **朱雀AI检测**。
+3. 确认合并段落设置后，再次确认是否开始检测。
+4. 查看人工、AI、疑似 AI 占比和分段结果。
 
-`src/components/ui/` 由 shadcn CLI 生成，请勿手动修改 —— 会被 `shadcn add/update` 覆盖。全局定制请改 `App.css` 中的设计令牌。
+> [!WARNING]
+> 每次新的检测都会调用付费接口，费用由你的腾讯云账号结算。取消确认弹窗不会发送请求。
 
-### 权限
+检测结果会保存在当前章节的工作区文件中。正文或合并段落设置变化后，旧结果会标记为“内容已变化”；重新检测仍需要你手动确认。
 
-Tauri 采用权限白名单机制。新增原生能力时，在 `src-tauri/capabilities/default.json` 中显式声明后前端才能调用。
+API Key 保存在操作系统凭据库中，不写入工作区。支持 Windows Credential Manager、macOS Keychain 和 Linux Secret Service。
 
 ---
 
-## 许可
+## 连接本地 AI Agent
 
-[MIT](LICENSE)
+打开工作区后，novels-yes 可以启动一个仅监听本机的 MCP 服务，让受控 AI Agent 连接当前工作区。
+
+- 权限分为只读、可写和管理员。
+- 高风险操作仍会在应用内弹出审批。
+- 工作区关闭、切换或迁移时，MCP 连接会结束。
+- MCP 服务只处理当前打开的工作区。
+
+连接方式、客户端配置和故障排查见 [docs/mcp.md](docs/mcp.md)。
+
+---
+
+## 常见问题
+
+**需要联网吗？**
+
+日常写作、保存、搜索和导出不需要联网。只有使用朱雀 AI 检测，或让外部 AI Agent 访问在线服务时才需要网络；本机 MCP 连接本身不需要互联网。
+
+**会把我上传到云端吗？**
+
+应用本身不提供云存储。只有你主动使用 AI 检测时，当前章节文本才会发送到检测服务；外部 Agent 是否会继续发送内容，取决于你选择的客户端、模型和提示词。
+
+**误删章节怎么办？**
+
+删除的内容会先进入工作区回收站。你可以在回收站页面搜索、预览和恢复。
+
+**能直接编辑工作区里的 TXT 文件吗？**
+
+TXT 文件适合阅读和外部交接。请优先在应用内编辑正文；章节事实来源是 JSON 段落卡片。
+
+**重启后结果和草稿还在吗？**
+
+付费检测结果保存在工作区中，重启后仍可查看。未提交草稿保存在应用本地草稿箱中。
+
+---
+
+## 技术栈
+
+Tauri 2 · Rust · React 19 · TypeScript · Tailwind CSS 4 · shadcn/ui · Radix UI · Zod · MCP
